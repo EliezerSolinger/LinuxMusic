@@ -22,3 +22,6 @@ lm-sys-samplerate.workspace = true
 
 [dev-dependencies]
 lm-plugin = { workspace = true, features = ["testing"] }
+lm-state.workspace = true
+lm-render.workspace = true
+libm.workspace = true

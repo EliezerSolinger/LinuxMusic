@@ -1,0 +1,40 @@
+{
+  "plugin:sampler": {
+    "defaults": {
+      "bank": 0,
+      "format": "none",
+      "gig": null,
+      "interpolation": "sinc",
+      "kit": "black-pearl",
+      "loop": "off",
+      "outputs": "main",
+      "params": {
+        "bendRange": 2.0,
+        "endPoint": 1.0,
+        "gain": 0.0,
+        "loopPoint": 0.0,
+        "pan": 0.0,
+        "polyphony": 64.0,
+        "reverse": 0.0,
+        "startPoint": 0.0,
+        "stutter": 0.0,
+        "tune": 0.0,
+        "volAmount": 0.0,
+        "volAttack": 0.0,
+        "volDecay": 0.5,
+        "volHold": 0.5,
+        "volPredelay": 0.0,
+        "volRelease": 0.1,
+        "volSustain": 0.5
+      },
+      "patch": null,
+      "patchLooped": true,
+      "patchTuned": true,
+      "program": 0,
+      "sample": null,
+      "sfz": null,
+      "soundfont": null
+    },
+    "version": 1
+  }
+}
