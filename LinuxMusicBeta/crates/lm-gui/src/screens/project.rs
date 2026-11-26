@@ -147,7 +147,6 @@ impl ProjectDialog {
                     .child(div().flex_1().child(Input::new(&self.path)))
                     .children(self.choose_button("choose-open", true, cx)),
             ))
-            .child(caption(tr("Projects of the old program (.mmp, .mmpz) do not open here")))
             .child(div().flex().justify_end().gap(px(8.)).child(
                 tbutton("open-recent", tr("Open"), true, THEME.green).debug_selector(|| "open-recent".into()).on_click(
                     cx.listener(move |d, _, _, cx| {
@@ -199,11 +198,6 @@ impl ProjectDialog {
             .flex_col()
             .gap(px(8.))
             .child(form_row(tr("File"), Input::new(&self.path)))
-            .child(caption(if import {
-                tr("A MIDI file (.mid) or an audio file; it enters at the cursor")
-            } else {
-                tr("The project's notes as a MIDI file (type 1)")
-            }))
             .child(
                 div().flex().justify_end().child(
                     tbutton("path-go", if import { tr("Import") } else { tr("Export") }, true, THEME.green)
@@ -236,7 +230,6 @@ impl ProjectDialog {
     }
 
     fn part_save_as(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let folder = self.folder.read(cx).value().to_string();
         div()
             .flex()
             .flex_col()
@@ -265,7 +258,6 @@ impl ProjectDialog {
                             })),
                     ),
             ))
-            .child(caption(trf("{0}/projeto.json, audio/ (copied), backup/", &[&folder.trim_end_matches('/')])))
             .child(
                 div().flex().justify_end().child(
                     tbutton("save-as-go", tr("Save"), true, THEME.green)
@@ -290,12 +282,10 @@ impl ProjectDialog {
             let newer = project.get("newerVersion").filter(|v| !v.is_null());
             let why = match (locked, newer) {
                 (Some(l), _) => trf(
-                    "Open on {0} (process {1}, since {2}): it opened read-only, so the two never write over each other",
+                    "Open on {0} (process {1}, since {2}): read-only",
                     &[&text(l, "host"), &l.get("pid").and_then(Value::as_int).unwrap_or(0), &text(l, "since")],
                 ),
-                (None, Some(n)) => {
-                    trf("Saved by LinuxMusic {0}: it opened read-only and is never saved over", &[&text(n, "version")])
-                }
+                (None, Some(n)) => trf("Saved by LinuxMusic {0}: read-only", &[&text(n, "version")]),
                 _ => tr("It opened read-only").to_string(),
             };
             col = col.child(
@@ -316,10 +306,7 @@ impl ProjectDialog {
             );
         }
         if let Some(v) = project.get("migratedFrom").and_then(Value::as_int) {
-            col = col.child(note(
-                trf("Converted from an older version: the original stays as projeto.json.v{0}.bak", &[&v]),
-                THEME.blue,
-            ));
+            col = col.child(note(trf("Converted from format {0}; the original is kept", &[&v]), THEME.blue));
         }
         // takes a crash interrupted (U5): the legacy's "Recover / Discard", per take
         let takes: Vec<Value> =
@@ -367,18 +354,34 @@ impl ProjectDialog {
         // safe mode (U21)
         let safe: Vec<Value> = status.get("safeModePlugins").map(|l| l.items().cloned().collect()).unwrap_or_default();
         if !safe.is_empty() {
-            col = col.child(note(tr("Safe mode: the program stopped while this plugin ran; it opened off, its track silent, its settings kept"), THEME.yellow)).children(safe.iter().enumerate().map(|(i, p)| {
-                let node = text(p, "node");
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(div().flex_1().text_size(px(12.)).child(trf("{0}: {1}", &[&text(p, "plugin"), &tr_reason(&text(p, "reason"))])))
-                    .child(button(("safe", i), tr("Turn on"), false, 0).debug_selector(move || format!("safe-{i}")).on_click(cx.listener(move |d, _, _, cx| {
-                        port_action(&d.scx, "safe_mode.enable", obj(vec![("node", Value::text(node.clone()))]), cx);
-                        cx.notify();
-                    })))
-            }));
+            col = col.child(note(tr("Safe mode: these plugins are off"), THEME.yellow)).children(
+                safe.iter().enumerate().map(|(i, p)| {
+                    let node = text(p, "node");
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_size(px(12.))
+                                .child(trf("{0}: {1}", &[&text(p, "plugin"), &tr_reason(&text(p, "reason"))])),
+                        )
+                        .child(
+                            button(("safe", i), tr("Turn on"), false, 0)
+                                .debug_selector(move || format!("safe-{i}"))
+                                .on_click(cx.listener(move |d, _, _, cx| {
+                                    port_action(
+                                        &d.scx,
+                                        "safe_mode.enable",
+                                        obj(vec![("node", Value::text(node.clone()))]),
+                                        cx,
+                                    );
+                                    cx.notify();
+                                })),
+                        )
+                }),
+            );
         }
         // the file commands without another place
         let unused = project.get("unused").cloned().unwrap_or(Value::NULL);
@@ -423,7 +426,7 @@ impl ProjectDialog {
                     .items_center()
                     .gap(px(8.))
                     .child(div().flex_1().min_w_0().child(note(
-                        trf("{0} files go to the system's trash, and the undo history is cleared", &[&files]),
+                        trf("{0} files go to the trash; the undo history is cleared", &[&files]),
                         THEME.orange,
                     )))
                     .child(button("clean-cancel", tr("Cancel"), false, 0).flex_none().on_click(cx.listener(

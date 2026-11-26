@@ -279,11 +279,11 @@ impl Export {
         ));
         match what {
             What::Song => {
-                col = col.child(caption(trf("Bars 1 to {0}, {1}; always exact", &[&(end_bar - 1), &mmss(song_secs)])))
+                col = col.child(caption(mmss(song_secs)));
             }
             What::Loop => {
                 let (a, b) = loop_bars(root);
-                col = col.child(caption(trf("Bars {0} to {1} (the loop on the ruler)", &[&a, &(b - 1)])));
+                col = col.child(caption(trf("Bars {0} to {1}", &[&a, &(b - 1)])));
             }
             What::Markers => {
                 let map = model::tempo_map(root);
@@ -306,10 +306,8 @@ impl Export {
             }
             What::Ticks(a, z) => {
                 let map = model::tempo_map(root);
-                col = col.child(caption(trf(
-                    "The region: bars {0} to {1}",
-                    &[&map.bar_beat_tick(a).bar, &map.bar_beat_tick(z).bar],
-                )));
+                col =
+                    col.child(caption(trf("Bars {0} to {1}", &[&map.bar_beat_tick(a).bar, &map.bar_beat_tick(z).bar])));
             }
             What::Bars => {
                 let (a, b) = self.bars;
@@ -330,7 +328,7 @@ impl Export {
             }
             What::Track => {
                 let tracks = model::tracks(root);
-                col = col.child(caption(tr("The whole song with the other tracks muted"))).child(
+                col = col.child(
                     div().id("track-list").max_h(px(110.)).overflow_y_scroll().flex().flex_wrap().gap(px(3.)).children(
                         tracks.iter().enumerate().filter(|(_, t)| !t.folder).map(|(i, t)| {
                             button(("only-track", i), t.name.to_string(), i == self.track, THEME.green).on_click(
@@ -374,15 +372,9 @@ impl Export {
                         }),
                 )
                 .child(caption(if self.fast {
-                    trf(
-                        "Starts {0} s before and drops them: renders {1}, about {2} of work. Almost identical, and the report says so",
-                        &[&warm, &mmss(fast_s), &mmss(fast_s / RENDER_SPEED)],
-                    )
+                    trf("Renders {0}, about {1}", &[&mmss(fast_s), &mmss(fast_s / RENDER_SPEED)])
                 } else {
-                    trf(
-                        "Renders from the start of the song and drops what comes before: renders {0}, about {1} of work. Identical, bit for bit, to the same range in the whole song",
-                        &[&mmss(exact_s), &mmss(exact_s / RENDER_SPEED)],
-                    )
+                    trf("Renders {0}, about {1}", &[&mmss(exact_s), &mmss(exact_s / RENDER_SPEED)])
                 }));
         }
         let repeats = self.repeats;
@@ -391,7 +383,7 @@ impl Export {
                 e.as_loop = v;
                 cx.notify();
             }))
-            .child(caption(tr("As a loop: without the tail at the end (reverbs, releases)")))
+            .child(caption(tr("As a loop")))
             .child(form_row(
                 tr("Times"),
                 stepper("repeats", repeats.to_string(), cx, move |e, d, cx| {
@@ -493,7 +485,6 @@ impl Export {
             .flex()
             .flex_col()
             .gap(px(8.))
-            .child(caption(tr("Several at once, each a file in the folder chosen at the end.")))
             .child(
                 div()
                     .flex()
@@ -561,7 +552,7 @@ impl Export {
                     },
                 ),
             ))
-            .when(self.formats().is_empty(), |d| d.child(note(tr("Choose at least one format."), THEME.orange)))
+            .when(self.formats().is_empty(), |d| d.child(note(tr("Choose a format."), THEME.orange)))
             .into_any_element()
     }
 
@@ -571,7 +562,6 @@ impl Export {
             .flex()
             .flex_col()
             .gap(px(8.))
-            .child(caption(tr("Applied to every format.")))
             .child(form_row(
                 tr("Normalize"),
                 segmented(
@@ -622,7 +612,7 @@ impl Export {
                         e.dither = v;
                         cx.notify();
                     }))
-                    .child(div().text_size(px(12.)).child(tr("Dither (TPDF) to 16 and 24 bits"))),
+                    .child(div().text_size(px(12.)).child(tr("Dither (TPDF)"))),
             )
             .into_any_element()
     }
@@ -648,10 +638,7 @@ impl Export {
             .child(form_row(tr("Folder"), Input::new(&self.folder)))
             .child(form_row(tr("Name"), Input::new(&self.name)))
             .when(!third.is_empty(), |d| {
-                d.child(note(
-                    trf("These third-party plugins do not promise the same result twice, so two exports may differ: {0}", &[&third.join(", ")]),
-                    THEME.orange,
-                ))
+                d.child(note(trf("Not deterministic: {0}", &[&third.join(", ")]), THEME.orange))
             })
             .into_any_element()
     }
@@ -683,11 +670,7 @@ impl Export {
             .gap(px(4.))
             .child(note(trf("Exported: {0}", &[&file]), THEME.green))
             .child(caption(trf("Peak {0} dBFS, loudness {1} LUFS", &[&format!("{peak:.1}"), &format!("{lufs:.1}")])))
-            .when(!identical, |d| {
-                d.child(caption(tr(
-                    "Fast range: almost identical to the same range in the whole song, not bit for bit",
-                )))
-            })
+            .when(!identical, |d| d.child(caption(tr("Fast range: not bit for bit"))))
             .into_any_element()
     }
 }

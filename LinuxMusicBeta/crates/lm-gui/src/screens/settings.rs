@@ -245,20 +245,6 @@ impl Page {
             Page::Advanced => "Advanced",
         }
     }
-    fn about(self) -> &'static str {
-        match self {
-            Page::General => "Projects and how the program behaves.",
-            Page::Audio => "Everything here applies as it changes: the device opens again by itself.",
-            Page::Midi => "The MIDI ports of this machine; they are not saved in the project.",
-            Page::Recording => "Recording audio and MIDI, and the metronome.",
-            Page::Plugins => "Plugin windows, and the plugins kept off after a crash.",
-            Page::Folders => "Where the program keeps and looks for files, and the folders a project may read.",
-            Page::Appearance => "The theme, the language and how the windows look and behave.",
-            Page::Keys => "Every action of the program; click Change and press the new keys.",
-            Page::Autosave => "The journal keeps every change; autosave and copies are on top of it.",
-            Page::Advanced => "Safety and performance.",
-        }
-    }
     fn from_arg(a: &str) -> Option<Page> {
         Page::ALL.iter().copied().find(|p| format!("{p:?}").to_lowercase() == a)
     }
@@ -587,7 +573,7 @@ impl Settings {
                     s.set(cx, &["general", "longAudioSeconds"], Value::int((long + d * 5).clamp(1, 3600)))
                 }),
             )
-            .hint(tr("Longer than this, an audio file dropped in the project is an audio track; shorter, a sample")),
+            .hint(tr("Longer than this, a dropped audio file is an audio track; shorter, a sample")),
             self.toggle("Previews play to the end", "previews-end", &["general", "previewsToEnd"], false, cx),
             self.toggle("New projects use the analog desk", "analog", &["general", "analogDesk"], true, cx),
             row(
@@ -643,7 +629,7 @@ impl Settings {
                     },
                 ),
             )
-            .hint(tr("ALSA directly, the card used alone (hw); PipeWire and PulseAudio are asked to release it")),
+            .hint(tr("ALSA directly, the card alone (hw)")),
         );
         // the device's state (I-10)
         let state: AnyElement = if let Some(l) = device_loading {
@@ -655,7 +641,7 @@ impl Settings {
             let edge = o.get("edgeConverter").and_then(Value::as_bool).unwrap_or(false);
             note(
                 trf(
-                    "Open: {0} → {1} at {2}, block {3} (agreed with the device), latency in {4} ms, out {5} ms{6}",
+                    "Open: {0} → {1} at {2}, block {3}, {4} ms in, {5} ms out{6}",
                     &[
                         &name_of(&text_of(o, "input")),
                         &name_of(&text_of(o, "output")),
@@ -670,7 +656,7 @@ impl Settings {
             )
             .into_any_element()
         } else {
-            note(tr("No audio device is open: the program plays and records nothing"), THEME.red).into_any_element()
+            note(tr("No audio device open"), THEME.red).into_any_element()
         };
         rows.push(wide(
             "Device",
@@ -733,14 +719,7 @@ impl Settings {
         );
         if devices.iter().any(|d| *d.id == *input && d.details.get("bluetooth").and_then(Value::as_bool) == Some(true))
         {
-            rows.push(wide(
-                "Bluetooth microphone",
-                None,
-                note(
-                    tr("Using its microphone drops the output to the call profile, over 150 ms of latency"),
-                    THEME.orange,
-                ),
-            ));
+            rows.push(wide("Bluetooth microphone", None, note(tr("The microphone adds over 150 ms"), THEME.orange)));
         }
         let out_rates: Vec<u32> =
             devices.iter().find(|d| *d.id == *output).map(|d| d.rates.clone()).unwrap_or_default();
@@ -832,25 +811,27 @@ impl Settings {
                     .flex_col()
                     .gap(px(4.))
                     .child(if calibrated {
-                        note(tr("Calibrated for this device, rate and converter"), THEME.green)
+                        note(tr("Calibrated"), THEME.green)
                     } else {
-                        note(tr("Not calibrated here: recording uses only the latency the device reports, and warns"), THEME.orange)
+                        note(tr("Not calibrated"), THEME.orange)
                     })
                     .child(table)
                     .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(10.))
-                            .child(
-                                tbutton("measure", if measuring { tr("Measuring…") } else { tr("Measure…") }, measuring, THEME.green)
-                                    .flex_none()
-                                    .debug_selector(|| "measure".into())
-                                    .when(!measuring && !recording, |b| {
-                                        b.on_click(cx.listener(|s, _, _, cx| port_action(&s.scx, "device.calibrate", Value::NULL, cx)))
-                                    }),
+                        div().flex().items_center().gap(px(10.)).child(
+                            tbutton(
+                                "measure",
+                                if measuring { tr("Measuring…") } else { tr("Measure…") },
+                                measuring,
+                                THEME.green,
                             )
-                            .child(caption(tr("Connect an output to an input with a cable: a pulse plays five times and the median is kept"))),
+                            .flex_none()
+                            .debug_selector(|| "measure".into())
+                            .when(!measuring && !recording, |b| {
+                                b.on_click(
+                                    cx.listener(|s, _, _, cx| port_action(&s.scx, "device.calibrate", Value::NULL, cx)),
+                                )
+                            }),
+                        ),
                     ),
             )
             .hint(tr("Kept per device, rate and edge converter, so it stays right when the buffer size changes")),
@@ -898,15 +879,15 @@ impl Settings {
                 .gap(px(3.))
                 .child(line(
                     rtkit || rtprio >= 70,
-                    trf("Real-time priority: rtkit {0}, RLIMIT_RTPRIO {1}", &[&if rtkit { tr("yes") } else { tr("no") }, &rtprio]),
+                    trf(
+                        "Real-time priority: rtkit {0}, RLIMIT_RTPRIO {1}",
+                        &[&if rtkit { tr("yes") } else { tr("no") }, &rtprio],
+                    ),
                 ))
                 .child(line(memlock_ok, trf("Locked memory: RLIMIT_MEMLOCK {0}", &[&memlock_text])))
                 .child(line(group, trf("{0} in the audio group", &[&user])))
                 .when(!ok, |d| {
-                    d.child(caption(tr(
-                        "Without it the program plays anyway, but the audio may crackle under load. To configure, then log in again:",
-                    )))
-                    .child(
+                    d.child(caption(tr("To configure, then log in again:"))).child(
                         div()
                             .p(px(6.))
                             .rounded(px(4.))
@@ -1170,11 +1151,6 @@ impl Settings {
                 ),
             )
             .hint(tr("RF64 survives a crash: the take is there up to the last second")),
-            wide(
-                "Disk space",
-                None,
-                note(tr("Arming warns when the armed inputs do not fit 10 minutes on the disk, and refuses below 30 seconds"), THEME.blue),
-            ),
         ]
     }
 
@@ -1368,16 +1344,6 @@ impl Settings {
         let kept = self.get_int(cx, &["backup", "kept"], 10);
         let every = if minutes == 0 { tr("off").to_string() } else { trf("every {0} min", &[&minutes]) };
         vec![
-            wide(
-                "Journal",
-                None,
-                note(
-                    tr(
-                        "Always on: every change goes to backup/diario.jsonl as it happens, and after a crash the project comes back to the last action",
-                    ),
-                    THEME.blue,
-                ),
-            ),
             row(
                 "Autosave",
                 Apply::Now,
@@ -1400,14 +1366,6 @@ impl Settings {
         vec![
             self.toggle("Clean corrupted audio", "sanitize", &["advanced", "sanitize"], true, cx)
                 .hint(tr("NaN and infinite values from a plugin become silence, and the plugin is marked")),
-            wide(
-                "Hearing protection",
-                None,
-                note(
-                    tr("Fixed: a peak above +24 dBFS on the master cuts the output with a very short fade, and warns"),
-                    THEME.blue,
-                ),
-            ),
         ]
     }
 }
@@ -1445,8 +1403,12 @@ impl Render for Settings {
         let found = sections.iter().map(|(_, r)| r.len()).sum::<usize>();
 
         let render_row = |r: Row| {
-            let hint = r.hint.map(|h| div().text_size(px(11.)).text_color(c(THEME.text3)).child(h));
+            let hint: Option<SharedString> = r.hint.map(Into::into);
             let label = div()
+                .id(r.label)
+                .when_some(hint, |d, h| {
+                    d.tooltip(move |window, cx| gpui_component::tooltip::Tooltip::new(h.clone()).build(window, cx))
+                })
                 .flex()
                 .items_center()
                 .gap(px(6.))
@@ -1462,7 +1424,6 @@ impl Render for Settings {
                     .border_color(c(THEME.line))
                     .child(label)
                     .child(r.control)
-                    .children(hint)
             } else {
                 div()
                     .flex()
@@ -1472,7 +1433,7 @@ impl Render for Settings {
                     .border_b_1()
                     .border_color(c(THEME.line))
                     .child(div().w(px(270.)).flex_none().child(label))
-                    .child(div().flex_1().min_w_0().flex().flex_col().gap(px(3.)).child(r.control).children(hint))
+                    .child(div().flex_1().min_w_0().flex().flex_col().gap(px(3.)).child(r.control))
             }
         };
 
@@ -1490,7 +1451,6 @@ impl Render for Settings {
                     .flex_col()
                     .mb(px(14.))
                     .child(div().text_size(px(18.)).font_weight(FontWeight::BOLD).child(tr(p.title())))
-                    .child(div().text_size(px(12.)).text_color(c(THEME.text3)).mb(px(6.)).child(tr(p.about())))
                     .children(rows.into_iter().map(render_row))
             }))
             .when(searching && found == 0, |d| {

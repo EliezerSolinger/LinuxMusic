@@ -9,7 +9,7 @@ use lm_port::Value;
 
 use super::ScreenCx;
 use super::settings::{form_row, khz, modal_size, note, obj, port_action, segmented};
-use crate::ui::{THEME, button, c, caption, tbutton, tr};
+use crate::ui::{THEME, button, c, tbutton, tr};
 
 const RATES: [i64; 5] = [44_100, 48_000, 88_200, 96_000, 192_000];
 
@@ -138,7 +138,6 @@ impl Render for NewProject {
                     },
                 ),
             ))
-            .child(caption(tr("Fixed for this project: the device opens at it, or converts at the edge")))
             .child(form_row(
                 tr("Template"),
                 segmented("template", names, cx, |n, i, _, cx| {

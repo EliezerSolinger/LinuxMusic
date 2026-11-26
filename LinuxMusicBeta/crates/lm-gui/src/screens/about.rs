@@ -35,15 +35,15 @@ const PARTS: [(Part, &str); 6] = [
 
 /// The manual's chapters (English keys)
 const CHAPTERS: &[&str] = &[
-    "Starting: the project folder, the device, the first recording",
-    "Recording: inputs, arming, monitoring, takes and comping",
-    "Composition: tracks, items, the Piano Roll, automation, steps",
-    "Mixing: the desk, the rack of each channel, inserts and sends",
-    "Instruments and effects, built in and third-party",
-    "Exporting: formats, ranges, stems",
-    "Settings, shortcuts and the command palette",
-    "When something goes wrong: notices, recovery, safe mode",
-    "Working with a server",
+    "Getting started",
+    "Recording audio",
+    "Composing",
+    "Mixing desk",
+    "Instruments and effects",
+    "Export and stems",
+    "Settings and shortcuts",
+    "Problems and recovery",
+    "Remote server",
 ];
 
 pub struct About {
@@ -107,39 +107,40 @@ impl Render for About {
                 .flex_col()
                 .gap(px(8.))
                 .child(div().text_size(px(13.)).child(tr("LinuxMusic - easy music production for everyone.")))
-                .child(caption(trf("Copyright © {0}.", &[&"2004-2026"])))
+                .child(caption(trf("Copyright © {0}", &[&"2004-2026"])))
                 .child(div().text_size(px(12.)).text_color(c(THEME.green)).child("https://lmms.io"))
                 .into_any_element(),
             Part::Authors => mono(AUTHORS).into_any_element(),
-            Part::Involved => div()
-                .flex()
-                .flex_col()
-                .gap(px(6.))
-                .child(caption(tr("Contributors ordered by number of commits:")))
-                .child(mono(CONTRIBUTORS))
-                .into_any_element(),
+            Part::Involved => div().flex().flex_col().gap(px(6.)).child(mono(CONTRIBUTORS)).into_any_element(),
             Part::Translation => div()
                 .text_size(px(12.))
                 .child(if crate::ui::i18n::language().starts_with("en") {
-                    tr("Current language not translated (or native English).").to_string()
+                    tr("English").to_string()
                 } else {
-                    tr("Portuguese and English with the program; the legacy's other languages where the text still matches").to_string()
+                    tr("Português, English").to_string()
                 })
                 .into_any_element(),
             Part::License => div()
                 .flex()
                 .flex_col()
                 .gap(px(6.))
-                .child(div().text_size(px(12.)).child(tr("GNU General Public License, version 2 or later (GPL-2.0-or-later)")))
-                .child(caption(tr("You may use, study, share and change it; what you share, you share under the same license.")))
+                .child(
+                    div()
+                        .text_size(px(12.))
+                        .child(tr("GNU General Public License, version 2 or later (GPL-2.0-or-later)")),
+                )
                 .into_any_element(),
             Part::Manual => div()
                 .flex()
                 .flex_col()
                 .gap(px(4.))
-                .child(caption(tr("The manual comes with the program, in Portuguese and English, and opens without the internet")))
                 .children(CHAPTERS.iter().enumerate().map(|(i, k)| {
-                    div().flex().gap(px(8.)).text_size(px(12.)).child(div().w(px(20.)).text_color(c(THEME.text3)).child(format!("{}.", i + 1))).child(tr(k))
+                    div()
+                        .flex()
+                        .gap(px(8.))
+                        .text_size(px(12.))
+                        .child(div().w(px(20.)).text_color(c(THEME.text3)).child(format!("{}.", i + 1)))
+                        .child(tr(k))
                 }))
                 .into_any_element(),
         };
