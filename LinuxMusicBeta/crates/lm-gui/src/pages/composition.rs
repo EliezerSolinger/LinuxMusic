@@ -316,6 +316,13 @@ impl CompositionPage {
         let x = (ev.position.x - b.origin.x).as_f32() as f64;
         let (dx, dy) = (d.x.as_f32() as f64, d.y.as_f32() as f64);
         let wheel = matches!(ev.delta, ScrollDelta::Lines(_));
+        // Ctrl+Alt+wheel: +-1 px, Shift+Alt+wheel: +-5 px on every track's height (F-TRK-030)
+        if wheel && ev.modifiers.alt && (ev.modifiers.control || ev.modifiers.shift) {
+            let step = if ev.modifiers.shift { 5.0 } else { 1.0 };
+            self.track_h = (self.track_h + step * dy.signum() as f32).clamp(24.0, 160.0);
+            cx.notify();
+            return;
+        }
         if ev.modifiers.control && wheel {
             self.track_h = (self.track_h * (1.0 + dy as f32 * 0.004)).clamp(24.0, 160.0);
             cx.notify();
@@ -795,8 +802,12 @@ impl CompositionPage {
             // a click anywhere on the header selects the track (F-ARR-012); the right button opens its menu
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(move |p, _: &MouseDownEvent, _, cx| {
+                cx.listener(move |p, ev: &MouseDownEvent, _, cx| {
                     p.ed.track = Some(id);
+                    // Shift+click: the default height again (F-TRK-030)
+                    if ev.modifiers.shift {
+                        p.track_h = view::TRACK_H;
+                    }
                     cx.notify();
                 }),
             )
