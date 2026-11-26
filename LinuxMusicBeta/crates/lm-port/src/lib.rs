@@ -407,6 +407,11 @@ pub trait CorePort {
     /// The preferences tree (I-16), and changing one by its path
     fn preferences(&self) -> &Value;
     fn set_preference(&mut self, path: Vec<PathStep>, value: Value) -> Pending<()>;
+    /// The folder of the user's own data beside the preferences (the keymap presets live in `keymaps/` under it);
+    /// `None` where there is none (a core that keeps nothing on disk, a remote one)
+    fn config_dir(&self) -> Option<std::path::PathBuf> {
+        None
+    }
     /// The project's file and access (H10), recent projects, templates, interrupted takes (U5), safe mode (U21),
     /// the last export's report: as a tree whose keys the screens read
     fn status(&self) -> &Value;

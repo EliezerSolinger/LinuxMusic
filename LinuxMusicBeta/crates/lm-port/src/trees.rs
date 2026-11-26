@@ -57,7 +57,9 @@
 //!              "origin", "stay": where the cursor goes on stop, F-REG-004) }
 //! metronome: { when: text ("always", "recording", "never"), countInBars: int }
 //! recording: { format: text ("rf64-24", "rf64-32f"), folder: text }
-//! shortcuts: { <action id>: text (keys, "secondary-s") }       only the ones the user changed
+//! keymaps:   { <context>: { preset: text, keys: { <action id>: text|[text] }, mouse: { <mouse action id>: text|[text] } } }
+//!            the preset chosen for each screen context and the user's own changes on top of it (keys as
+//!            "secondary-s", gestures as "shift-drag"); only what the user chose or changed is there
 //! monitor:   { level: real (dB, -60..+12), dim: bool, cut: bool, mono: bool, side: bool }
 //!            the master section's monitoring (the legacy MONITOR): what is heard, never mixed, exported or undone
 //! general:   { reopenLast: bool, askDeleteTrack: bool, longAudioSeconds: int, previewsToEnd: bool,
@@ -119,7 +121,7 @@ pub mod preferences {
     pub const INTERFACE: &str = "interface";
     pub const METRONOME: &str = "metronome";
     pub const RECORDING: &str = "recording";
-    pub const SHORTCUTS: &str = "shortcuts";
+    pub const KEYMAPS: &str = "keymaps";
     pub const MIDI_MAP: &str = "midiMap";
     pub const CONTROLLERS: &str = "controllers";
     pub const MONITOR: &str = "monitor";

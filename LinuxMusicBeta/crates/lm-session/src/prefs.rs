@@ -53,7 +53,9 @@ pub fn defaults() -> Value {
         ),
         ("metronome", o(vec![("when", Value::text("recording")), ("countInBars", Value::int(1))])),
         ("recording", o(vec![("format", Value::text("rf64-24")), ("folder", Value::text(""))])),
-        ("shortcuts", Value::empty_object()),
+        // Keymaps (user, 26/11): per context `{preset, keys: {action: keys}, mouse: {action: gesture}}`, the choice of
+        // preset and the user's own changes on top of it
+        ("keymaps", Value::empty_object()),
         // The speakers' monitoring (never in the project, the undo or an export)
         (
             "monitor",
@@ -140,7 +142,7 @@ fn merge(defaults: &Value, read: &Value) -> Value {
             );
         }
     }
-    // Free maps (the shortcuts) keep the file's keys
+    // Free maps (the keymaps) keep the file's keys
     if defaults.is_empty() && read.is_object() {
         return read.clone();
     }
@@ -192,11 +194,11 @@ impl Preferences {
         self.get(path).and_then(Value::as_bool)
     }
 
-    /// Changes one preference: the path must exist in the defaults (or be inside a free map, the shortcuts), and the
+    /// Changes one preference: the path must exist in the defaults (or be inside a free map, the keymaps), and the
     /// value must be of the same kind. Keys `session.preferences.unknown`, `session.preferences.kind`
     pub fn set(&mut self, path: &[PathStep], value: Value) -> Result<()> {
         let d = defaults();
-        let free_map = path.len() >= 2 && matches!(&path[0], PathStep::Key(k) if &**k == "shortcuts");
+        let free_map = path.len() >= 2 && matches!(&path[0], PathStep::Key(k) if &**k == "keymaps");
         if !free_map {
             let Some(default) = d.at_path(path) else {
                 return Err(Error::new("session.preferences.unknown").arg("path", path_text(path)));
