@@ -611,6 +611,10 @@ impl CorePort for LocalPort {
         Pending::Ready(self.session.set_preference(&path, value))
     }
 
+    fn config_dir(&self) -> Option<std::path::PathBuf> {
+        self.session.preferences().file().and_then(|f| f.parent()).map(std::path::Path::to_path_buf)
+    }
+
     fn status(&self) -> &Value {
         self.session.status()
     }

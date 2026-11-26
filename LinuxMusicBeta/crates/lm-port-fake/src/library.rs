@@ -384,7 +384,7 @@ pub fn preferences() -> Value {
         ),
         ("metronome", o(vec![("when", Value::text("recording")), ("countInBars", Value::int(1))])),
         ("recording", o(vec![("format", Value::text("rf64-24")), ("folder", Value::text("audio"))])),
-        ("shortcuts", Value::empty_object()),
+        ("keymaps", Value::empty_object()),
         ("askBeforeClosing", Value::bool(true)),
         (
             "monitor",
