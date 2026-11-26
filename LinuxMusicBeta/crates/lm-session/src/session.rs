@@ -1125,6 +1125,28 @@ impl Session {
         }
     }
 
+    /// A live note from the interface to the instrument of `track` (I-15 `note_on`/`note_off`/`all_notes_off`): a MIDI
+    /// command on the track's own port, channel 0. Never waits: a full ring drops the note. `on`: `Some(velocity)` for
+    /// a note-on, `None` for a note-off; `key` 255 with `None`: all notes off
+    pub fn live_note(&mut self, track: NodeId, key: u8, on: Option<u8>) {
+        let want = track.to_string();
+        let Some(ordinal) = self
+            .document
+            .root()
+            .get("tracks")
+            .and_then(|l| l.items().position(|t| t.get("id").and_then(Value::as_text) == Some(want.as_str())))
+        else {
+            return;
+        };
+        let bytes = match (key, on) {
+            (255, None) => [0xB0, 123, 0],
+            (k, Some(v)) => [0x90, k.min(127), v.clamp(1, 127)],
+            (k, None) => [0x80, k.min(127), 0],
+        };
+        let cmd = Command::Midi { port: lm_render::gui_port(ordinal), at: HostTime::now(), bytes };
+        let _ = self.engine.commands().send(cmd);
+    }
+
     fn environment(&self) -> Environment {
         Environment {
             playhead: self.telemetry.position.samples,

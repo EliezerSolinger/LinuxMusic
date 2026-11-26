@@ -372,6 +372,15 @@ pub trait CorePort {
     fn gesture_cancel(&mut self, g: GestureId);
     /// Live, while dragging, without an edit (the value reaches the audio's slot at once)
     fn param_write(&mut self, node: NodeId, param: &str, value: f32);
+    /// A live note on the instrument of `track` (the test keyboard, the computer keyboard as a piano, the piano roll's
+    /// keys and a note being drawn): a MIDI command to the audio thread, like live MIDI input. Data only, never
+    /// waits, no answer; `key` 0..=127, `velocity` 1..=127. The interface releases every note it started (mouse-up,
+    /// focus loss, window closed)
+    fn note_on(&mut self, track: NodeId, key: u8, velocity: u8);
+    /// Ends the live note `key` of `track`
+    fn note_off(&mut self, track: NodeId, key: u8);
+    /// Ends every live note of `track` (all notes off)
+    fn all_notes_off(&mut self, track: NodeId);
 
     // --- long operations, notices, telemetry, heavy data
     fn loading(&self, target: &Target) -> Loading;

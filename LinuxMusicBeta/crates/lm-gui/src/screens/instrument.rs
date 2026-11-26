@@ -21,9 +21,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, AnyView, App, Bounds, Context, Entity, FontWeight, Global, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PathBuilder, Pixels, Point, Render, ScrollEvent, SharedString, Subscription, WeakEntity, Window,
-    anchored, canvas, deferred, div, fill, point, prelude::*, px, size,
+    AnyElement, AnyView, App, Bounds, Context, Entity, FocusHandle, FontWeight, Global, KeyDownEvent, KeyUpEvent,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PathBuilder, Pixels, Point, Render, ScrollEvent,
+    SharedString, Subscription, WeakEntity, Window, anchored, canvas, deferred, div, fill, point, prelude::*, px, size,
 };
 use gpui_component::Sizable;
 use gpui_component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
@@ -32,6 +32,7 @@ use lm_port::{
     Scale, Target, Topic, Value,
 };
 
+use super::live::{self, Live};
 use super::{Screen, ScreenCx};
 use crate::core::Core;
 use crate::model::{self, TrackView};
@@ -1235,6 +1236,12 @@ pub struct InstrumentWindow {
     target: usize,
     keyboard: bool,
     held: Option<u8>,
+    /// the notes this window has sounding (I-15), released on mouse-up, focus loss and close
+    live: Live,
+    /// the computer keys held, by key name
+    played: HashMap<String, u8>,
+    /// the window's focus: the computer keyboard plays the instrument while it has it (F-IJN-022)
+    focus: FocusHandle,
     keys_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     kit_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     lit: Option<(usize, Instant)>,
@@ -1344,8 +1351,11 @@ impl ParamHost<IwPopup> for InstrumentWindow {
 }
 
 impl InstrumentWindow {
-    pub fn new(scx: ScreenCx, _window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(scx: ScreenCx, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let observe = cx.observe(&scx.core, |_, _, cx| cx.notify());
+        // the notes end when the window closes
+        let core = scx.core.clone();
+        let release = cx.on_release(move |w, cx| w.live.release_all(&core, cx));
         // the target: a track, or its instrument; else the first track with an instrument
         let first = {
             let tracks = model::tracks(scx.core.read(cx).port().root());
@@ -1362,6 +1372,9 @@ impl InstrumentWindow {
             target: 0,
             keyboard: false,
             held: None,
+            live: Live::default(),
+            played: HashMap::new(),
+            focus: cx.focus_handle(),
             keys_bounds: Rc::new(Cell::new(None)),
             kit_bounds: Rc::new(Cell::new(None)),
             lit: None,
@@ -1369,8 +1382,17 @@ impl InstrumentWindow {
             tuning: None,
             editor: EditorState::default(),
             panel: None,
-            _subs: vec![observe],
+            _subs: vec![observe, release],
         };
+        // the notes end when the focus or the window's activation is lost
+        let blur = cx.on_blur(&w.focus, window, |w, _, cx| w.release_notes(cx));
+        let active = cx.observe_window_activation(window, |w, window, cx| {
+            if !window.is_window_active() {
+                w.release_notes(cx);
+            }
+        });
+        w._subs.extend([blur, active]);
+        window.focus(&w.focus, cx);
         w.set_track(first, cx);
         w
     }
@@ -1392,7 +1414,59 @@ impl InstrumentWindow {
         });
     }
 
+    /// Ends every live note this window started
+    fn release_notes(&mut self, cx: &mut Context<Self>) {
+        let core = self.scx.core.clone();
+        self.live.release_all(&core, cx);
+        self.held = None;
+        cx.notify();
+    }
+
+    /// A live note on the window's track (the test keyboard, a kit piece)
+    fn play(&mut self, key: u8, velocity: u8, cx: &mut Context<Self>) {
+        if let Some(t) = self.track {
+            let core = self.scx.core.clone();
+            self.live.on(&core, t, key, velocity, cx);
+        }
+    }
+
+    fn stop(&mut self, key: u8, cx: &mut Context<Self>) {
+        if let Some(t) = self.track {
+            let core = self.scx.core.clone();
+            self.live.off(&core, t, key, cx);
+        }
+    }
+
+    /// The computer keyboard as a piano (F-IJN-022, the legacy's layout), only while the window itself has the focus
+    /// (a text field inside keeps its keys)
+    fn key_down(&mut self, ev: &KeyDownEvent, window: &Window, cx: &mut Context<Self>) {
+        let m = ev.keystroke.modifiers;
+        if ev.is_held || m.control || m.alt || m.platform || m.shift || !self.focus.is_focused(window) {
+            return;
+        }
+        if let Some(k) = live::window_key(&ev.keystroke.key) {
+            self.played.insert(ev.keystroke.key.clone(), k);
+            self.play(k, live::DEFAULT_VELOCITY, cx);
+            self.held = Some(k);
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+
+    fn key_up(&mut self, ev: &KeyUpEvent, cx: &mut Context<Self>) {
+        if let Some(k) = self.played.remove(&ev.keystroke.key) {
+            self.stop(k, cx);
+            if self.held == Some(k) {
+                self.held = None;
+            }
+            cx.notify();
+        }
+    }
+
     fn set_track(&mut self, track: Option<NodeId>, cx: &mut Context<Self>) {
+        if self.track != track {
+            self.release_notes(cx);
+        }
         self.track = track;
         if let Some(t) = track {
             cx.set_global(super::browser::ActiveTrack(t));
@@ -1735,9 +1809,13 @@ impl InstrumentWindow {
             )
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|w, ev: &MouseDownEvent, _, cx| {
+                cx.listener(|w, ev: &MouseDownEvent, window, cx| {
+                    window.focus(&w.focus, cx);
                     if let Some(b) = w.keys_bounds.get() {
                         w.held = key_at(b, ev.position);
+                        if let Some(k) = w.held {
+                            w.play(k, key_velocity(b, ev.position), cx);
+                        }
                         cx.notify();
                     }
                 }),
@@ -1749,18 +1827,19 @@ impl InstrumentWindow {
                 {
                     let k = key_at(b, ev.position);
                     if k != w.held {
+                        // a glissando: the key left ends, the key entered starts
+                        if let Some(old) = w.held {
+                            w.stop(old, cx);
+                        }
                         w.held = k;
+                        if let Some(k) = k {
+                            w.play(k, key_velocity(b, ev.position), cx);
+                        }
                         cx.notify();
                     }
                 }
             }))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|w, _, _, cx| {
-                    w.held = None;
-                    cx.notify();
-                }),
-            )
+            .on_mouse_up(MouseButton::Left, cx.listener(|w, _, _, cx| w.release_notes(cx)))
     }
 
     // --- the tabs' bodies -------------------------------------------------------------------------------------
@@ -1818,8 +1897,8 @@ impl InstrumentWindow {
             out.push(notice(trf("\"{0}\" is not installed; the track is silent", &[&plugin])));
             return out;
         }
-        if &*plugin == "avldrums" {
-            out.push(self.kit_view(t, cx));
+        if matches!(&*plugin, "avldrums" | "drummachines") {
+            out.push(self.kit_view(t, &plugin, cx));
         }
         let own: Vec<Ctl> = ctls.iter().filter(|k| !is_function_key(k.key())).cloned().collect();
         match &self.panel {
@@ -1869,11 +1948,30 @@ impl InstrumentWindow {
         out
     }
 
-    /// AVL Drums: the kit drawn by its pieces (the instrument's ports); a click on a piece lights it (F-INS-002)
-    fn kit_view(&self, t: &TrackView, cx: &Context<Self>) -> AnyElement {
+    /// The kit's pieces as pictured, each with the key it plays: AVL Drums by the groups of its outputs (when it has
+    /// them), else the General MIDI drum map (DrumMachines, and the single-output AVL kit)
+    fn kit_pieces(t: &TrackView, plugin: &str) -> Vec<(Arc<str>, u8)> {
+        let groups: Vec<(Arc<str>, u8)> = t
+            .outputs
+            .iter()
+            .enumerate()
+            .map(|(k, o)| (o.port.clone(), live::group_key(&o.port).unwrap_or((36 + k).min(127) as u8)))
+            .collect();
+        if plugin == "avldrums" && groups.len() > 1 {
+            groups
+        } else {
+            super::steps::GM_DRUMS.iter().map(|(k, n)| (Arc::from(tr(n).as_ref()), *k)).collect()
+        }
+    }
+
+    /// The kit drawn by its pieces; a click on a piece plays it and lights it (F-INS-002), and the note ends when
+    /// the button comes up
+    fn kit_view(&self, t: &TrackView, plugin: &str, cx: &Context<Self>) -> AnyElement {
         let bounds = self.kit_bounds.clone();
         let lit = self.lit.filter(|(_, at)| at.elapsed() < Duration::from_millis(250)).map(|(k, _)| k);
-        let pieces: Vec<Arc<str>> = t.outputs.iter().map(|o| o.port.clone()).collect();
+        let all = Self::kit_pieces(t, plugin);
+        let keys: Vec<u8> = all.iter().map(|(_, k)| *k).collect();
+        let pieces: Vec<Arc<str>> = all.into_iter().map(|(p, _)| p).collect();
         let n = pieces.len().max(1);
         div()
             .flex()
@@ -1918,6 +2016,7 @@ impl InstrumentWindow {
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |w, ev: &MouseDownEvent, window, cx| {
+                            window.focus(&w.focus, cx);
                             let Some(b) = w.kit_bounds.get() else { return };
                             let hit = (0..n).find(|k| {
                                 let (center, r) = piece_at(b, *k, n);
@@ -1926,6 +2025,9 @@ impl InstrumentWindow {
                                 dx * dx + dy * dy <= r.as_f32() * r.as_f32()
                             });
                             if let Some(k) = hit {
+                                if let Some(key) = keys.get(k) {
+                                    w.play(*key, live::DEFAULT_VELOCITY, cx);
+                                }
                                 w.lit = Some((k, Instant::now()));
                                 window.request_animation_frame();
                                 cx.notify();
@@ -2833,6 +2935,12 @@ fn white_index(k: u8) -> usize {
     (LO..k).filter(|x| !is_black(*x)).count()
 }
 
+/// The velocity a click on a key gives: its height on the key, as the legacy's (the top is soft, the bottom hard)
+fn key_velocity(b: Bounds<Pixels>, p: Point<Pixels>) -> u8 {
+    let y = ((p.y.as_f32() - b.origin.y.as_f32()) / b.size.height.as_f32().max(1.0)).clamp(0.0, 1.0);
+    (30.0 + y * 97.0).round().clamp(1.0, 127.0) as u8
+}
+
 fn key_at(b: Bounds<Pixels>, p: Point<Pixels>) -> Option<u8> {
     if !b.contains(&p) {
         return None;
@@ -2982,7 +3090,17 @@ impl Render for InstrumentWindow {
             .bg(c(THEME.bg1))
             .text_color(c(THEME.text))
             .on_mouse_move(cx.listener(|w, ev: &MouseMoveEvent, _, cx| drag_move(w, ev, cx)))
-            .on_mouse_up(MouseButton::Left, cx.listener(|w, _: &MouseUpEvent, _, cx| drag_end(w, cx)))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|w, _: &MouseUpEvent, _, cx| {
+                    drag_end(w, cx);
+                    // a note started here ends wherever the button comes up
+                    w.release_notes(cx);
+                }),
+            )
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(|w, ev: &KeyDownEvent, window, cx| w.key_down(ev, window, cx)))
+            .on_key_up(cx.listener(|w, ev: &KeyUpEvent, _, cx| w.key_up(ev, cx)))
             // an instrument or a preset dropped from the browser (F-IJN-004)
             .on_drop(cx.listener(|w, d: &super::browser::Dragged, _, cx| w.drop_item(d, cx)))
             .child(self.header(&t, &plugins, cx))

@@ -544,6 +544,18 @@ impl CorePort for LocalPort {
         self.session.param_write(node, param, value);
     }
 
+    fn note_on(&mut self, track: NodeId, key: u8, velocity: u8) {
+        self.session.live_note(track, key, Some(velocity));
+    }
+
+    fn note_off(&mut self, track: NodeId, key: u8) {
+        self.session.live_note(track, key, None);
+    }
+
+    fn all_notes_off(&mut self, track: NodeId) {
+        self.session.live_note(track, 255, None);
+    }
+
     fn loading(&self, target: &Target) -> Loading {
         self.session.loading(target)
     }

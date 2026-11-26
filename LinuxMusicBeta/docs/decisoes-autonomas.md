@@ -1752,3 +1752,11 @@ conflito com seções anteriores deste arquivo e com o `funcionalidades-legado.m
 8. **Navegador com índice.** O navegador deixa de ser uma árvore de pastas: um índice em segundo plano dos arquivos
    e presets, com busca instantânea, filtros por tipo, etiquetas e favoritos. A árvore de pastas fica como uma das
    vistas.
+- **Nota ao vivo da interface (P2, I-15):** `CorePort::note_on/note_off/all_notes_off(track, ...)`, só dados, sem
+  espera. A sessão manda `Command::Midi` com `HostTime::now()` por uma porta própria de cada faixa
+  (`lm_render::gui_port(n)`, `n` = lugar da faixa na lista da árvore, a partir de `GUI_PORT_BASE` 0x8000, longe dos
+  dispositivos). O compilador põe a rota dessa porta em toda faixa com instrumento de notas, armada ou não, então o
+  instrumento recebe pelo mesmo caminho do MIDI ao vivo (faixa de teclas, tecla base, velocidade, afinação). O
+  renderizador não aplica mapa MIDI nem grava essas notas como entrada (gravaria na faixa armada errada). Canal 0;
+  "todas as notas desligadas" é o CC 123. No protocolo remoto: `note_on`, `note_off` e `all_notes_off`, aplicadas na hora
+  e em ordem (não juntadas como `param`). O fake guarda `live_notes()` e `held_live_notes()` para os testes.

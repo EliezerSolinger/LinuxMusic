@@ -1290,7 +1290,7 @@ impl CompilerCore {
         }
 
         // ---- Tracks
-        for t in &tracks {
+        for (ordinal, t) in tracks.iter().enumerate() {
             let Some(tid) = id_of(t) else { continue };
             if flag(t, "folder", false) {
                 continue;
@@ -1351,6 +1351,9 @@ impl CompilerCore {
                     if keys != lm_render::LiveKeys::default() {
                         plan.live_keys.push((p, keys));
                     }
+                    // The interface's own live notes (the instrument window's keyboard, the computer keyboard, the
+                    // piano roll, I-15 `note_on`): one port per track, always routed, armed or not
+                    plan.ports.push((lm_render::gui_port(ordinal), p, None, None));
                     // The live input (I-21.1, F-IJN-017): armed or monitored, or following the selection; its ports
                     // (the instrument ports when none), its channel and fixed velocity
                     let input = t.get("midiInput").filter(|i| !i.is_null());

@@ -2243,3 +2243,71 @@ fn importing_and_exporting_midi(cx: &mut TestAppContext) {
     }
     assert!(lm_smf::read(&std::fs::read(&out).unwrap()).is_ok());
 }
+
+// --- live notes from the interface (P2, I-15) ----------------------------------------------------------------------
+
+/// The workspace on a fake whose live-note log the test reads
+fn open_live(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTestContext, lm_port_fake::LiveLog) {
+    let fake =
+        FakePort::new(Config { tracks: 12, slow_delay: None, slow_track: usize::MAX }).expect("the demo project");
+    let log = fake.live_log();
+    let prefs = fake.preferences().clone();
+    cx.update(|cx| workspace::start(cx, &prefs));
+    let mut p: Option<Box<dyn CorePort>> = Some(Box::new(fake));
+    let (ws, vcx) = cx.add_window_view(move |window, cx| Workspace::new(p.take().unwrap(), window, cx));
+    vcx.run_until_parked();
+    (ws, vcx, log)
+}
+
+/// The instrument window's test keyboard: a press sounds the key, the release (even outside the keys) ends it
+#[gpui::test]
+fn instrument_keyboard_plays_and_releases(cx: &mut TestAppContext) {
+    let (ws, cx, log) = open_live(cx);
+    let (track, _) = triple(&ws, cx);
+    open_screen(&ws, cx, Screen::Instrument, Some(track));
+    click(cx, "iw-keyboard");
+    let p = center(cx, "iw-keys");
+    cx.simulate_mouse_down(p, MouseButton::Left, Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(log.held().len(), 1, "one key sounds while the button is down");
+    assert_eq!(log.held()[0].0, track);
+    cx.simulate_mouse_up(point(p.x, p.y + px(400.)), MouseButton::Left, Modifiers::none());
+    cx.run_until_parked();
+    assert!(log.held().is_empty(), "no note sticks after the release");
+}
+
+/// The computer keyboard is a piano in the instrument window (the legacy's layout): Z is the lowest key
+#[gpui::test]
+fn instrument_computer_keyboard(cx: &mut TestAppContext) {
+    let (ws, cx, log) = open_live(cx);
+    let (track, _) = triple(&ws, cx);
+    open_screen(&ws, cx, Screen::Instrument, Some(track));
+    cx.simulate_event(gpui::KeyDownEvent {
+        keystroke: gpui::Keystroke::parse("z").expect("a keystroke"),
+        is_held: false,
+        prefer_character_input: false,
+    });
+    cx.run_until_parked();
+    assert_eq!(log.held(), vec![(track, 36)]);
+    cx.simulate_event(gpui::KeyUpEvent { keystroke: gpui::Keystroke::parse("z").expect("a keystroke") });
+    cx.run_until_parked();
+    assert!(log.held().is_empty());
+}
+
+/// The kit picture of AVL Drums plays a piece on the click and ends it on the release
+#[gpui::test]
+fn kit_picture_plays(cx: &mut TestAppContext) {
+    let (ws, cx, log) = open_live(cx);
+    let t = model::tracks(&root(&ws, cx))
+        .into_iter()
+        .find(|t| t.instrument.as_ref().is_some_and(|(_, p)| &**p == "avldrums"));
+    let Some(t) = t else { return };
+    open_screen(&ws, cx, Screen::Instrument, Some(t.id));
+    let p = center(cx, "iw-kit");
+    cx.simulate_mouse_down(p, MouseButton::Left, Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(log.held().len(), 1);
+    cx.simulate_mouse_up(p, MouseButton::Left, Modifiers::none());
+    cx.run_until_parked();
+    assert!(log.held().is_empty());
+}

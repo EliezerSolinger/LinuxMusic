@@ -982,6 +982,12 @@ pub trait CorePort {
     fn gesture_commit(&mut self, g: GestureId);
     fn gesture_cancel(&mut self, g: GestureId);
     fn param_write(&mut self, node: NodeId, param: &str, value: f32);   // live, while dragging
+    // Live notes (the test keyboard, the computer keyboard, the piano roll): data only, never waits, no answer. A
+    // MIDI command to the track's instrument on the track's own port, like live MIDI input; the interface releases
+    // every note it started (mouse-up, focus loss, window closed)
+    fn note_on(&mut self, track: NodeId, key: u8, velocity: u8);
+    fn note_off(&mut self, track: NodeId, key: u8);
+    fn all_notes_off(&mut self, track: NodeId);
     // Long operations, notices, telemetry, heavy data
     fn loading(&self, target: &Target) -> Loading;
     fn activity(&self) -> Vec<OperationInfo>;

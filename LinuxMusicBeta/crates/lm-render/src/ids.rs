@@ -35,6 +35,22 @@ pub struct ParamSlot(pub u32);
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PortIndex(pub u16);
 
+/// The first port index of the interface's own live notes (I-15 `note_on`): the port of track number `n` (its place in
+/// the tree's track list) is `GUI_PORT_BASE + n`. Device ports are numbered from 0 by the session and never reach this
+pub const GUI_PORT_BASE: u16 = 0x8000;
+
+/// The live-note port of the track at `ordinal` in the tree's track list
+pub fn gui_port(ordinal: usize) -> PortIndex {
+    PortIndex(GUI_PORT_BASE.saturating_add(u16::try_from(ordinal).unwrap_or(u16::MAX >> 1).min(0x7FFF)))
+}
+
+impl PortIndex {
+    /// Whether this is an interface live-note port (no mapping, no recording: those are for devices)
+    pub fn is_gui(self) -> bool {
+        self.0 >= GUI_PORT_BASE
+    }
+}
+
 /// One of the fixed command producers (`< Limits::max_command_producers`); 0 is the main thread's (I-7.1)
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ProducerIndex(pub u16);

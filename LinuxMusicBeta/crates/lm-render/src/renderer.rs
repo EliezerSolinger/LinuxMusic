@@ -1661,8 +1661,9 @@ impl Renderer {
             let first = self.program.ports.partition_point(|r| r.port < m.port);
             let routes = first..self.program.ports.partition_point(|r| r.port <= m.port);
             let note_off = status == 0x80 || (status == 0x90 && vel == 0);
-            let consumed = self.map_message(m, offset);
-            if !consumed && self.transport.recording {
+            // The interface's notes are not a device: no mapping takes them, and they are not recorded as input
+            let consumed = !m.port.is_gui() && self.map_message(m, offset);
+            if !consumed && !m.port.is_gui() && self.transport.recording {
                 self.record_midi(m, offset);
             }
             if note_off {

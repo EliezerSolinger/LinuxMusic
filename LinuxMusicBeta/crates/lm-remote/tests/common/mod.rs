@@ -128,6 +128,15 @@ impl CorePort for TestCore {
     fn param_write(&mut self, node: NodeId, param: &str, value: f32) {
         self.fake.param_write(node, param, value)
     }
+    fn note_on(&mut self, track: NodeId, key: u8, velocity: u8) {
+        self.fake.note_on(track, key, velocity)
+    }
+    fn note_off(&mut self, track: NodeId, key: u8) {
+        self.fake.note_off(track, key)
+    }
+    fn all_notes_off(&mut self, track: NodeId) {
+        self.fake.all_notes_off(track)
+    }
     fn loading(&self, target: &Target) -> Loading {
         self.fake.loading(target)
     }

@@ -932,6 +932,31 @@ impl Server {
                 }
                 Ok(())
             }
+            // Live notes go through at once and in order (never coalesced like the parameter writes)
+            "note_on" => {
+                Self::need(role, Role::Control)?;
+                let track = c::id_from(get(msg, "track")?)?;
+                let key = u8::try_from(uint(msg, "key")?).map_err(|_| Error::new("remote.note.key"))?;
+                let velocity = u8::try_from(uint(msg, "velocity")?).map_err(|_| Error::new("remote.note.velocity"))?;
+                if key < 128 && (1..128).contains(&velocity) {
+                    port.note_on(track, key, velocity);
+                }
+                Ok(())
+            }
+            "note_off" => {
+                Self::need(role, Role::Control)?;
+                let track = c::id_from(get(msg, "track")?)?;
+                let key = u8::try_from(uint(msg, "key")?).map_err(|_| Error::new("remote.note.key"))?;
+                if key < 128 {
+                    port.note_off(track, key);
+                }
+                Ok(())
+            }
+            "all_notes_off" => {
+                Self::need(role, Role::Control)?;
+                port.all_notes_off(c::id_from(get(msg, "track")?)?);
+                Ok(())
+            }
             "cancel" => {
                 Self::need(role, Role::Control)?;
                 port.cancel(OperationId(uint(msg, "op")?));

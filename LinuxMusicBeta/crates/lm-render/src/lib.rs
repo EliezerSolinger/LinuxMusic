@@ -43,7 +43,7 @@ pub use dummy::Dummy;
 pub use engine::{EngineControl, engine, engine_with};
 pub use event::{Event, EventKind, Expression};
 pub use exec::Watch;
-pub use ids::{NodeIndex, NoteId, ParamSlot, PortIndex, PreviewId, ProducerIndex, ProgramGen};
+pub use ids::{GUI_PORT_BASE, NodeIndex, NoteId, ParamSlot, PortIndex, PreviewId, ProducerIndex, ProgramGen, gui_port};
 pub use install::{Install, NodeCore, Relocate, Retired, Returned};
 pub use midimap::{MapEvent, MapTarget, MidiMap, MidiOutEvent, ParamRange, RangeScale, RecordedMidi};
 pub use panic::{install_panic_hook, is_render_thread};

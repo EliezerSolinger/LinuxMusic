@@ -36,7 +36,7 @@ const HEADER_H: f32 = 18.0;
 const NAMES_W: f32 = 150.0;
 
 /// The General MIDI drum map: the pieces a drum kit's item shows (the instrument plays them by these keys)
-const GM_DRUMS: &[(u8, &str)] = &[
+pub(crate) const GM_DRUMS: &[(u8, &str)] = &[
     (36, "Kick"),
     (37, "Side stick"),
     (38, "Snare"),

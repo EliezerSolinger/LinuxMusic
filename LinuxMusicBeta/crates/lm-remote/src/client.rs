@@ -1085,6 +1085,25 @@ impl CorePort for RemotePort {
         ));
     }
 
+    fn note_on(&mut self, track: NodeId, key: u8, velocity: u8) {
+        self.send(&Self::message(
+            "note_on",
+            [
+                ("track", c::id_to(track)),
+                ("key", Value::int(i64::from(key))),
+                ("velocity", Value::int(i64::from(velocity))),
+            ],
+        ));
+    }
+
+    fn note_off(&mut self, track: NodeId, key: u8) {
+        self.send(&Self::message("note_off", [("track", c::id_to(track)), ("key", Value::int(i64::from(key)))]));
+    }
+
+    fn all_notes_off(&mut self, track: NodeId) {
+        self.send(&Self::message("all_notes_off", [("track", c::id_to(track))]));
+    }
+
     fn loading(&self, target: &Target) -> Loading {
         if let Some(l) = self.loadings.borrow().get(target) {
             return l.clone();

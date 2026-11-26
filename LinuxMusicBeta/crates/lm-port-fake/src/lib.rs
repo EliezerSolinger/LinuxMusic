@@ -84,6 +84,47 @@ struct Transport {
     take_start: i64,
 }
 
+/// A live note the interface sent to the fake (I-15 `note_on`, `note_off`, `all_notes_off`)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LiveNote {
+    On { track: NodeId, key: u8, velocity: u8 },
+    Off { track: NodeId, key: u8 },
+    AllOff { track: NodeId },
+}
+
+/// The log of the live notes a [`FakePort`] got, shared with whoever keeps a handle to it
+#[derive(Clone, Debug, Default)]
+pub struct LiveLog(Arc<std::sync::Mutex<Vec<LiveNote>>>);
+
+impl LiveLog {
+    fn push(&self, n: LiveNote) {
+        if let Ok(mut v) = self.0.lock() {
+            v.push(n);
+        }
+    }
+
+    /// Every live note, in the order it was sent
+    pub fn all(&self) -> Vec<LiveNote> {
+        self.0.lock().map(|v| v.clone()).unwrap_or_default()
+    }
+
+    /// The keys sounding now (a note-on not yet ended by its note-off or an all-notes-off), as `(track, key)`
+    pub fn held(&self) -> Vec<(NodeId, u8)> {
+        let mut held: Vec<(NodeId, u8)> = Vec::new();
+        for n in self.all() {
+            match n {
+                LiveNote::On { track, key, .. } => {
+                    held.retain(|h| *h != (track, key));
+                    held.push((track, key));
+                }
+                LiveNote::Off { track, key } => held.retain(|h| *h != (track, key)),
+                LiveNote::AllOff { track } => held.retain(|h| h.0 != track),
+            }
+        }
+        held
+    }
+}
+
 /// The fake port
 pub struct FakePort {
     doc: Document,
@@ -113,6 +154,8 @@ pub struct FakePort {
     real_plugins: Vec<(Arc<str>, bool)>,
     /// The last `param_write` (not cleared at the gesture's end, for the plugin panels' tests)
     last_write: Option<(NodeId, String, f32)>,
+    /// Every live note the interface sent, in order, and the keys still held
+    notes_log: LiveLog,
     /// The interface document (I-3.8)
     ui: Value,
     outside: midi::Outside,
@@ -210,6 +253,7 @@ impl FakePort {
             live: HashMap::new(),
             real_plugins,
             last_write: None,
+            notes_log: LiveLog::default(),
         };
         port.push_notice("Autosaved {0}", vec![("time", Value::text("12:04"))], Severity::Info, None, Vec::new());
         if let Some(delay) = config.slow_delay
@@ -1102,6 +1146,18 @@ impl CorePort for FakePort {
         self.last_write = Some((node, param.to_string(), value));
     }
 
+    fn note_on(&mut self, track: NodeId, key: u8, velocity: u8) {
+        self.notes_log.push(LiveNote::On { track, key, velocity });
+    }
+
+    fn note_off(&mut self, track: NodeId, key: u8) {
+        self.notes_log.push(LiveNote::Off { track, key });
+    }
+
+    fn all_notes_off(&mut self, track: NodeId) {
+        self.notes_log.push(LiveNote::AllOff { track });
+    }
+
     fn loading(&self, target: &Target) -> Loading {
         // aggregation (T10): an item is loading while one of its lanes' resources is
         let item_resources = |id: NodeId| -> Vec<Resource> {
@@ -1439,6 +1495,11 @@ impl FakePort {
     /// The last value written by `param_write`: node, key, value
     pub fn last_param_write(&self) -> Option<(NodeId, &str, f32)> {
         self.last_write.as_ref().map(|(n, k, v)| (*n, k.as_str(), *v))
+    }
+
+    /// The live notes the interface sent (a handle that outlives the boxed port, for tests)
+    pub fn live_log(&self) -> LiveLog {
+        self.notes_log.clone()
     }
 
     pub fn pumps(&self) -> u64 {
