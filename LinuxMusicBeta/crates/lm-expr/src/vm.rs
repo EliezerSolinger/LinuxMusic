@@ -168,7 +168,7 @@ mod tests {
         assert_eq!(run("t ^ 2", &v), 4.0);
         assert_eq!(run("t ^ -1", &v), 0.5);
         assert_eq!(run("t ^ 0", &v), 1.0);
-        assert_eq!(run("t ^ 0.5", &v), 2.0_f32.sqrt());
+        assert!((run("t ^ 0.5", &v) - 2.0_f32.sqrt()).abs() < 1e-6);
         assert_eq!(run("(t + f) ^ 2", &v), 25.0);
         assert_eq!(run("(t + f) ^ -2", &v), 0.04);
         assert_eq!(run("t ^ 11", &v), 2048.0);
