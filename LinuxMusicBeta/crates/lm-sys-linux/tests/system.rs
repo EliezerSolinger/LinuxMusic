@@ -42,18 +42,37 @@ fn a_locked_buffer_within_the_limit_is_usable() {
     assert!(empty.is_empty());
 }
 
+/// Whether the process may lock memory beyond `RLIMIT_MEMLOCK`: root, or `CAP_IPC_LOCK` (bit 14 of `CapEff`)
+fn can_override_memlock() -> bool {
+    if is_root() {
+        return true;
+    }
+    let Ok(status) = std::fs::read_to_string("/proc/self/status") else { return false };
+    status
+        .lines()
+        .find_map(|l| l.strip_prefix("CapEff:"))
+        .and_then(|hex| u64::from_str_radix(hex.trim(), 16).ok())
+        .is_some_and(|caps| caps & (1 << 14) != 0)
+}
+
 #[test]
 fn locking_beyond_the_limit_fails_clearly() {
-    let limit = memlock_limit().expect("limit");
-    let Some(soft) = limit.soft else {
-        eprintln!("SKIPPED: RLIMIT_MEMLOCK is unlimited here; nothing to exceed");
-        return;
-    };
-    if is_root() || soft > 1 << 30 {
-        eprintln!("SKIPPED: root (CAP_IPC_LOCK) or a limit too large to exceed in a test ({soft})");
+    let mut rl = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    // SAFETY: `rl` is a valid out-pointer for the call
+    let got = unsafe { libc::getrlimit(libc::RLIMIT_MEMLOCK, &mut rl) };
+    assert_eq!(got, 0, "getrlimit(RLIMIT_MEMLOCK)");
+    let soft = rl.rlim_cur;
+    if rl.rlim_cur == libc::RLIM_INFINITY || soft > 1 << 30 {
+        eprintln!("SKIPPED: RLIMIT_MEMLOCK is unlimited or too large to exceed in a test ({soft})");
         return;
     }
-    let e = LockedBuffer::<u8>::zeroed(soft as usize * 2 + 4096).expect_err("twice the limit");
+    if can_override_memlock() {
+        eprintln!("SKIPPED: root or CAP_IPC_LOCK lets the process lock beyond the limit ({soft})");
+        return;
+    }
+    // More than the limit, whatever it is
+    let bytes = soft as usize * 2 + 1024 * 1024;
+    let e = LockedBuffer::<u8>::zeroed(bytes).expect_err("more than the limit");
     assert_eq!(e.key(), "linux.memlock.denied", "{e}");
 }
 
