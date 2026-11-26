@@ -6,6 +6,11 @@
 //! clip.glue        { items: [text] }                MIDI items of one track become the first one (F-CLP-022)
 //! clip.transpose   { items: [text], semitones: int }  every note, kept inside 0..=127 (F-CLP-023)
 //! clip.clear_notes { items: [text] }                every note out
+//! clip.trim_notes { items: [text] }                 the notes past the item's end out, the last ones cut to it (F-CLP-022)
+//! clip.relocate    { items: [text], delta: int, tracks?: [text], copy?: bool }  items by `delta` ticks, each to its
+//!                  track of `tracks` (same index; absent: where it is), or copies (F-CLP-004, F-CLP-005)
+//! track.move       { track: text, to: int, parent?: text|null, copy?: bool }  the track (with the tracks inside it)
+//!                  before the `to`th track of the list, in the folder `parent` (F-TRK-029)
 //! track.clone      { track: text }                  a copy of the track right below it (F-TRK-031)
 //! track.clear      { track: text }                  every item out (F-TRK-031)
 //! ```
@@ -69,6 +74,36 @@ pub static ACTIONS: &[ActionSpec] = &[
         id: "clip.clear_notes",
         label: "action.clip.clear_notes",
         run: |s, p| s.clear_notes(&nodes(p, "items")?),
+        enabled: writable,
+    },
+    ActionSpec {
+        id: "clip.trim_notes",
+        label: "action.clip.trim_notes",
+        run: |s, p| s.trim_notes(&nodes(p, "items")?),
+        enabled: writable,
+    },
+    ActionSpec {
+        id: "clip.relocate",
+        label: "action.clip.relocate",
+        run: |s, p| {
+            let tracks = if p.get("tracks").is_some() { nodes(p, "tracks")? } else { Vec::new() };
+            let copy = p.get("copy").and_then(Value::as_bool).unwrap_or(false);
+            s.relocate_items(&nodes(p, "items")?, int(p, "delta", 0), &tracks, copy).map(|_| ())
+        },
+        enabled: writable,
+    },
+    ActionSpec {
+        id: "track.move",
+        label: "action.track.move",
+        run: |s, p| {
+            let to = usize::try_from(int(p, "to", 0)).map_err(|_| params())?;
+            let parent = match p.get("parent") {
+                Some(v) if !v.is_null() => Some(node(p, "parent")?),
+                _ => None,
+            };
+            let copy = p.get("copy").and_then(Value::as_bool).unwrap_or(false);
+            s.move_track(node(p, "track")?, to, parent, copy)
+        },
         enabled: writable,
     },
     ActionSpec {
@@ -300,6 +335,193 @@ impl Session {
             .transact(Label::new("action.track.clear"), |e| {
                 for id in &ids {
                     e.remove(*id)?;
+                }
+                Ok(())
+            })
+            .map(|_| ())
+    }
+
+    /// "Cut what is left over" (F-CLP-022): the notes that start at or after the item's end out, those that cross it
+    /// cut to it. One undo step
+    pub fn trim_notes(&mut self, items: &[NodeId]) -> Result<()> {
+        let mut plan = Vec::new();
+        for id in items {
+            let v = self.document().find(*id).ok_or_else(|| Error::new("action.no_such_node"))?;
+            let length = int(&v, "length", 1);
+            for (n, note) in notes_of(&v) {
+                let (start, len) = (int(&note, "start", 0), int(&note, "length", 1));
+                if start >= length {
+                    plan.push((*id, n, None));
+                } else if start + len > length {
+                    plan.push((*id, n, Some(length - start)));
+                }
+            }
+        }
+        self.document_mut()
+            .transact(Label::new("action.clip.trim_notes"), |e| {
+                for (id, n, cut) in &plan {
+                    match cut {
+                        None => e.remove_note(*id, *n)?,
+                        Some(len) => e.set_note(*id, *n, &[PathStep::key("length")], Value::int(*len))?,
+                    }
+                }
+                Ok(())
+            })
+            .map(|_| ())
+    }
+
+    /// Items moved by `delta` ticks, each to the track `tracks[i]` (absent: its own), or copies of them there
+    /// (F-CLP-004, F-CLP-005). All or nothing: a MIDI item goes only to an instrument track, an audio item only to an
+    /// audio one, none to a folder (error `clip.relocate.kind`). One undo step; the ids of the items or the copies
+    pub fn relocate_items(
+        &mut self,
+        items: &[NodeId],
+        delta: i64,
+        tracks: &[NodeId],
+        copy: bool,
+    ) -> Result<Vec<NodeId>> {
+        if items.is_empty() {
+            return Err(Error::new("clip.relocate.empty"));
+        }
+        let map = tempo_map(self.document().root())?;
+        struct Plan {
+            id: NodeId,
+            from: NodeId,
+            target: NodeId,
+            start: i64,
+            clip: lm_doc::Clip,
+        }
+        let mut plans = Vec::new();
+        for (i, id) in items.iter().enumerate() {
+            let v = self.document().find(*id).ok_or_else(|| Error::new("action.no_such_node"))?;
+            let from = self.document().loc(*id).map(|l| l.parent).ok_or_else(|| Error::new("action.no_such_node"))?;
+            let target = tracks.get(i).copied().unwrap_or(from);
+            if target != from {
+                let t = self.document().find(target).ok_or_else(|| Error::new("action.no_such_node"))?;
+                let folder = t.get("folder").and_then(Value::as_bool).unwrap_or(false);
+                let instrument = t.get("instrument").is_some_and(|x| !x.is_null());
+                let audio = v.get("kind").and_then(Value::as_text) == Some("audio");
+                if folder || audio == instrument {
+                    return Err(Error::new("clip.relocate.kind").arg("track", target.to_string()));
+                }
+            }
+            let start = int(&v, "start", 0);
+            let start = if v.get("timebase").and_then(Value::as_text) == Some("audio") {
+                map.sample_at((map.tick_at(start) + delta).max(0))
+            } else {
+                (start + delta).max(0)
+            };
+            plans.push(Plan { id: *id, from, target, start, clip: self.document().copy(*id)? });
+        }
+        let mut made = Vec::new();
+        let label = if copy { "action.clip.copy_to" } else { "action.clip.relocate" };
+        self.document_mut().transact(Label::new(label), |e| {
+            for p in &plans {
+                let n = e.find(p.target).and_then(|t| t.get("items")).map_or(0, Value::len);
+                let id = if copy {
+                    e.paste(p.target, "items", n, &p.clip)?.ok_or_else(|| Error::new("clip.relocate.refused"))?
+                } else {
+                    if p.target != p.from {
+                        e.move_to(p.id, p.target, "items", n)?;
+                    }
+                    p.id
+                };
+                e.set(id, &[PathStep::key("start")], Value::int(p.start))?;
+                made.push(id);
+            }
+            Ok(())
+        })?;
+        Ok(made)
+    }
+
+    /// Moves a track, with the tracks inside it when it is a folder, before the `to`th track of the list (a position
+    /// of the list as it is now), into the folder `parent` (none: out of every folder); `copy` makes a copy there
+    /// instead (the folder's tracks stay). Errors: `track.move.parent` (not a folder, or the track or one of its own),
+    /// `track.move.into_itself` (dropped inside its own block), `track.move.index`
+    pub fn move_track(&mut self, track: NodeId, to: usize, parent: Option<NodeId>, copy: bool) -> Result<()> {
+        let root = self.document().root().clone();
+        let list: Vec<(NodeId, Option<NodeId>)> = root
+            .get("tracks")
+            .map(|l| {
+                l.items()
+                    .filter_map(|t| {
+                        let id = NodeId::parse(t.get("id")?.as_text()?).ok()?;
+                        let parent = t.get("parent").and_then(Value::as_text).and_then(|x| NodeId::parse(x).ok());
+                        Some((id, parent))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let pos = list.iter().position(|(id, _)| *id == track).ok_or_else(|| Error::new("action.no_such_node"))?;
+        if to > list.len() {
+            return Err(Error::new("track.move.index").arg("index", to as i64));
+        }
+        // the track and everything inside it
+        let inside = |mut at: Option<NodeId>| {
+            while let Some(a) = at {
+                if a == track {
+                    return true;
+                }
+                at = list.iter().find(|(id, _)| *id == a).and_then(|(_, p)| *p);
+            }
+            false
+        };
+        let block: Vec<NodeId> =
+            list.iter().filter(|(id, p)| *id == track || (!copy && inside(*p))).map(|(id, _)| *id).collect();
+        if let Some(p) = parent {
+            let folder = self.document().find(p).and_then(|t| t.get("folder").and_then(Value::as_bool)) == Some(true);
+            if !folder || p == track || inside(Some(p)) {
+                return Err(Error::new("track.move.parent").arg("track", p.to_string()));
+            }
+        }
+        let mut order: Vec<NodeId> = list.iter().map(|(id, _)| *id).collect();
+        let current_parent = list[pos].1;
+        if copy {
+            let clip = self.document().copy(track)?;
+            let at = to.min(order.len());
+            return self
+                .document_mut()
+                .transact(Label::new("action.track.move"), |e| {
+                    let made = e.paste(ROOT, "tracks", at, &clip)?.ok_or_else(|| Error::new("track.move.refused"))?;
+                    e.set(
+                        made,
+                        &[PathStep::key("parent")],
+                        parent.map_or(Value::NULL, |p| Value::text(p.to_string())),
+                    )?;
+                    Ok(())
+                })
+                .map(|_| ());
+        }
+        let first = order.iter().position(|id| block.contains(id)).unwrap_or(pos);
+        let last = order.iter().rposition(|id| block.contains(id)).unwrap_or(first);
+        if to > first && to <= last {
+            return Err(Error::new("track.move.into_itself"));
+        }
+        let before = order[..to.min(order.len())].iter().filter(|id| !block.contains(id)).count();
+        order.retain(|id| !block.contains(id));
+        for (k, id) in block.iter().enumerate() {
+            order.insert(before + k, *id);
+        }
+        let moved = order.iter().zip(list.iter()).any(|(a, (b, _))| a != b);
+        if !moved && parent == current_parent {
+            return Ok(());
+        }
+        self.document_mut()
+            .transact(Label::new("action.track.move"), |e| {
+                for (i, id) in order.iter().enumerate() {
+                    let here = e.find(ROOT).and_then(|r| r.get("tracks")).and_then(|l| {
+                        l.items().position(|t| t.get("id").and_then(Value::as_text) == Some(&id.to_string()))
+                    });
+                    if here != Some(i) {
+                        e.move_to(*id, ROOT, "tracks", i)?;
+                    }
+                }
+                if parent != current_parent {
+                    e.set(
+                        track,
+                        &[PathStep::key("parent")],
+                        parent.map_or(Value::NULL, |p| Value::text(p.to_string())),
+                    )?;
                 }
                 Ok(())
             })

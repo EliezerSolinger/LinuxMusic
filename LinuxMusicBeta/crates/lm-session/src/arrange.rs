@@ -2,7 +2,9 @@
 //! transaction, one undo step, and keeps the item's notes, control lanes, takes and comp coherent.
 //!
 //! ```text
-//! arrange.split      { item: text | items: [text], tick: int }  one undo step; `items: []` = every item there
+//! arrange.split      { item: text | items: [text], tick: int, cutNotes?: bool }  one undo step; `items: []` = every
+//!                    item there; `cutNotes`: the MIDI split of the knife with Shift, the notes across the cut are
+//!                    cut in two (F-CLP-007)
 //! arrange.duplicate  { item: text | items: [text] }             the group after itself, whole bars later
 //! arrange.copy       { items: [text] }                  the session's clipboard (F-ARR-006)
 //! arrange.cut        { items: [text] }                  copy, then remove them (one step)
@@ -61,7 +63,8 @@ pub static ACTIONS: &[ActionSpec] = &[
         label: "action.arrange.split",
         run: |s, p| {
             let tick = p.get("tick").and_then(Value::as_int).ok_or_else(|| Error::new("action.params"))?;
-            s.split_items(&items_param(p)?, tick).map(|_| ())
+            let cut_notes = p.get("cutNotes").and_then(Value::as_bool).unwrap_or(false);
+            s.split_items_with(&items_param(p)?, tick, cut_notes).map(|_| ())
         },
         enabled: writable,
     },
@@ -129,6 +132,13 @@ fn note_starts(item: &Value) -> Vec<(u64, i64)> {
         .unwrap_or_default()
 }
 
+/// The ids of the notes of an item with their length
+fn note_lengths(item: &Value) -> Vec<(u64, i64)> {
+    item.get("notes")
+        .map(|m| m.entries().filter_map(|(n, v)| Some((n.parse().ok()?, v.get("length")?.as_int()?))).collect())
+        .unwrap_or_default()
+}
+
 impl Session {
     /// Splits an item at a timeline tick (S, F-ARR-005). The right part is a copy of the item: each side keeps the
     /// notes that start in it, the control points and comp segments inside it (moved to its own start), and an
@@ -143,6 +153,12 @@ impl Session {
     /// empty list: every item the tick is inside, F-ARR-005). The right parts' ids. Error: `arrange.split.outside`
     /// when the tick is inside none of them
     pub fn split_items(&mut self, items: &[NodeId], tick: i64) -> Result<Vec<NodeId>> {
+        self.split_items_with(items, tick, false)
+    }
+
+    /// [`Session::split_items`]; with `cut_notes` the notes that cross the cut of a MIDI item are really cut: the left
+    /// one ends at the cut and a new note on the right begins there (the destructive split, F-CLP-007)
+    pub fn split_items_with(&mut self, items: &[NodeId], tick: i64, cut_notes: bool) -> Result<Vec<NodeId>> {
         let root = self.document().root().clone();
         let map = tempo_map(&root)?;
         let all: Vec<NodeId>;
@@ -169,7 +185,7 @@ impl Session {
             let skip = if audio_time { cut } else { map.sample_at(start + cut) - map.sample_at(start) };
             let loc = self.document().loc(*item).cloned().ok_or_else(|| Error::new("action.no_such_node"))?;
             let clip = self.document().copy(*item)?;
-            plans.push(SplitPlan { item: *item, at, cut, length, skip, repeat, loc, clip });
+            plans.push(SplitPlan { item: *item, at, cut, length, skip, repeat, cut_notes, loc, clip });
         }
         if plans.is_empty() {
             return Err(Error::new("arrange.split.outside").arg("tick", tick));
@@ -193,6 +209,7 @@ struct SplitPlan {
     length: i64,
     skip: i64,
     repeat: Option<i64>,
+    cut_notes: bool,
     loc: lm_doc::Loc,
     clip: lm_doc::Clip,
 }
@@ -212,7 +229,7 @@ fn all_items(root: &Value) -> Vec<NodeId> {
 }
 
 fn split_in(e: &mut lm_doc::Edit<'_>, p: &SplitPlan) -> Result<NodeId> {
-    let SplitPlan { item, at, cut, length, skip, repeat, ref loc, ref clip } = *p;
+    let SplitPlan { item, at, cut, length, skip, repeat, cut_notes, ref loc, ref clip } = *p;
     let k = PathStep::key;
     let list = loc.container.join(".");
     let index = e
@@ -230,7 +247,20 @@ fn split_in(e: &mut lm_doc::Edit<'_>, p: &SplitPlan) -> Result<NodeId> {
     // whole pattern, turned so that it begins where the cut fell in it
     for (side, left) in [(item, true), (right, false)] {
         let notes = e.find(side).map(note_starts).unwrap_or_default();
+        let lengths = e.find(side).map(note_lengths).unwrap_or_default();
         for (n, s0) in notes {
+            let len = lengths.iter().find(|(m, _)| *m == n).map_or(1, |(_, l)| *l);
+            let crossing = cut_notes && repeat.is_none() && s0 < cut && s0 + len > cut;
+            if crossing {
+                // the destructive split: the left note ends at the cut, the right one begins there
+                if left {
+                    e.set_note(side, n, &[k("length")], Value::int(cut - s0))?;
+                } else {
+                    e.set_note(side, n, &[k("start")], Value::int(0))?;
+                    e.set_note(side, n, &[k("length")], Value::int(s0 + len - cut))?;
+                }
+                continue;
+            }
             match (left, repeat) {
                 (true, _) if s0 >= cut => e.remove_note(side, n)?,
                 (true, _) => {}

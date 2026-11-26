@@ -163,7 +163,8 @@ pub static ACTIONS: &[ActionSpec] = &[
         label: "action.midi.export",
         run: |s, p| {
             let only = p.get("track").and_then(Value::as_text).and_then(|t| NodeId::parse(t).ok());
-            let _ = s.midi_export(PathBuf::from(text(p, "path")?), only);
+            let item = p.get("item").and_then(Value::as_text).and_then(|t| NodeId::parse(t).ok());
+            let _ = s.midi_export_of(PathBuf::from(text(p, "path")?), only, item);
             Ok(())
         },
         enabled: always,

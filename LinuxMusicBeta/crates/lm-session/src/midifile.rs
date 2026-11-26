@@ -303,6 +303,12 @@ pub fn apply_plan(plan: &Value, at: i64, e: &mut lm_doc::Edit<'_>) -> Result<Vec
 /// The project's notes as a type-1 MIDI file (F-PRJ-021): the tempo map in the first track, then one track per
 /// instrument track (or only `only`, "export the track as MIDI"), channels in order skipping 10
 pub fn write_smf(root: &Value, only: Option<NodeId>) -> Vec<u8> {
+    write_smf_of(root, only, None)
+}
+
+/// [`write_smf`] with only one item's notes ("export the clip as MIDI", F-CLP-008): the item's track alone, the item
+/// at the file's start
+pub fn write_smf_of(root: &Value, only: Option<NodeId>, only_item: Option<NodeId>) -> Vec<u8> {
     let ppq = root.get("project").and_then(|p| p.get("ppq")).and_then(Value::as_int).unwrap_or(960).clamp(1, 32767);
     let mut tempo = Track::default();
     for p in root.get("tempoMap").into_iter().flat_map(Value::items) {
@@ -330,12 +336,14 @@ pub fn write_smf(root: &Value, only: Option<NodeId>) -> Vec<u8> {
         let name = t.get("name").and_then(Value::as_text).unwrap_or("").to_string();
         out.events.push(Timed { tick: 0, event: Event::TrackName(name) });
         for item in t.get("items").into_iter().flat_map(Value::items) {
+            let item_id = item.get("id").and_then(Value::as_text).and_then(|x| NodeId::parse(x).ok());
             if item.get("kind").and_then(Value::as_text) != Some("midi")
-                || item.get("mute").and_then(Value::as_bool) == Some(true)
+                || (only_item.is_none() && item.get("mute").and_then(Value::as_bool) == Some(true))
+                || only_item.is_some_and(|o| Some(o) != item_id)
             {
                 continue;
             }
-            let start = item.get("start").and_then(Value::as_int).unwrap_or(0);
+            let start = if only_item.is_some() { 0 } else { item.get("start").and_then(Value::as_int).unwrap_or(0) };
             let length = item.get("length").and_then(Value::as_int).unwrap_or(0);
             let Some(notes) = item.get("notes") else { continue };
             for (_, n) in notes.entries() {
@@ -378,6 +386,16 @@ impl crate::session::Session {
 
     /// "midi.export": writes the project's (or one track's) notes to `path` in an operation (F-PRJ-021)
     pub fn midi_export(&mut self, path: std::path::PathBuf, only: Option<NodeId>) -> lm_base::OperationId {
+        self.midi_export_of(path, only, None)
+    }
+
+    /// [`Session::midi_export`] of one item only (F-CLP-008)
+    pub fn midi_export_of(
+        &mut self,
+        path: std::path::PathBuf,
+        only: Option<NodeId>,
+        item: Option<NodeId>,
+    ) -> lm_base::OperationId {
         let root = self.document().root().clone();
         self.start(
             lm_base::Label::new("session.midi.exporting"),
@@ -385,7 +403,7 @@ impl crate::session::Session {
             false,
             "midi_export",
             move |_, _| {
-                let bytes = write_smf(&root, only);
+                let bytes = write_smf_of(&root, only, item);
                 let tmp = path.with_extension("mid.tmp");
                 std::fs::write(&tmp, &bytes).and_then(|_| std::fs::rename(&tmp, &path)).map_err(|e| {
                     Error::new("session.midi.write")
