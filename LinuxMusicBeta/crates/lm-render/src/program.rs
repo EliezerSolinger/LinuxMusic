@@ -740,6 +740,8 @@ pub struct Program {
     pub(crate) live_keys: Box<[(NodeIndex, LiveKeys)]>,
     /// The ports that are MPE zones, with the last expression values of their channels
     pub(crate) mpe: Box<[crate::mpe::MpePort]>,
+    /// By MIDI out route: the MPE zone of its port, with the channels of the sounding notes
+    pub(crate) midi_mpe: Box<[Option<crate::mpe::MpeOut>]>,
     /// MIDI out to devices, by the node's program index
     pub(crate) midi_out: Box<[(u32, MidiOutRoute)]>,
     /// For each route, the key each sounding note was sent on (−1: none), by the note's key: its note-off ends that
@@ -1475,6 +1477,10 @@ impl ProgramBuilder {
             node_map,
             ports: ports.into_boxed_slice(),
             live_keys: self.live_keys.into_boxed_slice(),
+            midi_mpe: midi_out
+                .iter()
+                .map(|(_, r)| self.mpe.iter().find(|p| p.port == r.port).map(crate::mpe::MpeOut::new))
+                .collect(),
             mpe: self.mpe.into_boxed_slice(),
             midi_sent: vec![-1i8; midi_out.len() * 128].into_boxed_slice(),
             midi_out: midi_out.into_boxed_slice(),
