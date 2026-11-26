@@ -29,3 +29,5 @@ Nearest end = A ponta mais perto
 Handles = Alças
 Loop start here = Início do loop aqui
 Loop end here = Fim do loop aqui
+Fit to the notes = Ajustar às notas
+Default name = Nome padrão

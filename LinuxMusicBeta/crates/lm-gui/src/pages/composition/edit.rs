@@ -169,6 +169,9 @@ enum ClipCmd {
     ColorDefault,
     ColorRandom,
     TrimNotes,
+    Fit,
+    Rename,
+    DefaultName,
 }
 
 /// What the track's menu does (F-TRK-031)
@@ -220,6 +223,8 @@ pub(super) struct EditState {
     io_menu: Option<(NodeId, gpui::Point<Pixels>)>,
     /// The palette of 48 colours for a clip, the clips selected, or a track (F-CLP-008, F-TRK-031)
     palette: Option<(ColorTarget, gpui::Point<Pixels>)>,
+    /// The clip whose name is edited in place (F-CLP-024)
+    clip_rename: Option<(NodeId, Entity<InputState>, Subscription)>,
     /// Ctrl+drag on the ruler: the stretch to select, in ticks (F-REG-008)
     pub(super) ruler_select: Option<(i64, i64)>,
     /// The ruler's menu: the tick under the pointer and where it opened (F-REG-007)
@@ -245,6 +250,7 @@ impl Default for EditState {
             palette: None,
             loop_menu: None,
             ruler_select: None,
+            clip_rename: None,
             confirm_remove: None,
             loop_drag: None,
         }
@@ -391,6 +397,7 @@ impl CompositionPage {
 
     pub(super) fn select_none(&mut self, cx: &mut Context<Self>) {
         self.finish_rename(false, cx);
+        self.finish_clip_rename(false, cx);
         self.selected_item = None;
         self.ed.selection.clear();
         self.ed.close_menus();
@@ -1244,6 +1251,24 @@ impl CompositionPage {
             ClipCmd::TrimNotes => {
                 self.action("clip.trim_notes", Value::object([("items", Self::ids_value(&targets))]), cx)
             }
+            ClipCmd::Fit => self.action("clip.fit", Value::object([("items", Self::ids_value(&targets))]), cx),
+            ClipCmd::Rename => {
+                if let Some(i) = targets.first() {
+                    self.start_clip_rename(*i, window, cx);
+                }
+            }
+            ClipCmd::DefaultName => {
+                // back to the track's name (F-CLP-024)
+                let tracks = self.tracks(cx);
+                let ops = targets
+                    .iter()
+                    .filter_map(|i| {
+                        let t = tracks.iter().find(|t| t.items.iter().any(|x| x.id == *i))?;
+                        Some(EditOp::set(*i, &["name"], Value::text(t.name.to_string())))
+                    })
+                    .collect();
+                self.apply("Rename clip", ops, cx);
+            }
             ClipCmd::ExportAudio => {
                 if let Some(i) = targets.first() {
                     self.export_item_audio(*i, window, cx);
@@ -1268,6 +1293,31 @@ impl CompositionPage {
                     .collect();
                 self.apply("Colour", ops, cx);
             }
+        }
+        cx.notify();
+    }
+
+    /// The clip's name edited in place, over the clip (F-CLP-024)
+    fn start_clip_rename(&mut self, item: NodeId, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(it) = self.tracks(cx).iter().flat_map(|t| t.items.iter()).find(|i| i.id == item).cloned() else {
+            return;
+        };
+        let state = cx.new(|cx| InputState::new(window, cx).default_value(it.name.to_string()));
+        state.update(cx, |s, cx| s.focus(window, cx));
+        let sub = cx.subscribe_in(&state, window, move |p: &mut CompositionPage, _, ev: &InputEvent, _, cx| {
+            if matches!(ev, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                p.finish_clip_rename(true, cx);
+            }
+        });
+        self.ed.clip_rename = Some((item, state, sub));
+        cx.notify();
+    }
+
+    pub(super) fn finish_clip_rename(&mut self, keep: bool, cx: &mut Context<Self>) {
+        let Some((id, state, _)) = self.ed.clip_rename.take() else { return };
+        let name = state.read(cx).value().trim().to_string();
+        if keep && !name.is_empty() {
+            self.apply("Rename clip", vec![EditOp::set(id, &["name"], Value::text(name))], cx);
         }
         cx.notify();
     }
@@ -1387,6 +1437,8 @@ impl CompositionPage {
         if let Some(i) = it {
             rows.push(None);
             rows.push(Some((if i.mute { tr_str("Unmute") } else { tr_str("Mute") }.to_string(), ClipCmd::Mute, true)));
+            rows.push(Some((tr_str("Rename").to_string(), ClipCmd::Rename, true)));
+            rows.push(Some((tr_str("Default name").to_string(), ClipCmd::DefaultName, true)));
             rows.push(Some((tr_str("Split at the cursor").to_string(), ClipCmd::Split, true)));
             rows.push(Some((tr_str("Duplicate").to_string(), ClipCmd::Duplicate, true)));
             rows.push(Some((tr_str("Join the selection").to_string(), ClipCmd::Glue, plural)));
@@ -1400,6 +1452,7 @@ impl CompositionPage {
                 }
                 rows.push(Some((tr_str("Clear all notes").to_string(), ClipCmd::ClearNotes, true)));
                 rows.push(Some((tr_str("Cut what is left over").to_string(), ClipCmd::TrimNotes, true)));
+                rows.push(Some((tr_str("Fit to the notes").to_string(), ClipCmd::Fit, true)));
             } else {
                 rows.push(Some((tr_str("Reset gain and fades").to_string(), ClipCmd::ResetGainFades, true)));
             }
@@ -2008,6 +2061,21 @@ impl CompositionPage {
                     .border_1()
                     .border_color(c(THEME.cursor))
                     .bg(gpui::rgba(0xffffff1f))
+                    .into_any_element(),
+            );
+        }
+        if let Some((item, state, _)) = &self.ed.clip_rename
+            && let Some((x, y, w, ..)) = self.hits.borrow().iter().find(|h| h.4 == *item).copied()
+        {
+            out.push(
+                div()
+                    .absolute()
+                    .left(px(x.max(0.0)))
+                    .top(px(y))
+                    .w(px(w.clamp(120.0, 300.0)))
+                    .h(px(24.))
+                    .text_size(px(11.))
+                    .child(Input::new(state))
                     .into_any_element(),
             );
         }

@@ -810,6 +810,13 @@ impl CompositionPage {
             )
     }
 
+    /// The view back at the start of the song: the left edge, the first track (F-ARR-013)
+    pub(crate) fn to_start(&mut self, cx: &mut Context<Self>) {
+        self.view.scroll_ticks = 0.0;
+        self.view.scroll_y = 0.0;
+        cx.notify();
+    }
+
     /// Whether the focus is in this page (its keys work)
     pub fn has_focus(&self, window: &Window, cx: &gpui::App) -> bool {
         self.focus.contains_focused(window, cx)

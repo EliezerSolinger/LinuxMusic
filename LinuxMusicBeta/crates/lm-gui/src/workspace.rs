@@ -51,6 +51,8 @@ pub struct Workspace {
     pub binding: Option<lm_port::MapTarget>,
     /// A screen closed: the focus comes back to the shell at the next render
     refocus: bool,
+    /// The project shown (its folder and name): when it changes, the arrangement comes to the front (F-ARR-013)
+    project_key: String,
     _observe: Subscription,
     /// The pages' changes: the selection goes to the interface document when it changes
     _pages: [Subscription; 2],
@@ -131,6 +133,7 @@ impl Workspace {
             confirm: None,
             binding: None,
             refocus: false,
+            project_key: String::new(),
             _observe: observe,
             _pages: pages,
             docks,
@@ -346,6 +349,20 @@ impl Render for Workspace {
         let in_a_page = self.composition.read(cx).has_focus(window, cx) || self.mixing.read(cx).has_focus(window, cx);
         if (std::mem::take(&mut self.refocus) && !in_a_page) || window.focused(cx).is_none() {
             window.focus(&self.focus, cx);
+        }
+        // after opening a project: the arrangement in front, from its start (F-ARR-013)
+        let key = {
+            let st = self.core.read(cx).port().status();
+            let p = st.get("project");
+            let t = |k: &str| p.and_then(|p| p.get(k)).and_then(Value::as_text).unwrap_or("").to_string();
+            format!("{}/{}", t("folder"), t("name"))
+        };
+        if key != self.project_key {
+            let first = std::mem::replace(&mut self.project_key, key).is_empty();
+            if !first {
+                self.page = Page::Composition;
+                self.composition.update(cx, |c, cx| c.to_start(cx));
+            }
         }
         let started = Instant::now();
         let (quit, probe, animate, position) = self.core.update(cx, |core, _| {

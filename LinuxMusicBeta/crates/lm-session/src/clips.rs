@@ -7,6 +7,7 @@
 //! clip.transpose   { items: [text], semitones: int }  every note, kept inside 0..=127 (F-CLP-023)
 //! clip.clear_notes { items: [text] }                every note out
 //! clip.trim_notes { items: [text] }                 the notes past the item's end out, the last ones cut to it (F-CLP-022)
+//! clip.fit         { items: [text] }                 the MIDI items end on the whole bar after their last note (F-CLP-025)
 //! clip.relocate    { items: [text], delta: int, tracks?: [text], copy?: bool }  items by `delta` ticks, each to its
 //!                  track of `tracks` (same index; absent: where it is), or copies (F-CLP-004, F-CLP-005)
 //! track.move       { track: text, to: int, parent?: text|null, copy?: bool }  the track (with the tracks inside it)
@@ -80,6 +81,12 @@ pub static ACTIONS: &[ActionSpec] = &[
         id: "clip.trim_notes",
         label: "action.clip.trim_notes",
         run: |s, p| s.trim_notes(&nodes(p, "items")?),
+        enabled: writable,
+    },
+    ActionSpec {
+        id: "clip.fit",
+        label: "action.clip.fit",
+        run: |s, p| s.fit_items(&nodes(p, "items")?),
         enabled: writable,
     },
     ActionSpec {
@@ -522,6 +529,34 @@ impl Session {
                         &[PathStep::key("parent")],
                         parent.map_or(Value::NULL, |p| Value::text(p.to_string())),
                     )?;
+                }
+                Ok(())
+            })
+            .map(|_| ())
+    }
+
+    /// "Auto size" (F-CLP-025): each MIDI item with notes ends on the whole bar after its last note (the tempo map's
+    /// bars); the notes stay. One undo step
+    pub fn fit_items(&mut self, items: &[NodeId]) -> Result<()> {
+        let map = tempo_map(self.document().root())?;
+        let mut plan = Vec::new();
+        for id in items {
+            let v = self.document().find(*id).ok_or_else(|| Error::new("action.no_such_node"))?;
+            if v.get("kind").and_then(Value::as_text) == Some("audio") {
+                continue;
+            }
+            let Some(last) = notes_of(&v).iter().map(|(_, n)| int(n, "start", 0) + int(n, "length", 1)).max() else {
+                continue;
+            };
+            let start = int(&v, "start", 0);
+            let bar = map.bar_beat_tick((start + last - 1).max(0)).bar;
+            let end = map.bar_start(bar + 1)?;
+            plan.push((*id, (end - start).max(1)));
+        }
+        self.document_mut()
+            .transact(Label::new("action.clip.fit"), |e| {
+                for (id, length) in &plan {
+                    e.set(*id, &[PathStep::key("length")], Value::int(*length))?;
                 }
                 Ok(())
             })
