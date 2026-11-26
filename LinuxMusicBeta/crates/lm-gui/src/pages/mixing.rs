@@ -33,6 +33,7 @@ use crate::actions::{
     MoveChannelRight, RemoveChannel, RenameChannel, SelectLeft, SelectRight,
 };
 use crate::core::Core;
+use crate::keymap;
 use crate::model::{self, ChannelKind, ChannelView};
 use crate::screens::Screen;
 use crate::ui::{THEME, c, midi, tr, trf};
@@ -69,6 +70,17 @@ pub struct Knob {
 }
 
 #[allow(clippy::too_many_arguments)]
+const CTX: &str = "Mixing";
+
+/// The mouse actions of the desk (`keymap/mouse_defs.rs`): the gestures are the user's, never read from the event
+fn holds(id: &str, m: &gpui::Modifiers) -> bool {
+    keymap::holds(CTX, id, m)
+}
+
+fn fires(id: &str, button: MouseButton, clicks: usize, m: &gpui::Modifiers) -> bool {
+    keymap::fires(CTX, id, button, clicks, m)
+}
+
 const fn knob(
     sec: &'static str,
     key: &'static str,
@@ -500,7 +512,7 @@ impl MixingPage {
             MouseButton::Middle => return self.set_travel(&t, default_travel(scale, default), "Default", cx),
             _ => {}
         }
-        if ev.click_count == 2 {
+        if fires("mix.knob.reset", ev.button, ev.click_count, &ev.modifiers) {
             return self.set_travel(&t, default_travel(scale, default), "Default", cx);
         }
         let start_t = self.travel_of(&t, cx);
@@ -535,7 +547,7 @@ impl MixingPage {
 
     fn drag_to(&mut self, ev: &MouseMoveEvent, cx: &mut Context<Self>) {
         let Some(d) = &self.drag else { return };
-        let fine = if ev.modifiers.shift { 10.0 } else { 1.0 };
+        let fine = if holds("mix.fader.fine", &ev.modifiers) { 10.0 } else { 1.0 };
         let dt = -((ev.position.y.as_f32() - d.start_y) / (d.travel * fine)) as f64;
         let t = (d.start_t + dt).clamp(0.0, 1.0);
         let target = d.target.clone();
@@ -667,13 +679,12 @@ impl MixingPage {
         if dy == 0.0 {
             return;
         }
-        let m = ev.modifiers;
-        let step = if m.shift {
-            3.0
-        } else if m.platform || m.control {
-            0.1
-        } else {
-            1.0
+        let ids = ["mix.fader.wheel_coarse", "mix.fader.wheel_fine", "mix.fader.wheel"];
+        let step = match keymap::pick_wheel(CTX, &ids, &ev.modifiers) {
+            Some("mix.fader.wheel_coarse") => 3.0,
+            Some("mix.fader.wheel_fine") => 0.1,
+            Some(_) => 1.0,
+            None => return,
         };
         self.nudge_channel(id, if dy > 0.0 { step } else { -step }, cx);
     }
@@ -685,7 +696,11 @@ impl MixingPage {
         if dy == 0.0 {
             return;
         }
-        let step = if ev.modifiers.shift { 0.001 } else { 0.01 };
+        let step = match keymap::pick_wheel(CTX, &["mix.knob.wheel_fine", "mix.knob.wheel"], &ev.modifiers) {
+            Some("mix.knob.wheel_fine") => 0.001,
+            Some(_) => 0.01,
+            None => return,
+        };
         let travel = self.travel_of(&t, cx) + if dy > 0.0 { step } else { -step };
         self.set_travel(&t, travel, "Knob", cx);
     }
@@ -1696,7 +1711,11 @@ impl MixingPage {
             self.upper(ch, number, chs, analog, cx).into_any_element()
         };
         let name: AnyElement = match renaming {
-            Some(state) => div().w(px(desk::NAME_W)).text_size(px(9.)).child(Input::new(&state)).into_any_element(),
+            Some(state) => div()
+                .w(px(desk::NAME_W))
+                .text_size(px(9.))
+                .child(crate::ui::text_entry(Input::new(&state)))
+                .into_any_element(),
             None => div()
                 .id(SharedString::from(format!("name-{}", id.number)))
                 .debug_selector(move || format!("name-{}", id.number))
@@ -1757,10 +1776,10 @@ impl MixingPage {
                 MouseButton::Left,
                 cx.listener(move |p, ev: &MouseDownEvent, w, cx| {
                     w.focus(&p.focus, cx);
-                    if ev.click_count == 2 {
+                    if fires("mix.channel.rename", ev.button, ev.click_count, &ev.modifiers) {
                         return p.start_rename(id, w, cx);
                     }
-                    p.select(id, ev.modifiers.platform || ev.modifiers.control, cx)
+                    p.select(id, holds("mix.channel.multi", &ev.modifiers), cx)
                 }),
             )
             .on_mouse_down(

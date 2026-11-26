@@ -1,8 +1,8 @@
 //! The shared pieces every screen uses. Colors come only from the theme; texts are passed already translated.
 
 use gpui::{
-    AnyElement, App, Bounds, ElementId, FontWeight, IntoElement, PathBuilder, SharedString, Window, canvas, div, fill,
-    point, prelude::*, px, size,
+    AnyElement, App, Bounds, Div, ElementId, FontWeight, IntoElement, PathBuilder, SharedString, Window, canvas, div,
+    fill, point, prelude::*, px, size,
 };
 use lm_port::Loading;
 
@@ -181,4 +181,10 @@ pub fn loading_component(
             Some(div().size_full().text_color(c(THEME.orange)).child(tr("Missing file: locate it")).into_any_element())
         }
     }
+}
+
+/// A text field marked as such for the keymap: while it has the focus, the keys that are plain typing (letters,
+/// digits, arrows, Enter, Delete...) are the field's, whatever the contexts around it bind to them
+pub fn text_entry(input: impl IntoElement) -> Div {
+    div().key_context("TextEntry").child(input)
 }

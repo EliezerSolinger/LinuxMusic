@@ -1950,3 +1950,50 @@ Decisões do pacote P8 sob a mudança de projeto do usuário (modulação no lug
 - **Fica para depois:** o painel de cada efeito com vista própria; o arpejo sincronizado por posição da linha do tempo
   (hoje conta a partir do quadro do motor, como o legado contava do início da nota); os efeitos de nota na página de
   composição (uma faixa de MIDI ao vivo); testes do compilador para a cadeia.
+## Atalhos por tela com presets (usuário, pedido de 26/11)
+
+Pedido: uma tela de configuração do mapeamento de atalhos, com todos os atalhos e um preset por tela; por exemplo o
+piano roll no estilo LMMS e a tela de gravação com os atalhos do REAPER. O legado define O QUE o programa faz, não como:
+o comportamento é moderno e configurável.
+
+1. **Tudo no registro.** Toda tecla de toda tela é uma ação do registro (`actions.rs`) com contexto; nenhuma tecla é
+   tratada fora dele. Exceções, marcadas no código com `keymap-ok:` e listadas pelo teste: texto digitado (campos,
+   a paleta, a entrada de valor), as teclas de piano (par tecla-desce/sobe que soa uma nota: piano roll e janela de
+   instrumento), a barra de espaço segurada para pré-ouvir no navegador, e a captura de teclas da própria tela de atalhos.
+   O teste `no_key_is_handled_outside_the_registry` varre as fontes e falha numa tecla nova fora do registro.
+2. **Contextos:** Global, Transport (as teclas de transporte), Composition, Mixing, PianoRoll, Automation, Steps,
+   Browser, Instrument, Effect. Uma tecla de um contexto vale enquanto ele tem o foco e vence a do Global (o GPUI
+   escolhe o contexto mais fundo). Digitação simples (letras, números, setas, Enter, Delete, sem Ctrl/Alt) fica
+   desligada enquanto um campo de texto tem o foco: os campos são marcados com o contexto `TextEntry`
+   (`ui::text_entry`) e essas teclas são ligadas com `&& !TextEntry`. Escape, F1..F12 e as combinações com Ctrl/Alt
+   funcionam também dentro de campos.
+3. **Ações do mouse.** Cada gesto que depende de modificador, de botão ou da ferramenta é uma ação do mouse numa
+   tabela por contexto (`keymap/mouse_defs.rs`, estilo "mouse modifiers" do REAPER): alvo (item, ponta do item, linha
+   vazia, régua, nota, roda...), gesto (`click`, `drag`, `double-click`, `wheel`, `right-click`, `right-drag`,
+   `middle-click`, com `secondary` = Cmd no macOS e Ctrl nos outros, `alt`, `shift`). As telas leem a tabela
+   (`holds` para "este modificador está segurado", `fires` para "este clique é a ação", `pick_wheel` para a roda) e
+   nunca os modificadores do evento. Um clique que começa um arrasto vale como `click` e como `drag` no instante do
+   toque: o nome é para a leitura do usuário. O teste `no_modifier_is_read_outside_the_mouse_table` varre as fontes.
+4. **Presets são dados:** `crates/lm-gui/keymaps/<contexto>/<preset>.json`, embutidos no programa, com `keys`
+   (id da ação para lista de teclas), `mouse` (id da ação do mouse para lista de gestos) e `unsure` (o que o autor não
+   conseguiu confirmar no programa seguido; no REAPER quase todas as teclas fora do transporte, e as ações do mouse
+   que o REAPER decide por modificadores de mouse configuráveis). Vêm **LMMS** (o legado, de
+   `funcionalidades-legado.md`) e **REAPER** para os dez contextos; "Padrão" é o do registro e da tabela. O preset
+   do usuário é um arquivo igual em `<pasta de configuração>/keymaps/<contexto>/<nome>.json`
+   (`CorePort::config_dir`, a pasta das preferências); exportar e importar usam os diálogos do sistema, e o arquivo
+   exportado diz o contexto.
+5. **Escolha e mudanças nas preferências:** `keymaps.<contexto> = { preset, keys, mouse }`, só o que o usuário escolheu
+   ou mudou. A ordem: mudança do usuário, preset escolhido, padrão. Trocar o preset mantém as mudanças; uma
+   atualização de preset não apaga nada; "Restaurar o preset" apaga as mudanças de um contexto e mantém a escolha.
+   "Salvar como preset" grava o mapa atual do contexto como arquivo novo e passa a usá-lo sem mudanças. Substitui a
+   chave `shortcuts` (sem migração: o usuário decidiu que a arquitetura certa vale mais que a compatibilidade).
+6. **Tela "Atalhos":** contextos à esquerda, cada um com seu preset num menu; à direita as ações do contexto com as
+   teclas (aba Teclas) ou os gestos (aba Mouse); mudar é apertar a tecla ou fazer o gesto na caixa; uma tecla que já é de
+   outra ação do mesmo contexto ou do Global pergunta e só troca no segundo aperto; busca por nome e "Achar tecla"
+   (aperta-se a tecla). Sem texto explicativo.
+7. **A paleta de comandos** mostra a tecla atual de cada ação (já lia `keys_of`, que agora passa pelo preset); o mapa
+   MIDI (I-21) continua por id de ação e não é afetado.
+8. **O que continua fixo:** o botão direito simples (abre o menu do item, da linha vazia, da nota), o gesto do trackpad
+   (rolar e pinça), arrastar um item sem modificador, soltar arquivos, o duplo clique que reinicia ou abre em lugares
+   menores (marcadores, regiões, o botão de volume do cabeçalho, a faixa de transposição do transporte além da
+   transposição), a tecla da barra de espaço segurada no navegador e as teclas de piano.

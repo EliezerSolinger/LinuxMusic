@@ -392,6 +392,8 @@ impl<C> Default for EditorState<C> {
 
 /// A window that hosts generic controls
 pub trait ParamHost<C: Clone + 'static>: Render + Sized + 'static {
+    /// The keymap context of the window's mouse actions ("Instrument", "Effect")
+    const KEYMAP: &'static str;
     fn core(&self) -> &Entity<Core>;
     fn editor(&mut self) -> &mut EditorState<C>;
     fn editor_ref(&self) -> &EditorState<C>;
@@ -461,12 +463,12 @@ pub fn begin_drag<C: Clone + 'static, V: ParamHost<C>>(
     cx.stop_propagation();
     let core = v.core().clone();
     let value = current(core.read(cx), &c_);
-    if ev.modifiers.shift {
+    if crate::keymap::fires(V::KEYMAP, "param.carry", ev.button, ev.click_count, &ev.modifiers) {
         // Shift+drag: carry the value to another control (F-CTL-006)
         v.editor().carried = Some(value);
         return;
     }
-    if ev.click_count == 2 {
+    if crate::keymap::fires(V::KEYMAP, "param.type", ev.button, ev.click_count, &ev.modifiers) {
         start_typing(v, c_, value, window, cx);
         return;
     }
@@ -489,7 +491,7 @@ pub fn drag_move<C: Clone + 'static, V: ParamHost<C>>(v: &mut V, ev: &MouseMoveE
     let Some(d) = &v.editor_ref().drag else { return };
     let c_ = d.ctl.clone();
     // 200 px for the whole travel; Shift: 4x slower (F-CTL-006)
-    let slow = if ev.modifiers.shift { 4.0 } else { 1.0 };
+    let slow = if crate::keymap::holds(V::KEYMAP, "param.fine", &ev.modifiers) { 4.0 } else { 1.0 };
     let t = d.start_t - f64::from((ev.position.y.as_f32() - d.start_y) / (200.0 * slow));
     let value = c_.value_at(t, flipped(&c_, cx));
     let core = v.core().clone();
@@ -591,7 +593,7 @@ pub fn control<C: Clone + 'static, V: ParamHost<C>>(this: &V, c_: Ctl, cx: &Cont
         .filter(|(t, _, _)| t.node == c_.node && t.slot == c_.slot)
         .map(|t| t.1.clone());
     let value_text: AnyElement = match typing {
-        Some(input) => div().w(px(64.)).child(Input::new(&input).small()).into_any_element(),
+        Some(input) => div().w(px(64.)).child(crate::ui::text_entry(Input::new(&input).small())).into_any_element(),
         None => div()
             .text_size(px(10.))
             .text_color(c(value_color))
@@ -679,12 +681,12 @@ pub fn control<C: Clone + 'static, V: ParamHost<C>>(this: &V, c_: Ctl, cx: &Cont
                             if dy == 0.0 {
                                 return;
                             }
-                            let steps = if ev.modifiers.shift {
-                                10.0
-                            } else if ev.modifiers.control || ev.modifiers.platform {
-                                1000.0
-                            } else {
-                                100.0
+                            let ids = ["param.wheel_coarse", "param.wheel_fine", "param.wheel"];
+                            let steps = match crate::keymap::pick_wheel(V::KEYMAP, &ids, &ev.modifiers) {
+                                Some("param.wheel_coarse") => 10.0,
+                                Some("param.wheel_fine") => 1000.0,
+                                Some(_) => 100.0,
+                                None => return,
                             };
                             let core = v.core().clone();
                             let flip = flipped(&cw, cx);
@@ -1219,6 +1221,8 @@ pub struct InstrumentWindow {
 }
 
 impl ParamHost<IwPopup> for InstrumentWindow {
+    const KEYMAP: &'static str = "Instrument";
+
     fn core(&self) -> &Entity<Core> {
         &self.scx.core
     }
@@ -1408,6 +1412,7 @@ impl InstrumentWindow {
     /// The computer keyboard as a piano (F-IJN-022, the legacy's layout), only while the window itself has the focus
     /// (a text field inside keeps its keys)
     fn key_down(&mut self, ev: &KeyDownEvent, window: &Window, cx: &mut Context<Self>) {
+        // keymap-ok: the computer keyboard as a piano is a key down and up pair that sounds a note, not a command
         let m = ev.keystroke.modifiers;
         if ev.is_held || m.control || m.alt || m.platform || m.shift || !self.focus.is_focused(window) {
             return;
@@ -1422,6 +1427,7 @@ impl InstrumentWindow {
     }
 
     fn key_up(&mut self, ev: &KeyUpEvent, cx: &mut Context<Self>) {
+        // keymap-ok: the piano keys
         if let Some(k) = self.played.remove(&ev.keystroke.key) {
             self.stop(k, cx);
             if self.held == Some(k) {
@@ -2445,7 +2451,15 @@ impl InstrumentWindow {
                         button(SharedString::from(format!("{id}-minus")), "−", false, 0)
                             .debug_selector(move || format!("{id}-minus"))
                             .on_click(cx.listener(move |w, ev: &gpui::ClickEvent, _, cx| {
-                                s1(w, if ev.modifiers().shift { -10 } else { -1 }, cx)
+                                s1(
+                                    w,
+                                    if crate::keymap::holds("Instrument", "param.spin_coarse", &ev.modifiers()) {
+                                        -10
+                                    } else {
+                                        -1
+                                    },
+                                    cx,
+                                )
                             })),
                     )
                     .child(
@@ -2467,7 +2481,15 @@ impl InstrumentWindow {
                         button(SharedString::from(format!("{id}-plus")), "+", false, 0)
                             .debug_selector(move || format!("{id}-plus"))
                             .on_click(cx.listener(move |w, ev: &gpui::ClickEvent, _, cx| {
-                                s2(w, if ev.modifiers().shift { 10 } else { 1 }, cx)
+                                s2(
+                                    w,
+                                    if crate::keymap::holds("Instrument", "param.spin_coarse", &ev.modifiers()) {
+                                        10
+                                    } else {
+                                        1
+                                    },
+                                    cx,
+                                )
                             })),
                     ),
             )
@@ -2828,7 +2850,9 @@ impl Render for InstrumentWindow {
                 }),
             )
             .track_focus(&self.focus)
+            // keymap-ok: the piano keys
             .on_key_down(cx.listener(|w, ev: &KeyDownEvent, window, cx| w.key_down(ev, window, cx)))
+            // keymap-ok: the piano keys
             .on_key_up(cx.listener(|w, ev: &KeyUpEvent, _, cx| w.key_up(ev, cx)))
             // an instrument or a preset dropped from the browser (F-IJN-004)
             .on_drop(cx.listener(|w, d: &super::browser::Dragged, _, cx| w.drop_item(d, cx)))

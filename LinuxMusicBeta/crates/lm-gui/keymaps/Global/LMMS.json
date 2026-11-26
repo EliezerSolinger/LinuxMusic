@@ -1,0 +1,68 @@
+{
+  "context": "Global",
+  "name": "LMMS",
+  "keys": {
+    "view.composition": [
+      "secondary-1"
+    ],
+    "view.mixing": [
+      "secondary-5"
+    ],
+    "view.midi_maps": [
+      "secondary-6"
+    ],
+    "view.next_page": [
+      "ctrl-tab"
+    ],
+    "view.palette": [
+      "secondary-k"
+    ],
+    "view.settings": [
+      "secondary-,"
+    ],
+    "view.close": [
+      "escape"
+    ],
+    "edit.undo": [
+      "secondary-z"
+    ],
+    "edit.redo": [
+      "secondary-shift-z",
+      "ctrl-y"
+    ],
+    "project.save": [
+      "secondary-s"
+    ],
+    "app.quit": [
+      "secondary-q"
+    ],
+    "file.open": [
+      "secondary-o"
+    ],
+    "file.save_as": [
+      "secondary-shift-s"
+    ],
+    "file.new": [
+      "secondary-n"
+    ],
+    "file.export": [
+      "secondary-e"
+    ],
+    "file.import": [
+      "secondary-i"
+    ],
+    "file.export_midi": [
+      "secondary-m"
+    ],
+    "view.notices": [],
+    "help.about": [
+      "f1"
+    ]
+  },
+  "mouse": {},
+  "unsure": {
+    "view.composition": "F-JAN-022: Ctrl+1 is the arrangement",
+    "view.mixing": "F-JAN-022: Ctrl+5 is the mixer",
+    "view.midi_maps": "F-JAN-022: Ctrl+6 is the controllers"
+  }
+}

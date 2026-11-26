@@ -1,0 +1,187 @@
+{
+  "context": "Composition",
+  "name": "LMMS",
+  "keys": {
+    "arrange.split_at_cursor": [
+      "s"
+    ],
+    "arrange.duplicate_selection": [
+      "secondary-d"
+    ],
+    "arrange.delete": [
+      "delete",
+      "backspace"
+    ],
+    "arrange.empty_item": [
+      "shift-e"
+    ],
+    "arrange.open_item": [
+      "enter"
+    ],
+    "arrange.copy_selection": [
+      "secondary-c"
+    ],
+    "arrange.cut_selection": [
+      "secondary-x"
+    ],
+    "arrange.paste_at_cursor": [
+      "secondary-v"
+    ],
+    "clip.glue_selection": [
+      "secondary-j"
+    ],
+    "arrange.select_all": [
+      "secondary-a"
+    ],
+    "arrange.select_none": [
+      "secondary-shift-a",
+      "escape"
+    ],
+    "arrange.bar_left": [
+      "left"
+    ],
+    "arrange.bar_right": [
+      "right"
+    ],
+    "arrange.insert_bar_at_cursor": [
+      "shift-insert",
+      "shift-enter"
+    ],
+    "arrange.remove_bar_at_cursor": [
+      "shift-delete",
+      "shift-backspace"
+    ],
+    "arrange.tool_draw": [
+      "shift-d"
+    ],
+    "arrange.tool_knife": [
+      "shift-k"
+    ],
+    "arrange.tool_select": [
+      "shift-s"
+    ],
+    "arrange.zoom_in": [
+      "="
+    ],
+    "arrange.zoom_out": [
+      "-"
+    ],
+    "marks.add_marker": [
+      "m"
+    ],
+    "marks.add_region": [
+      "shift-r"
+    ],
+    "marks.jump_1": [
+      "1"
+    ],
+    "marks.jump_2": [
+      "2"
+    ],
+    "marks.jump_3": [
+      "3"
+    ],
+    "marks.jump_4": [
+      "4"
+    ],
+    "marks.jump_5": [
+      "5"
+    ],
+    "marks.jump_6": [
+      "6"
+    ],
+    "marks.jump_7": [
+      "7"
+    ],
+    "marks.jump_8": [
+      "8"
+    ],
+    "marks.jump_9": [
+      "9"
+    ]
+  },
+  "mouse": {
+    "comp.item.toggle_select": [
+      "secondary-click"
+    ],
+    "comp.item.copy": [
+      "secondary-click"
+    ],
+    "comp.free": [
+      "alt-drag",
+      "secondary-drag"
+    ],
+    "comp.item.snap_edge": [
+      "shift-drag"
+    ],
+    "comp.item.open": [
+      "double-click"
+    ],
+    "comp.item.cut_notes": [
+      "shift-click"
+    ],
+    "comp.item.knife_free": [
+      "alt-click"
+    ],
+    "comp.item.delete": [
+      "shift-right-click"
+    ],
+    "comp.item.mute": [
+      "secondary-right-click"
+    ],
+    "comp.row.marquee": [
+      "secondary-click"
+    ],
+    "comp.row.extend": [
+      "shift-click"
+    ],
+    "comp.row.open": [
+      "double-click"
+    ],
+    "comp.lane.open": [
+      "double-click"
+    ],
+    "comp.ruler.range_select": [
+      "secondary-click"
+    ],
+    "comp.ruler.punch": [
+      "alt-click"
+    ],
+    "comp.ruler.loop_edge": [
+      "shift-click"
+    ],
+    "comp.track.reset_height": [
+      "shift-click"
+    ],
+    "comp.track.copy": [
+      "secondary-drag",
+      "alt-drag"
+    ],
+    "comp.knob.fine": [
+      "shift-drag"
+    ],
+    "comp.view.zoom": [
+      "secondary-wheel"
+    ],
+    "comp.view.scroll_h": [
+      "shift-wheel"
+    ],
+    "comp.view.scroll_v": [
+      "wheel"
+    ],
+    "comp.view.track_height": [],
+    "comp.view.track_height_fine": [
+      "secondary-alt-wheel"
+    ],
+    "comp.view.track_height_coarse": [
+      "alt-shift-wheel"
+    ]
+  },
+  "unsure": {
+    "arrange.tool_draw": "the legacy song editor has tool keys; Shift+D/K/S follow the piano roll's",
+    "arrange.tool_knife": "same",
+    "arrange.tool_select": "same",
+    "comp.view.scroll_v": "the legacy song editor scrolls with the wheel; F-ARR-007 is the REAPER-style wheel",
+    "comp.item.delete": "F-CLP-006: Shift+right erases (the middle button too in the legacy; not wired)"
+  }
+}

@@ -8,6 +8,7 @@
 use gpui::{Context, FontWeight, IntoElement, MouseButton, MouseDownEvent, ScrollEvent, div, prelude::*, px};
 use lm_port::{EditOp, GestureId, HostTime, Label, Position, ROOT, Value};
 
+use crate::keymap;
 use crate::model;
 use crate::ui::{THEME, c, icon, tbutton, tr, trf};
 use crate::view;
@@ -397,9 +398,15 @@ pub fn render(ws: &Workspace, position: Position, cx: &Context<Workspace>) -> im
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |ws, ev: &MouseDownEvent, _, cx| {
-                        let v = if ev.click_count == 2 {
+                        let v = if keymap::fires(
+                            "Transport",
+                            "transport.transpose_reset",
+                            ev.button,
+                            ev.click_count,
+                            &ev.modifiers,
+                        ) {
                             0
-                        } else if ev.modifiers.alt {
+                        } else if keymap::holds("Transport", "transport.transpose_down", &ev.modifiers) {
                             transpose - 1
                         } else {
                             transpose + 1

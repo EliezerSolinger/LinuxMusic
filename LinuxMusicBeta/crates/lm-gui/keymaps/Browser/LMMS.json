@@ -1,0 +1,28 @@
+{
+  "context": "Browser",
+  "name": "LMMS",
+  "keys": {
+    "browser.down": [
+      "down"
+    ],
+    "browser.up": [
+      "up"
+    ],
+    "browser.send": [
+      "enter"
+    ],
+    "browser.open_folder": [
+      "right"
+    ],
+    "browser.close_folder": [
+      "left"
+    ],
+    "browser.refresh": [
+      "f5"
+    ],
+    "browser.find": [
+      "secondary-f"
+    ]
+  },
+  "mouse": {}
+}

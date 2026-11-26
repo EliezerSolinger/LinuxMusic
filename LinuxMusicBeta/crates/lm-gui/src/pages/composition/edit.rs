@@ -11,6 +11,8 @@ use lm_port::{GestureId, PathStep};
 
 use super::*;
 
+mod hints;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Tool {
     Draw,
@@ -382,7 +384,7 @@ impl CompositionPage {
     /// A timeline position (x) as a tick on the grid; Alt or Ctrl: free
     fn snapped(&self, x: f32, mods: &Modifiers, cx: &Context<Self>) -> i64 {
         let raw = self.view.tick_at(x).max(0.0) as i64;
-        if mods.alt || mods.control { raw } else { snap_abs(&self.tempo(cx), raw, self.frac()) }
+        if holds("comp.free", mods) { raw } else { snap_abs(&self.tempo(cx), raw, self.frac()) }
     }
 
     // --- selection ---------------------------------------------------------------------------------------------
@@ -586,12 +588,13 @@ impl CompositionPage {
         let lane = self.lane_hits.borrow().iter().find(|(y, h, ..)| my >= *y && my <= y + h).copied();
         if let Some((_, _, lane, track)) = lane {
             self.ed.track = Some(track);
-            if ev.click_count == 2 {
+            if fires("comp.lane.open", ev.button, ev.click_count, &ev.modifiers) {
                 let _ = self.workspace.update(cx, |ws, cx| ws.open(Screen::Automation, Some(lane), window, cx));
             }
             return;
         }
-        let ctrl = ev.modifiers.control || ev.modifiers.platform;
+        let ctrl = holds("comp.item.toggle_select", &ev.modifiers);
+        let marquee = holds("comp.row.marquee", &ev.modifiers);
         let hit = self
             .hits
             .borrow()
@@ -605,8 +608,8 @@ impl CompositionPage {
         }
         let Some((x, y, w, _, item, fi, fo)) = hit else {
             // the empty row: Ctrl or the select tool draws a rectangle; the draw tool makes a clip (F-TRK-033)
-            if ctrl || self.ed.tool == Tool::Select {
-                if !ctrl && !ev.modifiers.shift {
+            if marquee || self.ed.tool == Tool::Select {
+                if !marquee && !holds("comp.row.extend", &ev.modifiers) {
                     self.selected_item = None;
                     self.ed.selection.clear();
                 }
@@ -623,7 +626,7 @@ impl CompositionPage {
             {
                 let tick = self.view.tick_at(mx);
                 self.create_clip_at(track, tick, cx);
-                if ev.click_count >= 2 {
+                if fires("comp.row.open", ev.button, ev.click_count, &ev.modifiers) {
                     self.open_item(window, cx);
                 }
             }
@@ -631,10 +634,10 @@ impl CompositionPage {
             return;
         };
         if self.ed.tool == Tool::Knife && !ctrl {
-            let tick = self.knife_tick(item, mx, ev.modifiers.alt, cx);
+            let tick = self.knife_tick(item, mx, holds("comp.item.knife_free", &ev.modifiers), cx);
             // Shift on a MIDI item: the destructive split, the notes across the cut are cut in two (F-CLP-007)
-            let cut_notes =
-                ev.modifiers.shift && self.tracks(cx).iter().flat_map(|t| &t.items).any(|i| i.id == item && !i.audio);
+            let cut_notes = holds("comp.item.cut_notes", &ev.modifiers)
+                && self.tracks(cx).iter().flat_map(|t| &t.items).any(|i| i.id == item && !i.audio);
             self.action(
                 "arrange.split",
                 Value::object([
@@ -647,7 +650,7 @@ impl CompositionPage {
             return;
         }
         // Ctrl+press on a selected item starts a copy; on another one it toggles the selection (F-CLP-005)
-        let copy = ctrl && self.ed.selection.contains(&item);
+        let copy = holds("comp.item.copy", &ev.modifiers) && (self.ed.selection.contains(&item) || !ctrl);
         if ctrl && !copy {
             if !self.ed.selection.remove(&item) {
                 self.ed.selection.insert(item);
@@ -662,7 +665,7 @@ impl CompositionPage {
             self.ed.selection = [item].into_iter().collect();
         }
         self.selected_item = Some(item);
-        if ev.click_count == 2 && !copy {
+        if fires("comp.item.open", ev.button, ev.click_count, &ev.modifiers) && !copy {
             return self.open_item(window, cx);
         }
         // the top 7 px: the fade handles at the corners, the gain handle between; the edges resize and trim
@@ -772,14 +775,14 @@ impl CompositionPage {
         let dy = (ev.position.y.as_f32() - origin.1) as f64;
         let map = self.tempo(cx);
         let frac = self.frac();
-        let free = ev.modifiers.alt || (ev.modifiers.control && !copy);
+        let free = holds("comp.free", &ev.modifiers) && !copy;
         let mut ops = Vec::new();
         // an edge or a start, by the legacy's rule: the distance in grid steps; Shift: the edge on a grid line;
         // Alt or Ctrl: free (F-CLP-002, F-CLP-003)
         let moved = |at: f64, raw: f64| -> i64 {
             if free {
                 raw as i64
-            } else if ev.modifiers.shift {
+            } else if holds("comp.item.snap_edge", &ev.modifiers) {
                 snap_abs(&map, raw as i64, frac)
             } else {
                 at as i64 + snap_delta(&map, at as i64, raw - at, frac)
@@ -967,7 +970,7 @@ impl CompositionPage {
         self.track_drag = Some(TrackDrag {
             track,
             start: (ev.position.x.as_f32(), ev.position.y.as_f32()),
-            copy: ev.modifiers.control || ev.modifiers.alt,
+            copy: holds("comp.track.copy", &ev.modifiers),
             moved: false,
             slot: None,
             indicator: None,
@@ -1049,15 +1052,15 @@ impl CompositionPage {
     pub(super) fn loop_down(&mut self, ev: &MouseDownEvent, cx: &mut Context<Self>) -> bool {
         let b = *self.timeline_bounds.borrow();
         let (mx, my) = ((ev.position.x - b.origin.x).as_f32(), (ev.position.y - b.origin.y).as_f32());
-        let punch = ev.modifiers.alt;
+        let punch = holds("comp.ruler.punch", &ev.modifiers);
         let song = model::song(self.core.read(cx).port().root());
         let (from, to) = if punch { song.punch_range } else { song.loop_range };
         let tick = self.snapped(mx, &ev.modifiers, cx);
         let min = step_at(&self.tempo(cx), tick, self.frac());
         let edit = self.loop_edit(cx);
-        let handles =
-            ev.modifiers.shift && !ev.modifiers.alt && edit == LoopEdit::Handles && ev.button == MouseButton::Left;
-        if ev.modifiers.shift && !ev.modifiers.alt && !handles {
+        let edge = holds("comp.ruler.loop_edge", &ev.modifiers);
+        let handles = edge && edit == LoopEdit::Handles && ev.button == MouseButton::Left;
+        if edge && !handles {
             let (a, z) = if edit == LoopEdit::Nearest {
                 // the end that is nearer moves; never a zero size; passing swaps
                 if (tick - from).abs() <= (tick - to).abs() {
@@ -1192,11 +1195,11 @@ impl CompositionPage {
             return true;
         }
         if let Some(id) = item {
-            if ev.modifiers.shift {
+            if fires("comp.item.delete", ev.button, ev.click_count, &ev.modifiers) {
                 self.apply("Delete", vec![EditOp::Remove { id: Ref::Id(id) }], cx);
                 return true;
             }
-            if ev.modifiers.control || ev.modifiers.platform {
+            if fires("comp.item.mute", ev.button, ev.click_count, &ev.modifiers) {
                 self.mute_items(&[id], cx);
                 return true;
             }
@@ -1489,7 +1492,8 @@ impl CompositionPage {
             .enumerate()
             .map(|(n, row)| {
                 let Some((label, cmd, enabled)) = row else { return Self::rule() };
-                let row = Self::menu_row(format!("clip-menu-{n}"), label, enabled);
+                let hint = hints::hint_of(&cmd, self.core.read(cx).port().preferences());
+                let row = Self::menu_row_hint(format!("clip-menu-{n}"), label, hint, enabled);
                 if enabled {
                     row.on_click(
                         cx.listener(move |p, _, window, cx| p.run_clip_cmd(cmd, item, tick, track, window, cx)),
@@ -2198,7 +2202,7 @@ impl CompositionPage {
                     .w(px(w.clamp(120.0, 300.0)))
                     .h(px(24.))
                     .text_size(px(11.))
-                    .child(Input::new(state))
+                    .child(crate::ui::text_entry(Input::new(state)))
                     .into_any_element(),
             );
         }

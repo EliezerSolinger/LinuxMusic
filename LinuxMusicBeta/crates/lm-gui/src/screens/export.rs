@@ -657,8 +657,8 @@ impl Export {
             .flex()
             .flex_col()
             .gap(px(8.))
-            .child(form_row(tr("Folder"), Input::new(&self.folder)))
-            .child(form_row(tr("Name"), Input::new(&self.name)))
+            .child(form_row(tr("Folder"), crate::ui::text_entry(Input::new(&self.folder))))
+            .child(form_row(tr("Name"), crate::ui::text_entry(Input::new(&self.name))))
             .when(!third.is_empty(), |d| {
                 d.child(note(trf("Not deterministic: {0}", &[&third.join(", ")]), THEME.orange))
             })

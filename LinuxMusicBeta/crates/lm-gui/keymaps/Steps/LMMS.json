@@ -1,0 +1,19 @@
+{
+  "context": "Steps",
+  "name": "LMMS",
+  "keys": {},
+  "mouse": {
+    "st.pitch": [
+      "alt-click"
+    ],
+    "st.view.zoom": [
+      "secondary-wheel"
+    ],
+    "st.view.scroll_h": [
+      "shift-wheel"
+    ],
+    "st.step.velocity": [
+      "wheel"
+    ]
+  }
+}

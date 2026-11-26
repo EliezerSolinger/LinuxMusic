@@ -22,14 +22,14 @@ use gpui::{
 use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, Topic, Value};
 
 use super::ScreenCx;
-use super::piano_roll::kit::{
-    self, MenuItem, dropdown, icon_button, label, paint_text, popup, primary, sep, tip, with_alpha,
-};
+use super::piano_roll::kit::{self, MenuItem, dropdown, icon_button, label, paint_text, popup, sep, tip, with_alpha};
 use super::piano_roll::music::{BAR, BEAT, Clip, Note, NoteChange, key_name};
 use super::piano_roll::{NEW, note_ops};
+use crate::keymap;
 use crate::model;
 use crate::ui::{THEME, button, c, tr, trf};
 
+const CTX: &str = "Steps";
 const ROW_H: f32 = 26.0;
 const STEP_ROW_H: f32 = 20.0;
 const HEADER_H: f32 = 18.0;
@@ -341,7 +341,10 @@ impl StepEditor {
         let Some((item, row, s)) = self.cell_at(ev.position, cx) else { return };
         let Some(g) = self.group(item, cx) else { return };
         let here = Self::at_step(&g.clip, row, s);
-        if ev.modifiers.alt && row == Row::Pitched && !here.is_empty() {
+        if keymap::fires(CTX, "st.pitch", ev.button, ev.click_count, &ev.modifiers)
+            && row == Row::Pitched
+            && !here.is_empty()
+        {
             let (n, origin) = here[0].clone();
             self.drag = Some(Drag::Pitch { g: None, item, n, origin, from_y: ev.position.y.as_f32() });
         } else {
@@ -408,9 +411,13 @@ impl StepEditor {
     fn cells_wheel(&mut self, ev: &ScrollEvent, cx: &mut Context<Self>) {
         let d = ev.delta.pixel_delta(px(16.0));
         let (dx, dy) = (d.x.as_f32(), d.y.as_f32());
-        if primary(&ev.modifiers) {
+        let which = keymap::pick_wheel(CTX, &["st.view.zoom", "st.view.scroll_h", "st.step.velocity"], &ev.modifiers);
+        if which.is_none() {
+            return;
+        }
+        if which == Some("st.view.zoom") {
             self.step_w = (self.step_w * (-dy * 0.01).exp()).clamp(8.0, 64.0);
-        } else if ev.modifiers.shift || dx.abs() > dy.abs() {
+        } else if which == Some("st.view.scroll_h") || dx.abs() > dy.abs() {
             self.scroll_x = (self.scroll_x - if dx.abs() > 0.01 { dx } else { dy }).max(0.0);
         } else if let Some((item, row, s)) = self.cell_at(ev.position, cx)
             && let Some(g) = self.group(item, cx)

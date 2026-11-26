@@ -214,7 +214,7 @@ impl Render for MidiMapsPage {
                     .p(px(12.))
                     .gap(px(8.))
                     .child(div().text_size(px(16.)).font_weight(FontWeight::BOLD).child(tr("MIDI maps")))
-                    .child(Input::new(&self.search))
+                    .child(crate::ui::text_entry(Input::new(&self.search)))
                     .when(empty, |d| d.child(caption(tr("No mappings"))))
                     .child(div().id("maps").flex_1().overflow_y_scroll().children(rows)),
             )

@@ -18,21 +18,40 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    Bounds, Context, CursorStyle, FocusHandle, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    PathBuilder, PinchEvent, Pixels, Point, Render, ScrollEvent, SharedString, Window, canvas, div, fill, point,
-    prelude::*, px, size,
+    Bounds, Context, CursorStyle, Div, FocusHandle, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    PathBuilder, PinchEvent, Pixels, Point, Render, ScrollEvent, SharedString, Stateful, Window, canvas, div, fill,
+    point, prelude::*, px, size,
 };
 use lm_port::{CorePort, EditOp, Feed, GestureId, HostTime, Label, NodeId, ParamRange, RangeScale, Topic, Value};
 
 use super::ScreenCx;
 use super::piano_roll::kit::{
-    self, MenuItem, ValueEntry, dropdown, dropdown_icon, icon_button, label, paint_text, popup, primary, sep, tip,
-    with_alpha,
+    self, MenuItem, ValueEntry, dropdown, dropdown_icon, icon_button, label, paint_text, popup, sep, tip, with_alpha,
 };
 use super::piano_roll::music::{self, BAR, BEAT, Clip, GRIDS, NoteMap};
+use crate::actions::{
+    AuCopy, AuCut, AuDelete, AuHome, AuLeft, AuPaste, AuPlay, AuRight, AuSelectAll, AuSelectNone, AuToolDraw,
+    AuToolErase, AuToolOut, AuToolPencil, AuToolSelect,
+};
+use crate::keymap;
 use crate::model;
 use crate::ui::{THEME, button, c, tr, track_color, trf};
 use crate::view;
+
+const CTX: &str = "Automation";
+
+/// The mouse actions of this screen (`keymap/mouse_defs.rs`): the gestures are the user's, never read from the event
+fn holds(id: &str, m: &gpui::Modifiers) -> bool {
+    keymap::holds(CTX, id, m)
+}
+
+fn fires(id: &str, button: MouseButton, clicks: usize, m: &gpui::Modifiers) -> bool {
+    keymap::fires(CTX, id, button, clicks, m)
+}
+
+fn pick_wheel(ids: &[&'static str], m: &gpui::Modifiers) -> Option<&'static str> {
+    keymap::pick_wheel(CTX, ids, m)
+}
 
 const ROW_H: f32 = 26.0;
 const TOP_MARGIN: f32 = 16.0;
@@ -538,7 +557,7 @@ impl AutomationEditor {
         let tick = self.x_to_tick(x);
         let hit = self.point_at(&lane, x, y);
         let mut pts = (*lane.points).clone();
-        if ev.button == MouseButton::Right {
+        if fires("au.erase", ev.button, ev.click_count, &ev.modifiers) {
             // the right button: an out value goes back to the arrival value; else erase (dragging erases more)
             if let Some((i, true)) = hit {
                 pts[i].out = None;
@@ -549,7 +568,7 @@ impl AutomationEditor {
             cx.notify();
             return;
         }
-        if ev.click_count >= 2
+        if fires("au.point.entry", ev.button, ev.click_count, &ev.modifiers)
             && let Some((i, out)) = hit
         {
             // a double click asks the value (F-AUT-005)
@@ -560,7 +579,7 @@ impl AutomationEditor {
             cx.notify();
             return;
         }
-        let tool = if primary(&ev.modifiers) { Tool::Select } else { self.tool };
+        let tool = if holds("au.select_override", &ev.modifiers) { Tool::Select } else { self.tool };
         match tool {
             Tool::Erase => self.drag = Some(Drag::Erase { gone: hit.map(|h| h.0).into_iter().collect() }),
             Tool::Pencil => {
@@ -578,7 +597,7 @@ impl AutomationEditor {
                         self.drag = Some(Drag::Out { g: None, i, origin: lane.points.clone() });
                     } else {
                         if !self.sel.contains(&i) {
-                            if !ev.modifiers.shift {
+                            if !holds("au.extend", &ev.modifiers) {
                                 self.sel.clear();
                             }
                             self.sel.insert(i);
@@ -593,17 +612,17 @@ impl AutomationEditor {
                     self.drag = Some(Drag::Curve { g: None, i, origin: lane.points.clone(), from_y: y, rising });
                 } else if tool == Tool::Select {
                     let p = point(px(x), px(y));
-                    if !ev.modifiers.shift {
+                    if !holds("au.extend", &ev.modifiers) {
                         self.sel.clear();
                     }
                     self.drag = Some(Drag::Rect { from: p, to: p });
                 } else {
-                    let t = self.snap_tick(tick, primary(&ev.modifiers) || ev.modifiers.alt);
+                    let t = self.snap_tick(tick, holds("au.free", &ev.modifiers));
                     let v = lane.law().denorm(self.y_to_norm(y, vr));
                     let mut p = Pt::new(t, v, self.shape);
                     p.tension = self.tension;
                     match (
-                        ev.modifiers.shift,
+                        holds("au.draw.line", &ev.modifiers),
                         self.last_added.and_then(|lt| pts.iter().find(|q| q.tick == lt).copied()),
                     ) {
                         (true, Some(a)) => {
@@ -659,7 +678,7 @@ impl AutomationEditor {
                     self.drag = Some(drag);
                     return;
                 };
-                let free = primary(&ev.modifiers) || ev.modifiers.alt;
+                let free = holds("au.free", &ev.modifiers);
                 let dt = self.snap_tick(anchor.tick as f64 + tick - from.0, free) - anchor.tick;
                 let dt = dt.max(-sel.iter().filter_map(|i| origin.get(*i)).map(|p| p.tick).min().unwrap_or(0));
                 let dv = self.y_to_norm(y, vr) - from.1;
@@ -1019,69 +1038,62 @@ impl AutomationEditor {
         self.transact("Paste points", pts, cx);
     }
 
-    fn key_down(&mut self, ev: &KeyDownEvent, cx: &mut Context<Self>) {
-        let k = ev.keystroke.key.as_str();
-        let m = ev.keystroke.modifiers;
-        let p = primary(&m);
-        let handled = match (k, p, m.shift) {
-            ("a", true, false) => {
-                self.select_all(cx);
-                true
-            }
-            ("a", true, true) | ("escape", ..) => {
-                self.sel.clear();
-                self.menu = None;
-                self.entry = None;
-                true
-            }
-            ("c", true, _) => {
-                self.copy(cx);
-                true
-            }
-            ("x", true, _) => {
-                self.copy(cx);
-                self.delete(cx);
-                true
-            }
-            ("v", true, _) => {
-                self.paste(cx);
-                true
-            }
-            ("delete" | "backspace", ..) => {
-                self.delete(cx);
-                true
-            }
-            ("left" | "right", false, false) => {
-                let d = if k == "right" { 1 } else { -1 };
-                self.cursor = (self.cursor + d * self.grid_ticks()).max(0);
-                true
-            }
-            ("home", ..) => {
-                self.cursor = 0;
-                self.scroll = 0.0;
-                true
-            }
-            ("space", false, false) => {
-                self.toggle_play(cx);
-                true
-            }
-            (_, false, true) => {
-                match k {
-                    "d" => self.tool = Tool::Draw,
-                    "e" => self.tool = Tool::Erase,
-                    "c" => self.tool = Tool::Out,
-                    "p" => self.tool = Tool::Pencil,
-                    "s" => self.tool = Tool::Select,
-                    _ => return,
-                }
-                true
-            }
-            _ => false,
-        };
-        if handled {
-            cx.stop_propagation();
+    /// The keys are the registry's actions (`auto.*`); this is where they land
+    fn listeners(&self, d: Stateful<Div>, cx: &mut Context<Self>) -> Stateful<Div> {
+        d.on_action(cx.listener(|ae, _: &AuSelectAll, _, cx| {
+            ae.select_all(cx);
             cx.notify();
-        }
+        }))
+        .on_action(cx.listener(|ae, _: &AuSelectNone, _, cx| {
+            ae.sel.clear();
+            ae.menu = None;
+            ae.entry = None;
+            cx.notify();
+        }))
+        .on_action(cx.listener(|ae, _: &AuCopy, _, cx| {
+            ae.copy(cx);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|ae, _: &AuCut, _, cx| {
+            ae.copy(cx);
+            ae.delete(cx);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|ae, _: &AuPaste, _, cx| {
+            ae.paste(cx);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|ae, _: &AuDelete, _, cx| {
+            ae.delete(cx);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|ae, _: &AuLeft, _, cx| {
+            ae.cursor = (ae.cursor - ae.grid_ticks()).max(0);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|ae, _: &AuRight, _, cx| {
+            ae.cursor += ae.grid_ticks();
+            cx.notify();
+        }))
+        .on_action(cx.listener(|ae, _: &AuHome, _, cx| {
+            ae.cursor = 0;
+            ae.scroll = 0.0;
+            cx.notify();
+        }))
+        .on_action(cx.listener(|ae, _: &AuPlay, _, cx| {
+            ae.toggle_play(cx);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|ae, _: &AuToolDraw, _, cx| ae.set_tool(Tool::Draw, cx)))
+        .on_action(cx.listener(|ae, _: &AuToolErase, _, cx| ae.set_tool(Tool::Erase, cx)))
+        .on_action(cx.listener(|ae, _: &AuToolOut, _, cx| ae.set_tool(Tool::Out, cx)))
+        .on_action(cx.listener(|ae, _: &AuToolPencil, _, cx| ae.set_tool(Tool::Pencil, cx)))
+        .on_action(cx.listener(|ae, _: &AuToolSelect, _, cx| ae.set_tool(Tool::Select, cx)))
+    }
+
+    fn set_tool(&mut self, tool: Tool, cx: &mut Context<Self>) {
+        self.tool = tool;
+        cx.notify();
     }
 
     fn delete(&mut self, cx: &mut Context<Self>) {
@@ -1095,16 +1107,20 @@ impl AutomationEditor {
         let d = ev.delta.pixel_delta(px(16.0));
         let (dx, dy) = (d.x.as_f32(), d.y.as_f32());
         let (x, _) = Self::local(&self.curve_bounds, ev.position);
-        let m = ev.modifiers;
-        if primary(&m) && m.alt {
-            self.grid = (self.grid as i32 - dy.signum() as i32).clamp(0, GRIDS.len() as i32 - 1) as usize;
-        } else if primary(&m) {
-            let anchor = self.x_to_tick(x);
-            self.tpp = (self.tpp * (-dy * 0.01).exp() as f64).clamp(TPP_100 / 8.0, TPP_100 * 8.0);
-            self.scroll = (anchor - x as f64 * self.tpp).max(0.0);
-        } else {
-            let d = if dx.abs() > dy.abs() { dx } else { dy };
-            self.scroll = (self.scroll - d as f64 * self.tpp).max(0.0);
+        match pick_wheel(&["au.view.grid_wheel", "au.view.zoom", "au.view.scroll"], &ev.modifiers) {
+            Some("au.view.grid_wheel") => {
+                self.grid = (self.grid as i32 - dy.signum() as i32).clamp(0, GRIDS.len() as i32 - 1) as usize;
+            }
+            Some("au.view.zoom") => {
+                let anchor = self.x_to_tick(x);
+                self.tpp = (self.tpp * (-dy * 0.01).exp() as f64).clamp(TPP_100 / 8.0, TPP_100 * 8.0);
+                self.scroll = (anchor - x as f64 * self.tpp).max(0.0);
+            }
+            Some(_) => {
+                let d = if dx.abs() > dy.abs() { dx } else { dy };
+                self.scroll = (self.scroll - d as f64 * self.tpp).max(0.0);
+            }
+            None => {}
         }
         cx.notify();
     }
@@ -1324,7 +1340,7 @@ impl Render for AutomationEditor {
         }
         let entity = cx.entity();
         let lane = self.lane(cx);
-        div()
+        let root = div()
             .id("automation")
             .size_full()
             .flex()
@@ -1332,8 +1348,8 @@ impl Render for AutomationEditor {
             .bg(c(THEME.bg1))
             .text_color(c(THEME.text))
             .track_focus(&self.focus)
-            .key_context("AutomationEditor")
-            .on_key_down(cx.listener(|ae, ev: &KeyDownEvent, _, cx| ae.key_down(ev, cx)))
+            .key_context("AutomationEditor");
+        self.listeners(root, cx)
             .child(self.render_toolbar(lane.as_ref(), cx))
             .child(match lane {
                 None => div()

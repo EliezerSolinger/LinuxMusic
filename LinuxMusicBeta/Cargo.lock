@@ -3588,6 +3588,7 @@ dependencies = [
  "lm-port-fake",
  "lm-session",
  "lm-smf",
+ "lm-state",
  "lm-time",
 ]
 

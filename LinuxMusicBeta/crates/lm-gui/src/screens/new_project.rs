@@ -124,8 +124,8 @@ impl Render for NewProject {
                         ))),
                 )
             })
-            .child(form_row(tr("Name"), Input::new(&self.name)))
-            .child(form_row(tr("In"), Input::new(&self.place)))
+            .child(form_row(tr("Name"), crate::ui::text_entry(Input::new(&self.name))))
+            .child(form_row(tr("In"), crate::ui::text_entry(Input::new(&self.place))))
             .child(form_row(
                 tr("Sample rate"),
                 segmented(

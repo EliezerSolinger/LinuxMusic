@@ -516,7 +516,7 @@ impl MarksState {
                     .top(px(lane))
                     .left(px(x.max(0.0)))
                     .w(px(160.))
-                    .child(Input::new(input))
+                    .child(crate::ui::text_entry(Input::new(input)))
                     .into_any_element(),
             );
         }

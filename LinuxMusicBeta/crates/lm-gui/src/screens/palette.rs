@@ -218,6 +218,7 @@ pub fn keys_label(keys: &str) -> String {
 
 /// A key event as the registry writes keys (`secondary-shift-s`); None for a modifier alone
 pub fn keys_of_event(ev: &KeyDownEvent) -> Option<String> {
+    // keymap-ok: turns a pressed key into the registry's text, for the key capture
     let k = &ev.keystroke;
     let key = k.key.as_str();
     if matches!(key, "shift" | "control" | "alt" | "cmd" | "platform" | "function" | "fn" | "") {
@@ -321,6 +322,7 @@ impl Palette {
         if n == 0 {
             return;
         }
+        // keymap-ok: the palette is a text field with a list, its arrows and Enter are the field's
         let step: isize = match ev.keystroke.key.as_str() {
             "down" => 1,
             "up" => -1,
@@ -410,8 +412,15 @@ impl Render for Palette {
             .border_1()
             .border_color(c(THEME.line2))
             .shadow_lg()
+            // keymap-ok: text entry, see `on_key`
             .capture_key_down(cx.listener(Self::on_key))
-            .child(div().p(px(8.)).border_b_1().border_color(c(THEME.line)).child(Input::new(&self.query)))
+            .child(
+                div()
+                    .p(px(8.))
+                    .border_b_1()
+                    .border_color(c(THEME.line))
+                    .child(crate::ui::text_entry(Input::new(&self.query))),
+            )
             .child(
                 div()
                     .id("palette-list")

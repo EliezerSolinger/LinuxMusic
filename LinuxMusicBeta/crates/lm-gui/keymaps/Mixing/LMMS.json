@@ -1,0 +1,77 @@
+{
+  "context": "Mixing",
+  "name": "LMMS",
+  "keys": {
+    "desk.select_left": [
+      "left"
+    ],
+    "desk.select_right": [
+      "right"
+    ],
+    "desk.fader_up": [
+      "up",
+      "="
+    ],
+    "desk.fader_down": [
+      "down",
+      "-"
+    ],
+    "desk.fader_up_coarse": [
+      "shift-up"
+    ],
+    "desk.fader_down_coarse": [
+      "shift-down"
+    ],
+    "desk.fader_up_fine": [
+      "secondary-up"
+    ],
+    "desk.fader_down_fine": [
+      "secondary-down"
+    ],
+    "desk.add_channel": [
+      "shift-insert"
+    ],
+    "desk.move_left": [
+      "alt-left"
+    ],
+    "desk.move_right": [
+      "alt-right"
+    ],
+    "desk.remove_channel": [
+      "delete"
+    ],
+    "desk.rename_channel": [
+      "enter",
+      "f2"
+    ]
+  },
+  "mouse": {
+    "mix.fader.fine": [
+      "shift-drag"
+    ],
+    "mix.fader.wheel": [
+      "wheel"
+    ],
+    "mix.fader.wheel_coarse": [
+      "shift-wheel"
+    ],
+    "mix.fader.wheel_fine": [
+      "secondary-wheel"
+    ],
+    "mix.knob.wheel": [
+      "wheel"
+    ],
+    "mix.knob.wheel_fine": [
+      "shift-wheel"
+    ],
+    "mix.knob.reset": [
+      "double-click"
+    ],
+    "mix.channel.multi": [
+      "secondary-click"
+    ],
+    "mix.channel.rename": [
+      "double-click"
+    ]
+  }
+}
