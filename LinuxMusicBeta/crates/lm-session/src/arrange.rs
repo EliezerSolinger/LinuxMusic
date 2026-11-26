@@ -10,6 +10,7 @@
 //! arrange.insert_bar { tick: int }                      a bar of the meter at `tick` (F-ARR-002)
 //! arrange.remove_bar { tick: int }
 //! mixer.create_channels_for_outputs { track: text (NodeId) }
+//! mixer.group        { channels: [text], name?: text }   a group channel before the first of them (P-18, one step)
 //! ```
 
 use lm_base::{Error, Label, Result};
@@ -108,6 +109,15 @@ pub static ACTIONS: &[ActionSpec] = &[
         id: "mixer.create_channels_for_outputs",
         label: "action.mixer.create_channels_for_outputs",
         run: |s, p| s.create_channels_for_outputs(node_param(p, "track")?).map(|_| ()),
+        enabled: writable,
+    },
+    ActionSpec {
+        id: "mixer.group",
+        label: "action.mixer.group",
+        run: |s, p| {
+            let name = p.get("name").and_then(Value::as_text).map(str::to_owned);
+            s.group_channels(&node_list(p, "channels")?, name).map(|_| ())
+        },
         enabled: writable,
     },
 ];
@@ -391,6 +401,35 @@ impl Session {
 }
 
 impl Session {
+    /// Groups channels (P-18): a new channel before the first of them, their outputs into it, in one undo step. A
+    /// group is a channel that others output to; its own output stays the default (the master). Ids that are not
+    /// channels of the desk are left out. Errors: `action.params` (none left), `mixer.group.empty`
+    pub fn group_channels(&mut self, channels: &[NodeId], name: Option<String>) -> Result<NodeId> {
+        let list: Vec<NodeId> = self
+            .document()
+            .root()
+            .get("mixer")
+            .and_then(|m| m.get("channels"))
+            .map(|l| l.items().filter_map(|v| NodeId::parse(v.get("id")?.as_text()?).ok()).collect())
+            .unwrap_or_default();
+        let members: Vec<NodeId> = channels.iter().copied().filter(|c| list.contains(c)).collect();
+        let Some(index) = members.iter().filter_map(|c| list.iter().position(|l| l == c)).min() else {
+            return Err(Error::new("mixer.group.empty"));
+        };
+        let name = name.unwrap_or_else(|| format!("Group {}", list.len() + 1));
+        let mut made = None;
+        self.document_mut().transact(Label::new("action.mixer.group"), |e| {
+            let group =
+                e.insert(ROOT, "mixer.channels", index, Value::object([("name", Value::text(name.as_str()))]))?;
+            for id in &members {
+                e.set(*id, &[PathStep::key("output")], Value::text(group.to_string()))?;
+            }
+            made = Some(group);
+            Ok(())
+        })?;
+        made.ok_or_else(|| Error::new("mixer.group.empty"))
+    }
+
     /// The items' copies on the clipboard, by their start (F-ARR-006). Error: `arrange.copy.empty`
     pub fn copy_items(&mut self, items: &[NodeId]) -> Result<()> {
         let map = tempo_map(self.document().root())?;
