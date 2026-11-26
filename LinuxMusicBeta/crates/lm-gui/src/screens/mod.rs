@@ -28,6 +28,7 @@ pub mod new_project;
 pub mod notices;
 pub mod palette;
 pub mod piano_roll;
+mod piano_roll_bars;
 pub mod project;
 pub mod routing;
 pub mod settings;

@@ -16,7 +16,7 @@ use gpui::{
     WeakEntity, Window, canvas, div, fill, point, prelude::*, px, size,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
-use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, Ref, Resource, Target, Topic, Value};
+use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, PathStep, Ref, Resource, Target, Topic, Value};
 use lm_time::TempoMap;
 
 use crate::actions::{
@@ -113,6 +113,10 @@ pub struct CompositionPage {
     drag: Option<KnobDrag>,
     item_drag: Option<ItemDrag>,
     pub selected_item: Option<NodeId>,
+    /// The zoom kept in the interface document (`arrangement.ticksPerPx`): the last value written, and whether the
+    /// saved one was read
+    saved_zoom: f64,
+    zoom_read: bool,
     /// The cursor is being dragged on the ruler (ruler.rs)
     cursor_drag: bool,
     /// The tempo lane's state: the point dragged, the menu, the BPM typed (tempo.rs)
@@ -216,6 +220,8 @@ impl CompositionPage {
             drag: None,
             item_drag: None,
             selected_item: None,
+            saved_zoom: 0.0,
+            zoom_read: false,
             cursor_drag: false,
             tempo: tempo::TempoLane::default(),
             show_takes: HashSet::new(),
@@ -380,6 +386,7 @@ impl CompositionPage {
         let (dx, dy) = if wheel && sideways { (dy, 0.0) } else { (dx, dy) };
         let content = self.content_h(cx);
         self.view.wheel(dx, if zoom { -dy } else { dy }, zoom, x, content, Self::view_h(window));
+        self.remember_zoom(cx);
         cx.notify();
     }
 
@@ -389,12 +396,14 @@ impl CompositionPage {
         let content = self.content_h(cx);
         let dy = -(1.0 + ev.delta as f64).ln() * 100.0;
         self.view.wheel(0.0, dy, true, x, content, Self::view_h(window));
+        self.remember_zoom(cx);
         cx.notify();
     }
 
     fn zoom(&mut self, factor: f64, cx: &mut Context<Self>) {
         let w = self.timeline_bounds.borrow().size.width.as_f32() as f64 / 2.0;
         self.view.wheel(0.0, factor, true, w, 0.0, 0.0);
+        self.remember_zoom(cx);
         cx.notify();
     }
 
@@ -476,6 +485,9 @@ impl Render for CompositionPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let now = Instant::now();
         let view_h = Self::view_h(window);
+        if !self.zoom_read {
+            self.read_zoom(cx);
+        }
         // I-3.6: the feed is drained each frame; a removed item stops being selected
         let diff = {
             let core = self.core.read(cx);
@@ -826,11 +838,37 @@ impl CompositionPage {
             )
     }
 
-    /// The view back at the start of the song: the left edge, the first track (F-ARR-013)
+    /// The view back at the start of the song: the left edge, the first track (F-ARR-013), at the project's own
+    /// zoom (the interface document)
     pub(crate) fn to_start(&mut self, cx: &mut Context<Self>) {
         self.view.scroll_ticks = 0.0;
         self.view.scroll_y = 0.0;
+        self.read_zoom(cx);
         cx.notify();
+    }
+
+    /// The zoom the project had (the interface document's `arrangement.ticksPerPx`); none saved: the default
+    fn read_zoom(&mut self, cx: &Context<Self>) {
+        let saved = model::at(self.core.read(cx).port().ui(), &["arrangement", "ticksPerPx"]).and_then(Value::as_real);
+        let tpp = saved.map_or(view::TimelineView::default().ticks_per_px, |t| t.clamp(view::MIN_TPP, view::MAX_TPP));
+        self.view.ticks_per_px = tpp;
+        self.saved_zoom = tpp;
+        self.zoom_read = true;
+    }
+
+    /// Writes the zoom to the interface document when it changed (no undo, not in the journal)
+    fn remember_zoom(&mut self, cx: &mut Context<Self>) {
+        let tpp = self.view.ticks_per_px;
+        if (tpp - self.saved_zoom).abs() < 1e-9 {
+            return;
+        }
+        self.saved_zoom = tpp;
+        if let Ok(v) = Value::real(tpp) {
+            let path = vec![PathStep::key("arrangement"), PathStep::key("ticksPerPx")];
+            self.core.update(cx, |core, _| {
+                let _ = core.port_mut().set_ui(path, v);
+            });
+        }
     }
 
     /// Whether the focus is in this page (its keys work)

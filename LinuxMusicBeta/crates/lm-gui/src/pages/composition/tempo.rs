@@ -272,6 +272,19 @@ impl CompositionPage {
         }
     }
 
+    /// "Mark a tempo change" on a marker (F-REG-011): a point of the map at the marker's tick, or none if it is
+    /// already there (the first point stays)
+    pub(crate) fn mark_tempo_change(&mut self, tick: i64, cx: &mut Context<Self>) {
+        let pts = read(&self.tempo_root(cx));
+        match pts.iter().position(|p| p.tick == tick) {
+            Some(i) => self.remove_point(i, cx),
+            None => {
+                self.add_point(tick as f64, cx);
+            }
+        }
+        cx.notify();
+    }
+
     fn remove_point(&mut self, index: usize, cx: &mut Context<Self>) {
         self.tempo.menu = None;
         let mut pts = read(&self.tempo_root(cx));

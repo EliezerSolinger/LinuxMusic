@@ -22,7 +22,7 @@ use lm_port::{EditOp, GestureId, Label, NodeId, PathStep, ROOT, Ref, Value};
 use super::composition::CompositionPage;
 use crate::core::Core;
 use crate::model::{self, MarkerView, RegionView};
-use crate::ui::{THEME, c, tr, trf};
+use crate::ui::{THEME, c, tr, track_color, trf};
 use crate::view::TimelineView;
 
 /// One lane's height; the two lanes sit under the ruler
@@ -59,6 +59,8 @@ pub struct MarksState {
     view: Cell<TimelineView>,
     drag: Option<Drag>,
     menu: Option<(NodeId, f32)>,
+    /// The menu of an empty lane (right click): the lane (0 markers, 1 regions), the tick, where it opened
+    empty_menu: Option<(usize, i64, f32)>,
     rename: Option<(NodeId, Entity<InputState>, Subscription)>,
     /// a new region being drawn: its ticks, shown until the release
     drawing: Option<(i64, i64)>,
@@ -71,6 +73,7 @@ impl MarksState {
             view: Cell::new(TimelineView::default()),
             drag: None,
             menu: None,
+            empty_menu: None,
             rename: None,
             drawing: None,
         }
@@ -105,14 +108,16 @@ impl MarksState {
         model::tempo_map(port.root()).tick_at(port.telemetry().position.samples)
     }
 
-    fn insert(&self, list: &str, node: Value, cx: &mut App) {
+    fn insert(&self, list: &str, node: Value, cx: &mut App) -> Option<NodeId> {
         let root = self.root(cx);
         let index = model::list(&root, list).count();
-        self.apply(
-            if list == "markers" { "Add a marker" } else { "Add a region" },
-            vec![EditOp::Insert { temp: 1, parent: Ref::Id(ROOT), list: list.into(), index, node }],
-            cx,
-        );
+        let label = if list == "markers" { "Add a marker" } else { "Add a region" };
+        let op = EditOp::Insert { temp: 1, parent: Ref::Id(ROOT), list: list.into(), index, node };
+        self.core.update(cx, |c, cx| {
+            let made = c.port_mut().apply(Label::new(label), vec![op]).ok();
+            cx.notify();
+            made.and_then(|a| a.created.first().map(|(_, id)| *id))
+        })
     }
 
     /// M: a marker at the cursor, "Marker N" (one per tick: on a marker's tick nothing is added)
@@ -121,13 +126,57 @@ impl MarksState {
         self.add_marker(tick, cx);
     }
 
-    fn add_marker(&mut self, tick: i64, cx: &mut App) {
+    fn add_marker(&mut self, tick: i64, cx: &mut App) -> Option<NodeId> {
         let markers = model::markers(&self.root(cx));
         if markers.iter().any(|m| m.tick == tick) {
-            return;
+            return None;
         }
         let name = trf("Marker {0}", &[&(markers.len() + 1)]);
-        self.insert("markers", Value::object([("name", Value::text(name)), ("tick", Value::int(tick))]), cx);
+        self.insert("markers", Value::object([("name", Value::text(name)), ("tick", Value::int(tick))]), cx)
+    }
+
+    /// "Add a marker here": the marker, its name asked
+    fn add_marker_named(&mut self, tick: i64, window: &mut Window, cx: &mut Context<CompositionPage>) {
+        self.empty_menu = None;
+        if let Some(id) = self.add_marker(tick, cx) {
+            self.start_rename(id, window, cx);
+        }
+    }
+
+    /// A region over the loop if the tick is in it, else the bar of the tick (F-REG-012)
+    fn add_region_at(&mut self, tick: i64, over_loop: bool, cx: &mut App) {
+        self.empty_menu = None;
+        let root = self.root(cx);
+        let (from, to) = model::song(&root).loop_range;
+        let (a, z) = if over_loop && to > from {
+            (from, to)
+        } else {
+            let map = model::tempo_map(&root);
+            let bar = map.bar_beat_tick(tick).bar;
+            let a = map.bar_start(bar).unwrap_or(tick);
+            (a, map.bar_start(bar + 1).unwrap_or(a + 4 * model::ppq(&root) as i64))
+        };
+        let n = model::regions(&root).len() + 1;
+        let node = Value::object([
+            ("name", Value::text(trf("Region {0}", &[&n]))),
+            ("from", Value::int(a)),
+            ("to", Value::int(z)),
+        ]);
+        self.insert("regions", node, cx);
+    }
+
+    /// The colour of a marker or a region (F-REG-011, F-REG-012); none: the theme's
+    fn set_color(&mut self, id: NodeId, color: Option<u32>, cx: &mut App) {
+        self.menu = None;
+        self.apply(
+            "Colour",
+            vec![EditOp::Set {
+                id: Ref::Id(id),
+                path: vec![PathStep::key("color")],
+                value: Value::int(i64::from(color.unwrap_or(0))),
+            }],
+            cx,
+        );
     }
 
     /// Shift+R: a region over the loop
@@ -239,9 +288,14 @@ impl MarksState {
         let v = self.view.get();
         let hit = self.hit(&root, lane, x);
         self.menu = None;
+        self.empty_menu = None;
         if ev.button == MouseButton::Right {
-            if let Some((_, id)) = hit {
-                self.menu = Some((id, x));
+            match hit {
+                Some((_, id)) => self.menu = Some((id, x)),
+                None => {
+                    let t = self.snap(v.tick_at(x), cx);
+                    self.empty_menu = Some((lane, t, x));
+                }
             }
             cx.notify();
             return;
@@ -253,7 +307,13 @@ impl MarksState {
                     let t = self.snap(v.tick_at(x), cx);
                     self.add_marker(t, cx);
                 }
-                None => {}
+                // a double click on the empty regions' lane: a region over the loop if the click is in it, else the
+                // bar under the pointer
+                None => {
+                    let t = v.tick_at(x).max(0.0) as i64;
+                    let (from, to) = model::song(&root).loop_range;
+                    self.add_region_at(t, (from..to).contains(&t), cx);
+                }
             }
             cx.notify();
             return;
@@ -499,7 +559,7 @@ impl MarksState {
 
     /// The menu of a marker or a region (right click), under the lanes
     pub fn render_menu(&self, root: &Value, cx: &Context<CompositionPage>) -> Option<AnyElement> {
-        let (id, x) = self.menu?;
+        let Some((id, x)) = self.menu else { return self.render_empty_menu(root, cx) };
         let is_marker = id.kind == b'g';
         let item = |key: &'static str, sel: &'static str| {
             div()
@@ -515,6 +575,7 @@ impl MarksState {
         let region = model::regions(root).into_iter().find(|r| r.id == id);
         let marker = model::markers(root).into_iter().find(|m| m.id == id);
         let start = marker.as_ref().map(|m| m.tick).or(region.as_ref().map(|r| r.from)).unwrap_or(0);
+        let current = marker.as_ref().and_then(|m| m.color).or(region.as_ref().and_then(|r| r.color));
         let mut menu = div()
             .absolute()
             .top(px(crate::view::RULER_H + MARKS_H))
@@ -530,11 +591,30 @@ impl MarksState {
                 item("Rename", "mark-rename")
                     .on_click(cx.listener(move |p, _, window, cx| p.marks.start_rename(id, window, cx))),
             )
+            .child(self.swatches(id, current, cx))
             .child(item("Play from here", "mark-play").on_click(cx.listener(move |p, _, _, cx| {
                 p.marks.menu = None;
                 p.marks.run("transport.locate", Value::int(start), cx);
                 p.marks.run("transport.play", Value::NULL, cx);
             })));
+        if is_marker {
+            let has = crate::model::tempo_map(root).points().iter().any(|p| p.tick == start);
+            menu = menu.child(
+                div()
+                    .id("mark-tempo")
+                    .debug_selector(|| "mark-tempo".into())
+                    .px(px(10.))
+                    .py(px(4.))
+                    .text_size(px(12.))
+                    .cursor_pointer()
+                    .hover(|d| d.bg(c(THEME.bg4)))
+                    .child(format!("{}{}", if has { "✓ " } else { "" }, tr("Mark a tempo change")))
+                    .on_click(cx.listener(move |p, _, _, cx| {
+                        p.marks.menu = None;
+                        p.mark_tempo_change(start, cx);
+                    })),
+            );
+        }
         if let Some(r) = region.filter(|_| !is_marker) {
             let r2 = r.clone();
             menu = menu
@@ -553,6 +633,89 @@ impl MarksState {
             menu.child(item("Remove", "mark-remove").on_click(cx.listener(move |p, _, _, cx| p.marks.remove(id, cx))))
                 .into_any_element(),
         )
+    }
+
+    /// The colours of a marker or a region: the eight of the theme and "none"
+    fn swatches(&self, id: NodeId, current: Option<u32>, cx: &Context<CompositionPage>) -> AnyElement {
+        let mut row = div()
+            .px(px(10.))
+            .py(px(4.))
+            .flex()
+            .items_center()
+            .gap(px(4.))
+            .child(div().text_size(px(12.)).mr(px(4.)).child(tr("Colour")));
+        for (n, col) in (0..8).map(|i| (i, track_color(i))).collect::<Vec<_>>() {
+            row = row.child(
+                div()
+                    .id(("mark-color", n))
+                    .debug_selector(move || format!("mark-color-{n}"))
+                    .w(px(14.))
+                    .h(px(14.))
+                    .rounded(px(3.))
+                    .bg(c(col))
+                    .cursor_pointer()
+                    .when(current == Some(col), |d| d.border_2().border_color(c(THEME.text)))
+                    .on_click(cx.listener(move |p, _, _, cx| p.marks.set_color(id, Some(col), cx))),
+            );
+        }
+        row.child(
+            div()
+                .id("mark-color-none")
+                .debug_selector(|| "mark-color-none".into())
+                .px(px(4.))
+                .text_size(px(11.))
+                .text_color(c(THEME.text2))
+                .cursor_pointer()
+                .child("✕")
+                .on_click(cx.listener(move |p, _, _, cx| p.marks.set_color(id, None, cx))),
+        )
+        .into_any_element()
+    }
+
+    /// The menu of an empty lane: a marker here, or a region over the loop or of a bar
+    fn render_empty_menu(&self, root: &Value, cx: &Context<CompositionPage>) -> Option<AnyElement> {
+        let (lane, tick, x) = self.empty_menu?;
+        let item = |sel: &'static str, key: &'static str| {
+            div()
+                .id(sel)
+                .debug_selector(move || sel.to_string())
+                .px(px(10.))
+                .py(px(4.))
+                .text_size(px(12.))
+                .cursor_pointer()
+                .hover(|d| d.bg(c(THEME.bg4)))
+                .child(tr(key))
+        };
+        let mut menu = div()
+            .absolute()
+            .top(px(crate::view::RULER_H + MARKS_H))
+            .left(px(x))
+            .min_w(px(170.))
+            .py(px(4.))
+            .rounded(px(6.))
+            .bg(c(THEME.bg2))
+            .border_1()
+            .border_color(c(THEME.line2))
+            .shadow_lg();
+        if lane == 0 {
+            menu = menu.child(
+                item("mark-add", "Add a marker here")
+                    .on_click(cx.listener(move |p, _, window, cx| p.marks.add_marker_named(tick, window, cx))),
+            );
+        } else {
+            let (from, to) = model::song(root).loop_range;
+            if to > from {
+                menu = menu.child(
+                    item("mark-region-loop", "Region over the loop")
+                        .on_click(cx.listener(move |p, _, _, cx| p.marks.add_region_at(tick, true, cx))),
+                );
+            }
+            menu = menu.child(
+                item("mark-region-bar", "Region of a bar")
+                    .on_click(cx.listener(move |p, _, _, cx| p.marks.add_region_at(tick, false, cx))),
+            );
+        }
+        Some(menu.into_any_element())
     }
 
     /// The header beside the lanes

@@ -36,6 +36,7 @@ use self::music::{
 };
 use super::ScreenCx;
 use super::live::Live;
+use super::piano_roll_bars::{self, Bar};
 use crate::actions::{
     PrCopy, PrCut, PrCutOverlaps, PrDelete, PrFill, PrGlue, PrModeDraw, PrModeErase, PrModeKnife, PrModePitch,
     PrModeSelect, PrModeStrum, PrMoveBarLeft, PrMoveBarRight, PrMoveLeft, PrMoveRight, PrOctaveDown, PrOctaveUp,
@@ -1631,6 +1632,8 @@ struct GridPaint {
     key_h: f32,
     scroll_y: f32,
     grid: i64,
+    /// The bars by the tempo map around the visible part (F-NOT-013)
+    bars: Arc<Vec<Bar>>,
     length: i64,
     loop_len: Option<i64>,
     scale: Option<(u8, usize)>,
@@ -1717,8 +1720,16 @@ impl GridPaint {
             }
         };
         lines(self.grid, THEME.pr_line);
-        lines(BEAT, THEME.pr_beat);
-        lines(BAR, THEME.pr_bar);
+        for bar in self.bars.iter() {
+            if (bar.beat as f64 / self.tpp) >= 6.0 {
+                let mut t = bar.start + bar.beat;
+                while t < bar.start + bar.len {
+                    window.paint_quad(fill(r(self.x(t as f64), 0.0, 1.0, h), c(THEME.pr_beat)));
+                    t += bar.beat;
+                }
+            }
+            window.paint_quad(fill(r(self.x(bar.start as f64), 0.0, 1.0, h), c(THEME.pr_bar)));
+        }
         // past the repeating part (a pattern) and past the item's end
         if let Some(l) = self.loop_len {
             let lx = self.x(l as f64).max(0.0);
@@ -2214,6 +2225,13 @@ impl PianoRoll {
             ),
             _ => (BTreeSet::new(), Vec::new()),
         };
+        let span = self.grid_bounds.get().size.width.as_f32().max(800.0) as f64 * self.tpp;
+        let bars = Arc::new(piano_roll_bars::bars(
+            self.scx.core.read(cx).port().root(),
+            clip.start,
+            self.scroll,
+            self.scroll + span,
+        ));
         let grid_paint = GridPaint {
             notes: clip.notes.clone(),
             ghost,
@@ -2225,6 +2243,7 @@ impl PianoRoll {
             key_h: self.key_h,
             scroll_y: self.scroll_y,
             grid: self.grid_ticks(),
+            bars: bars.clone(),
             length: clip.length,
             loop_len: clip.loop_len,
             scale: self.scale.map(|s| (self.root, s)),
@@ -2255,6 +2274,7 @@ impl PianoRoll {
         };
         let (gb, rb, lb) = (self.grid_bounds.clone(), self.ruler_bounds.clone(), self.lane_bounds.clone());
         let (scroll, tpp) = (self.scroll, self.tpp);
+        let ruler_bars = bars.clone();
         let item_loop = (self.play.loop_on, self.play.loop_a, self.play.loop_b);
         let item_cursor = self.play.at(HostTime::now());
         let (lane_notes, lane_sel, lane_mode) = (clip.notes.clone(), self.sel.clone(), self.lane);
@@ -2289,23 +2309,23 @@ impl PianoRoll {
                                     );
                                     window.paint_quad(fill(lb, c(THEME.loop_on)));
                                 }
-                                let step = BAR * ((60.0 * tpp / BAR as f64).ceil() as i64).max(1);
-                                let mut t = (scroll / step as f64).floor() as i64 * step;
-                                while x(t as f64) < w {
-                                    let xx = x(t as f64);
+                                // a number on every n-th bar, as far apart as the zoom allows
+                                let every = ruler_bars
+                                    .first()
+                                    .map_or(1, |b| ((60.0 * tpp / b.len as f64).ceil() as i64).max(1));
+                                for bar in ruler_bars.iter().filter(|b| (b.number - 1) % every == 0) {
+                                    let xx = x(bar.start as f64);
                                     let tb = Bounds::new(point(o.x + px(xx), o.y + px(4.0)), size(px(1.0), px(14.0)));
                                     window.paint_quad(fill(tb, c(THEME.text3)));
-                                    let label = format!("{}", t / BAR + 1).into();
                                     paint_text(
                                         window,
                                         cx,
-                                        label,
+                                        format!("{}", bar.number).into(),
                                         o.x + px(xx + 3.0),
                                         o.y + px(1.0),
                                         10.0,
                                         c(THEME.text2),
                                     );
-                                    t += step;
                                 }
                                 let cx_ = x(item_cursor as f64);
                                 let mut pb = PathBuilder::fill();
