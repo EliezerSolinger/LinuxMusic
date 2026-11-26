@@ -2285,7 +2285,8 @@ impl Session {
                 tracks: vec![id.to_string()],
             })
             .collect();
-        let plan = RecordPlan::new(audio, inputs, self.spec.sample_rate);
+        let mut plan = RecordPlan::new(audio, inputs, self.spec.sample_rate);
+        plan.latency = self.recording_latency();
         let (sender, receiver) = lm_io::recording_channel(plan)?;
         let disk = self.disk.as_mut().ok_or_else(|| err("session.record.no_disk"))?;
         disk.record(receiver)?;
@@ -2299,6 +2300,27 @@ impl Session {
         self.recording_tracks = tracks.into_iter().map(|(id, _)| id).collect();
         self.record_start = Some(RecordStart { since: self.clock.now() });
         Ok(())
+    }
+
+    /// The latency a take is placed back by (F-REC-080..082, H5, H19): what the open device reports (input plus
+    /// output), the residual of its calibration (the entry of this device pair, rate and edge converter), and the
+    /// manual offset of the preferences on top
+    pub(crate) fn recording_latency(&self) -> i64 {
+        let reported = self
+            .device
+            .as_ref()
+            .and_then(|d| d.info())
+            .map_or((0, false), |i| (i64::from(i.reported_round_trip()), i.edge_resampler));
+        let pair = |k: &str| self.preferences.text(&["audio", k]).unwrap_or("");
+        let calibrations = self.preferences.get(&["audio", "calibrations"]);
+        let residual = calibration_residual(
+            calibrations,
+            &format!("{}|{}", pair("input"), pair("output")),
+            i64::from(self.spec.sample_rate),
+            reported.1,
+        );
+        let manual = self.preferences.int(&["audio", "latencyFrames"]).unwrap_or(0).clamp(-48_000, 48_000);
+        reported.0 + residual + manual
     }
 
     fn poll_disk(&mut self) -> bool {
@@ -2743,5 +2765,46 @@ pub(crate) fn plugin_content(c: &lm_io::Content) -> lm_plugin::Loaded {
     match c {
         lm_io::Content::Bytes(b) => lm_plugin::Loaded::Bytes(b.clone()),
         lm_io::Content::File(p) => lm_plugin::Loaded::File(Arc::from(p.as_path())),
+    }
+}
+
+/// The residual stored by `device.calibrate` for this device pair, rate and edge converter (0 when not calibrated)
+pub(crate) fn calibration_residual(calibrations: Option<&Value>, pair: &str, rate: i64, edge: bool) -> i64 {
+    calibrations
+        .into_iter()
+        .flat_map(Value::items)
+        .find(|c| {
+            c.get("devices").and_then(Value::as_text) == Some(pair)
+                && c.get("rate").and_then(Value::as_int) == Some(rate)
+                && c.get("edgeConverter").and_then(Value::as_bool).unwrap_or(false) == edge
+        })
+        .and_then(|c| c.get("residual").and_then(Value::as_int))
+        .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod calibration_tests {
+    use super::*;
+
+    #[test]
+    fn the_stored_residual_is_found_by_pair_rate_and_converter() {
+        let entry = |pair: &str, rate: i64, edge: bool, residual: i64| {
+            Value::object([
+                ("devices", Value::text(pair)),
+                ("rate", Value::int(rate)),
+                ("edgeConverter", Value::bool(edge)),
+                ("residual", Value::int(residual)),
+            ])
+        };
+        let list = Value::list([
+            entry("a|b", 48000, false, 120),
+            entry("a|b", 44100, false, 7),
+            entry("a|b", 48000, true, 33),
+        ]);
+        assert_eq!(calibration_residual(Some(&list), "a|b", 48000, false), 120);
+        assert_eq!(calibration_residual(Some(&list), "a|b", 48000, true), 33);
+        assert_eq!(calibration_residual(Some(&list), "a|b", 96000, false), 0);
+        assert_eq!(calibration_residual(Some(&list), "x|y", 48000, false), 0);
+        assert_eq!(calibration_residual(None, "a|b", 48000, false), 0);
     }
 }
