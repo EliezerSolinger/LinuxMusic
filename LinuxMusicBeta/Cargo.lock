@@ -3789,6 +3789,7 @@ dependencies = [
  "lm-render",
  "lm-state",
  "lm-sys-samplerate",
+ "lm-sys-sndfile",
 ]
 
 [[package]]

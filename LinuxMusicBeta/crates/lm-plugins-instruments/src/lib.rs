@@ -9,6 +9,7 @@
 
 pub mod audio_file_processor;
 pub mod bit_invader;
+pub mod drum_machines;
 pub mod kicker;
 pub mod lb302;
 pub mod monstro;
@@ -26,6 +27,7 @@ use lm_plugin::Descriptor;
 pub static ALL: &[&Descriptor] = &[
     &audio_file_processor::DESCRIPTOR,
     &bit_invader::DESCRIPTOR,
+    &drum_machines::DESCRIPTOR,
     &kicker::DESCRIPTOR,
     &lb302::DESCRIPTOR,
     &monstro::DESCRIPTOR,

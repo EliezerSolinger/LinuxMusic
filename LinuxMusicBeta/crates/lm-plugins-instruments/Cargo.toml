@@ -18,6 +18,7 @@ lm-plugin.workspace = true
 lm-dsp.workspace = true
 lm-sys-samplerate.workspace = true
 libm.workspace = true
+lm-sys-sndfile.workspace = true
 
 [dev-dependencies]
 lm-plugin = { workspace = true, features = ["testing"] }
