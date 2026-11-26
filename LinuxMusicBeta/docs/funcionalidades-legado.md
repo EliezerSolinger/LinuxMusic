@@ -882,6 +882,12 @@ Regras gerais do legado que valem para quase todo plugin:
   variáveis (t, f, key, bnote, srate, tempo, v, rel, trel, seed, A1–A3) e funções (W1–W3, cent, semitone, last,
   integrate, rand, randv, formas de onda, e a matemática do exprtk).
 - **Comportamento:** sem release próprio; a cauda é o que a expressão faz com `rel`/`trel`.
+- **Estado (26/11):** feito o motor e o plugin, **sem rodar os testes** (regra do dia): `lm-dsp::xpressive` (a voz do
+  `ExprSynth`: O1/O2 com pan, W1–W3 por expressão ou desenhadas com a suavização gaussiana, A1–A3, `rel`/`trel`,
+  sementes por nota, interpolação) sobre o `lm-expr`; `lm-plugins-instruments::xpressive` (esquema, `check`/`edit`/
+  `status` para o editor mostrar a posição do erro e manter o último texto bom). `bnote` virou o parâmetro `baseNote`
+  (era da faixa) e `v` é a velocidade × 100/255. Falta: rodar os testes e abençoar `tests/data/xpressive/defaults.json`
+  (`LM_BLESS_DEFAULTS=1`), a janela (artwork próprio, F-INS-022 em plugins-visual.md) e a ajuda.
 
 #### F-INS-023 ZynAddSubFX — 1.0
 

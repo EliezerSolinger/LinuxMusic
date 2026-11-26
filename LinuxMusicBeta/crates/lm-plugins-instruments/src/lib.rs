@@ -21,6 +21,7 @@ pub mod slicert;
 pub mod src_port;
 pub mod vibed;
 pub mod watsyn;
+pub mod xpressive;
 
 use lm_plugin::Descriptor;
 
@@ -39,6 +40,7 @@ pub static ALL: &[&Descriptor] = &[
     &slicert::DESCRIPTOR,
     &vibed::DESCRIPTOR,
     &watsyn::DESCRIPTOR,
+    &xpressive::DESCRIPTOR,
 ];
 
 /// The main stereo output every instrument here has

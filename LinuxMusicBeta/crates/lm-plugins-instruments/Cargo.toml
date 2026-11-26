@@ -16,6 +16,7 @@ lm-state.workspace = true
 lm-render.workspace = true
 lm-plugin.workspace = true
 lm-dsp.workspace = true
+lm-expr.workspace = true
 lm-sys-samplerate.workspace = true
 libm.workspace = true
 lm-sys-sndfile.workspace = true
