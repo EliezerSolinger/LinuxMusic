@@ -2,7 +2,7 @@
 //! knob, the 204×134 graph over `wavegraph.png` (as many samples as the length), the preset wave buttons that fill
 //! the graph, smooth, and the three LEDs.
 //!
-//! The user-defined wave button asks for an audio file and sends its bytes to the core's `bitinvader.load_wave`
+//! The user-defined wave button asks for an audio file and sends its bytes to the core's `plugin.load_into_field`
 //! action (`{node, field, bytes}`), which turns the file into the graph's samples (the legacy `loadSample`).
 
 use std::sync::LazyLock;
@@ -27,7 +27,7 @@ static USR_OFF: Asset = asset!("bitinvader/usr_wave_inactive.png");
 pub static ASSETS: &[&Asset] = &[&ARTWORK, &WAVEGRAPH, &SMOOTH_ON, &SMOOTH_OFF, &USR_ON, &USR_OFF];
 
 /// The core's action that loads the graph from an audio file
-pub const LOAD_ACTION: &str = "bitinvader.load_wave";
+pub const LOAD_ACTION: &str = "plugin.load_into_field";
 
 /// The wave and its length
 fn wave(cx: &PressCx<'_>) -> (Vec<f64>, usize) {

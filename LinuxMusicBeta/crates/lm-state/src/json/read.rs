@@ -161,8 +161,11 @@ impl Reader<'_> {
                 Some(b'}') => {
                     self.pos += 1;
                     return Ok(match resource_shape(map.iter().map(|(k, v)| (&**k, v))) {
-                        Some((kind, key)) => match Resource::new(kind, key) {
-                            Ok(r) => Value::resource(r),
+                        Some((kind, key, name)) => match Resource::new(kind, key) {
+                            Ok(r) => Value::resource(match name {
+                                Some(n) => r.with_name(n),
+                                None => r,
+                            }),
                             Err(_) => Value::from_map(map),
                         },
                         None => Value::from_map(map),

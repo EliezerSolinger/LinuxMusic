@@ -6,7 +6,7 @@
 //! power LEDs, and the 3×3 harmonic selector (1/4, 1/2, fundamental, 2 to 7) at 21, 127.
 //!
 //! Each string has its own set of controls, shown with its button. The user-wave button asks for an audio file and
-//! sends its bytes to the core's `vibed.load_wave` action, which sets the shown string's impulse.
+//! sends its bytes to the core's `plugin.load_into_field` action, which sets the shown string's impulse.
 
 use std::sync::LazyLock;
 
@@ -90,7 +90,7 @@ pub static ASSETS: &[&Asset] = &[
 ];
 
 /// The core's action that loads a string's impulse from an audio file
-pub const LOAD_ACTION: &str = "vibed.load_wave";
+pub const LOAD_ACTION: &str = "plugin.load_into_field";
 
 const POINTS: usize = 128;
 const SHAPES: [&str; 9] = ["shape1", "shape2", "shape3", "shape4", "shape5", "shape6", "shape7", "shape8", "shape9"];

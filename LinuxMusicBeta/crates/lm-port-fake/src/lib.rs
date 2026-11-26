@@ -11,6 +11,7 @@
 
 pub mod demo;
 mod desk;
+mod field_load;
 mod library;
 mod midi;
 mod modulators;
@@ -1085,6 +1086,8 @@ impl CorePort for FakePort {
             "plugin.save_preset" => self.save_preset(&params),
             // the track's tuning files (F-IJN-020): a Scala scale or keymap cited by the track, one edit
             "tuning.set_scale" | "tuning.set_keymap" | "tuning.clear" => self.set_tuning(action.as_str(), &params),
+            // a file into a plugin field (a patch, a wave): one undo step
+            "plugin.load_into_field" => field_load::load_into_field(self, &params),
             // the entry's file shown in the system's file manager (F-BRW-008): the fake says where it is
             "browser.reveal" => self.reveal(&params),
             // a project of the browser opened (F-BRW-006): an operation on the project

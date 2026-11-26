@@ -1236,11 +1236,12 @@ impl<H: PortHost> PluginPanel<H> {
                         return;
                     }
                     // a patch or a wave is small; anything past 64 MB is not one
+                    let name = file_name(&path);
                     let read = cx
                         .background_executor()
                         .spawn(async move { std::fs::read(&path).ok().filter(|b| b.len() <= 64 << 20) });
                     let Some(bytes) = read.await else { return };
-                    let _ = this.update(cx, |p, cx| p.send_open(action, node, field, &bytes, cx));
+                    let _ = this.update(cx, |p, cx| p.send_open(action, node, field, &name, &bytes, cx));
                 }
             }
         }));
@@ -1265,11 +1266,21 @@ impl<H: PortHost> PluginPanel<H> {
         cx.notify();
     }
 
-    /// Sends a file's bytes to the core's `action` for a resource field (`{node, field, bytes}`)
-    pub fn send_open(&mut self, action: &'static str, node: NodeId, field: &str, bytes: &[u8], cx: &mut Context<Self>) {
+    /// Sends a file's bytes and name to the core's `action` for a field (`{node, field, bytes, name}`: the generic
+    /// `plugin.load_into_field`, which imports a resource or reads a wave, in one undo step)
+    pub fn send_open(
+        &mut self,
+        action: &'static str,
+        node: NodeId,
+        field: &str,
+        name: &str,
+        bytes: &[u8],
+        cx: &mut Context<Self>,
+    ) {
         let params = Value::object([
             ("node", Value::text(node.to_string())),
             ("field", Value::text(field)),
+            ("name", Value::text(name)),
             ("bytes", Value::list(bytes.iter().map(|b| Value::int(i64::from(*b))))),
         ]);
         self.host.update(cx, |h, _| {
@@ -1303,6 +1314,7 @@ impl<H: PortHost> PluginPanel<H> {
     pub fn drop_files(
         &mut self,
         action: &'static str,
+        field: &'static str,
         extensions: &[&str],
         paths: &[std::path::PathBuf],
         cx: &mut Context<Self>,
@@ -1312,25 +1324,13 @@ impl<H: PortHost> PluginPanel<H> {
         };
         let Some(path) = paths.iter().find(wanted).cloned() else { return };
         let node = self.node;
-        let read = cx.background_executor().spawn(async move {
-            // a patch is a few bytes; anything past 1 MB is not one
-            std::fs::read(&path).ok().filter(|b| b.len() <= 1 << 20)
-        });
+        let name = file_name(&path);
+        let read =
+            cx.background_executor().spawn(async move { std::fs::read(&path).ok().filter(|b| b.len() <= 64 << 20) });
         self.timer = Some(cx.spawn(async move |this, cx| {
             let Some(bytes) = read.await else { return };
-            let _ = this.update(cx, |p, cx| p.send_file(action, node, &bytes, cx));
+            let _ = this.update(cx, |p, cx| p.send_open(action, node, field, &name, &bytes, cx));
         }));
-    }
-
-    /// Sends a file's bytes to the core's action for this plugin (`{node, bytes}`, one undo step there)
-    pub fn send_file(&mut self, action: &'static str, node: NodeId, bytes: &[u8], cx: &mut Context<Self>) {
-        let params = Value::object([
-            ("node", Value::text(node.to_string())),
-            ("bytes", Value::list(bytes.iter().map(|b| Value::int(i64::from(*b))))),
-        ]);
-        self.host.update(cx, |h, _| {
-            let _ = h.port_mut().run_action(action.into(), params);
-        });
     }
 
     /// Imports `path` for the file field of `ctrl` (also what the double click ends in; the tests call it)
@@ -2235,6 +2235,11 @@ impl<H: PortHost> PluginPanel<H> {
     }
 }
 
+/// The last part of a path, as text
+fn file_name(path: &std::path::Path) -> String {
+    path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_owned()
+}
+
 /// What a readout shows of a field: a resource's file name (its key is the file's content, so its name is the
 /// last path part), a text, or a number
 fn readout_text(v: &Value) -> String {
@@ -2242,7 +2247,10 @@ fn readout_text(v: &Value) -> String {
         return t.rsplit(['/', '\\']).next().unwrap_or(t).to_owned();
     }
     if let Some(r) = v.as_resource() {
-        // the resource is the content's hash: its first characters stand for the file
+        // the file's name when the core kept it, else the content's hash: its first characters stand for the file
+        if let Some(name) = r.name() {
+            return name.to_owned();
+        }
         return format!("{} {}", r.kind(), r.key().chars().take(8).collect::<String>());
     }
     String::new()
@@ -2388,9 +2396,9 @@ impl<H: PortHost> Render for PluginPanel<H> {
             .w(px(w))
             .h(px(h))
             .bg(rgb(spec.fill));
-        if let Some(crate::spec::FileDrop::Action { action, extensions }) = spec.file_drop {
+        if let Some(crate::spec::FileDrop::Action { action, field, extensions }) = spec.file_drop {
             root = root.on_drop(cx.listener(move |p, paths: &gpui::ExternalPaths, _, cx| {
-                p.drop_files(action, extensions, paths.paths(), cx);
+                p.drop_files(action, field, extensions, paths.paths(), cx);
             }));
         }
         if let Some(bg) = spec.background_of(view) {

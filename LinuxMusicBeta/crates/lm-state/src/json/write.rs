@@ -99,6 +99,13 @@ impl Writer {
                     self.string("kind");
                     self.out.push_str(if self.pretty { ": " } else { ":" });
                     self.string(r.kind());
+                    if let Some(name) = r.name() {
+                        self.out.push(',');
+                        self.newline(depth + 1);
+                        self.string("name");
+                        self.out.push_str(if self.pretty { ": " } else { ":" });
+                        self.string(name);
+                    }
                     self.newline(depth);
                     self.out.push('}');
                 }

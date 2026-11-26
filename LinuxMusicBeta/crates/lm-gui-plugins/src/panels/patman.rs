@@ -1,8 +1,8 @@
 //! Patman (legado/plugins/Patman/Patman.cpp, `PatmanView`): the artwork, the patch's file name painted at (8, 116) in
 //! the small font, the open button (227, 86) and the loop and tune switches (195, 138 and 223, 138). A patch is a
-//! Gravis Ultrasound `.pat`: the open button asks for the file and sends its bytes to the core's `patman.load_patch`
-//! action (`{node, field, bytes}`), which reads it and sets the `patch` resource; a `.pat` dropped on the panel does
-//! the same. The name shows the resource's kind and the start of its hash until the core keeps the file's name.
+//! Gravis Ultrasound `.pat`: the open button asks for the file and sends its bytes to the core's `plugin.load_into_field`
+//! action (`{node, field, bytes, name}`), which reads it and sets the `patch` resource; a `.pat` dropped on the panel does
+//! the same. The name shows the file's name, which the resource keeps (the kind and the start of its hash for a resource with none).
 
 use std::sync::LazyLock;
 
@@ -22,7 +22,7 @@ static TUNE_OFF: Asset = asset!("patman/tune_off.png");
 pub static ASSETS: &[&Asset] = &[&ARTWORK, &SELECT_FILE, &SELECT_FILE_ON, &LOOP_ON, &LOOP_OFF, &TUNE_ON, &TUNE_OFF];
 
 /// The core's action that reads a patch file into the `patch` field
-pub const LOAD_ACTION: &str = "patman.load_patch";
+pub const LOAD_ACTION: &str = "plugin.load_into_field";
 
 pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| PanelSpec {
     plugin: ID,
@@ -47,5 +47,5 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| PanelSpec {
         button(Bind::Switch { param: "tuned" }, "tuned", 223.0, 138.0, &TUNE_ON, &TUNE_OFF, "Tune").tip("Tune mode"),
     ],
     labels: Vec::new(),
-    file_drop: Some(FileDrop::Action { action: LOAD_ACTION, extensions: &["pat"] }),
+    file_drop: Some(FileDrop::Action { action: LOAD_ACTION, field: "patch", extensions: &["pat"] }),
 });

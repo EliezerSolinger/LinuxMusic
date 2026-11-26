@@ -262,6 +262,7 @@ pub fn all() -> impl Iterator<Item = &'static ActionSpec> {
         .chain(crate::plugin_actions::ACTIONS.iter())
         .chain(crate::tuning_actions::ACTIONS.iter())
         .chain(crate::modulators::ACTIONS.iter())
+        .chain(crate::field_load::ACTIONS.iter())
         .chain(crate::session::core_actions::ACTIONS.iter())
 }
 

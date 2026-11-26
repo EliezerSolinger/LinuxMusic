@@ -351,7 +351,7 @@ pub struct Session {
     load_ops: Ops<lm_io::Loaded, String>,
     /// Loads of the other kinds (U24, C9): bytes or a checked file
     kind_ops: Ops<lm_io::KindLoaded, Resource>,
-    import_ops: Ops<lm_io::ImportedFile, ()>,
+    import_ops: Ops<lm_io::ImportedFile, String>,
     /// Takes being closed, by the recording they belong to (0: a recovered take, alone)
     take_ops: Ops<FinalizedTake, u64>,
     generic_ops: Ops<Value, &'static str>,
@@ -1562,7 +1562,7 @@ impl Session {
             self.imported.push((
                 id,
                 match &result {
-                    Ok(file) => Resource::new("audio", &file.key),
+                    Ok(file) => Resource::new("audio", &file.key).map(|r| r.with_name(&op.data)),
                     Err(e) => Err(e.clone()),
                 },
             ));
@@ -1643,6 +1643,11 @@ impl Session {
             ("midi_import", Ok(result)) => self.midi_import_finished(result),
             ("slicert.analyze", Ok(result)) => {
                 if let Err(e) = self.slicert_finished(&result) {
+                    self.notices.error(&e, Some(target), None);
+                }
+            }
+            ("plugin.load_into_field", Ok(result)) => {
+                if let Err(e) = self.field_load_finished(&result) {
                     self.notices.error(&e, Some(target), None);
                 }
             }
@@ -2792,6 +2797,8 @@ impl Session {
         let rate = self.spec.sample_rate;
         let faults = self.faults.clone();
         let size = std::fs::metadata(&source).map(|m| m.len()).unwrap_or(0);
+        // The file's name stays with the resource, for the panels to show (a hash tells nothing)
+        let name = source.file_name().and_then(|n| n.to_str()).unwrap_or("").to_owned();
         let handle = self.workers.start(move |cancel, progress| {
             faults.check(size).map_err(|e| e.arg("file", source.display().to_string()))?;
             lm_io::import_file(&source, &project, rate, cancel, progress)
@@ -2804,7 +2811,7 @@ impl Session {
             target: Target::Scan(lm_port::ScanKind::Library),
             cancellable: true,
             started,
-            data: (),
+            data: name,
         });
         id
     }

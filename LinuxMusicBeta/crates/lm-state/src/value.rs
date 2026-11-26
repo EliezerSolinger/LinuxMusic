@@ -639,7 +639,7 @@ impl PartialEq for Value {
         }
         match (&self.0, &other.0) {
             (Repr::Text(a), Repr::Text(b)) => a == b,
-            (Repr::Resource(a), Repr::Resource(b)) => a == b,
+            (Repr::Resource(a), Repr::Resource(b)) => a == b && a.name() == b.name(),
             (Repr::List(a), Repr::List(b)) => a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x == y),
             (Repr::Object(a), Repr::Object(b)) => {
                 a.len() == b.len() && a.iter().zip(b.iter()).all(|((ka, va), (kb, vb))| ka == kb && va == vb)

@@ -23,24 +23,56 @@ pub const INLINE_MAX_BYTES: usize = 64 * 1024;
 ///
 /// Both are validated when made, so a `Resource` can never name a path: a key is exactly 64 hex digits, never
 /// `../`, a slash or an absolute path (C9)
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+///
+/// It may also carry the `name` it was imported under (the file's name, for the panels to show instead of a hash). The
+/// name is a label, not an identity: two resources of the same kind and key are equal, ordered and hashed alike
+/// whatever their names (the value that holds one does see the difference, so that setting the same file under
+/// another name is a change)
+#[derive(Clone)]
 pub struct Resource {
     kind: Arc<str>,
     key: Arc<str>,
+    name: Option<Arc<str>>,
+}
+
+/// The longest name kept (a file's name; longer is cut)
+pub const RESOURCE_NAME_MAX_LEN: usize = 255;
+
+impl PartialEq for Resource {
+    fn eq(&self, o: &Self) -> bool {
+        self.kind == o.kind && self.key == o.key
+    }
+}
+impl Eq for Resource {}
+impl PartialOrd for Resource {
+    fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(o))
+    }
+}
+impl Ord for Resource {
+    fn cmp(&self, o: &Self) -> std::cmp::Ordering {
+        (&self.kind, &self.key).cmp(&(&o.kind, &o.key))
+    }
+}
+impl std::hash::Hash for Resource {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        self.kind.hash(h);
+        self.key.hash(h);
+    }
 }
 
 impl Resource {
     pub fn new(kind: &str, key: &str) -> Result<Self> {
         check_kind(kind)?;
         check_key(key)?;
-        Ok(Self { kind: Arc::from(kind), key: Arc::from(key) })
+        Ok(Self { kind: Arc::from(kind), key: Arc::from(key), name: None })
     }
 
     /// The resource for this content: its key is the BLAKE3 hash of `content`
     pub fn of_content(kind: &str, content: &[u8]) -> Result<Self> {
         check_kind(kind)?;
         let key = blake3::hash(content).to_hex();
-        Ok(Self { kind: Arc::from(kind), key: Arc::from(key.as_str()) })
+        Ok(Self { kind: Arc::from(kind), key: Arc::from(key.as_str()), name: None })
     }
 
     pub fn kind(&self) -> &str {
@@ -49,6 +81,22 @@ impl Resource {
 
     pub fn key(&self) -> &str {
         &self.key
+    }
+
+    /// The name it was imported under, if it has one
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    /// The same resource with this display name (empty: none; cut at [`RESOURCE_NAME_MAX_LEN`] bytes on a
+    /// character boundary)
+    pub fn with_name(mut self, name: &str) -> Self {
+        let mut end = name.len().min(RESOURCE_NAME_MAX_LEN);
+        while !name.is_char_boundary(end) {
+            end -= 1;
+        }
+        self.name = (end > 0).then(|| Arc::from(&name[..end]));
+        self
     }
 }
 
@@ -150,5 +198,25 @@ mod tests {
         for good in ["audio", "state", "soundfont", "drum-kit", "x_2"] {
             assert!(Resource::new(good, HASH).is_ok(), "{good:?}");
         }
+    }
+
+    #[test]
+    fn the_name_is_a_label_not_an_identity() {
+        let a = Resource::new("audio", HASH).unwrap();
+        let b = a.clone().with_name("kick.wav");
+        assert_eq!(a, b);
+        assert_eq!(b.name(), Some("kick.wav"));
+        assert_eq!(a.name(), None);
+        assert_eq!(b.clone().with_name("").name(), None);
+        assert_ne!(crate::Value::resource(a), crate::Value::resource(b));
+    }
+
+    #[test]
+    fn the_name_round_trips_through_json() {
+        let r = Resource::new("audio", HASH).unwrap().with_name("a \"b\" é.pat");
+        let v = crate::Value::object([("patch", crate::Value::resource(r))]);
+        let text = crate::to_json(&v).unwrap();
+        assert!(text.contains("\"name\""));
+        assert_eq!(crate::from_json(&text).unwrap(), v);
     }
 }

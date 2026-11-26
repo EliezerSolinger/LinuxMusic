@@ -8,7 +8,7 @@
 //!
 //! The envelope's time knobs are `TempoSyncKnob`s: their menu has the tempo sync notes (`envAttackSync`...) and
 //! moving the knob turns the sync off. The
-//! load button asks for an audio file and sends its bytes to the core's `watsyn.load_wave` action, which sets the
+//! load button asks for an audio file and sends its bytes to the core's `plugin.load_into_field` action, which sets the
 //! graph of the oscillator shown.
 
 use std::sync::LazyLock;
@@ -121,7 +121,7 @@ pub static ASSETS: &[&Asset] = &[
 ];
 
 /// The core's action that loads a waveform from an audio file into a graph field
-pub const LOAD_ACTION: &str = "watsyn.load_wave";
+pub const LOAD_ACTION: &str = "plugin.load_into_field";
 
 const GRAPH_LEN: usize = 220;
 const GRAPHS: [&str; 4] = ["a1Graph", "a2Graph", "b1Graph", "b2Graph"];

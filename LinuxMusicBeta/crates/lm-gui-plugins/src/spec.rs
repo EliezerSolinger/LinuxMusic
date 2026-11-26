@@ -544,8 +544,9 @@ pub struct PanelSpec {
 /// A file dropped on a panel
 #[derive(Clone, Copy, Debug)]
 pub enum FileDrop {
-    /// An action of the core that reads the file (`{node, path}`), as OpulenZ's `.sbi` import
-    Action { action: &'static str, extensions: &'static [&'static str] },
+    /// An action of the core that reads the file into a field (`{node, field, bytes, name}`: the generic
+    /// `plugin.load_into_field`)
+    Action { action: &'static str, field: &'static str, extensions: &'static [&'static str] },
 }
 
 impl PanelSpec {
