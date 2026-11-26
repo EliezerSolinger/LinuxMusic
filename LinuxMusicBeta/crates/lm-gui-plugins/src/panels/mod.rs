@@ -13,6 +13,7 @@ pub mod granularpitchshifter;
 pub mod kicker;
 pub mod lb302;
 pub mod lomm;
+pub mod monstro;
 pub mod multitapecho;
 pub mod nes;
 pub mod opulenz;
@@ -52,6 +53,7 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (lomm::ID, || &lomm::PANEL),
     (crossovereq::ID, || &crossovereq::PANEL),
     (delay::ID, || &delay::PANEL),
+    (monstro::ID, || &monstro::PANEL),
     (vibed::ID, || &vibed::PANEL),
     (watsyn::ID, || &watsyn::PANEL),
     (audiofileprocessor::ID, || &audiofileprocessor::PANEL),
@@ -82,6 +84,7 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     lomm::ASSETS,
     crossovereq::ASSETS,
     delay::ASSETS,
+    monstro::ASSETS,
     vibed::ASSETS,
     watsyn::ASSETS,
     audiofileprocessor::ASSETS,

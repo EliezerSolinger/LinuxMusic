@@ -782,3 +782,9 @@ fn vibed(cx: &mut TestAppContext) {
     let mut o = open(cx, &[(&lm_plugins_instruments::vibed::DESCRIPTOR, true)], "vibed");
     exercise(&mut o);
 }
+
+#[gpui::test]
+fn monstro(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_instruments::monstro::DESCRIPTOR, true)], "monstro");
+    exercise(&mut o);
+}
