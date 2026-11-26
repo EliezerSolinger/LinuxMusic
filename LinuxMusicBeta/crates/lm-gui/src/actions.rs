@@ -1,6 +1,6 @@
 //! The interface's action registry (I-19): every command the user can give, with its id, label, group, default keys
 //! and where the keys work. The keybindings are built from it (with the user's changes from the preferences'
-//! `shortcuts`), the command palette lists it, the menus will read it. Commands of the core go through
+//! `keymaps`), the command palette lists it, the menus will read it. Commands of the core go through
 //! `CorePort::run_action`; the others are the interface's own.
 //!
 //! Keys are written with `secondary` for Cmd on macOS and Ctrl elsewhere; this GPUI's parser has no `secondary`, so
@@ -9,7 +9,7 @@
 use std::rc::Rc;
 
 use gpui::{App, KeyBinding, KeyBindingContextPredicate, actions};
-use lm_port::{CorePort, PathStep, Value};
+use lm_port::Value;
 
 actions!(
     lm,
@@ -125,7 +125,57 @@ actions!(
         PrMoveLeft,
         PrMoveRight,
         PrMoveBarLeft,
-        PrMoveBarRight
+        PrMoveBarRight,
+        PrKbOctaveDown,
+        PrKbOctaveUp,
+        PrStepRest,
+        PrStepBack,
+        PrStepShorter,
+        PrStepLonger,
+        PrScrollUp,
+        PrScrollDown,
+        PrHome,
+        PrLen0,
+        PrLen1,
+        PrLen2,
+        PrLen3,
+        PrLen4,
+        PrLen5,
+        PrLen6,
+        PrLen7,
+        PrLen8,
+        PrLen9,
+        PrGrid0,
+        PrGrid1,
+        PrGrid2,
+        PrGrid3,
+        PrGrid4,
+        PrGrid5,
+        PrGrid6,
+        PrGrid7,
+        PrGrid8,
+        PrGrid9
+    ]
+);
+
+actions!(
+    automation,
+    [
+        AuSelectAll,
+        AuSelectNone,
+        AuCopy,
+        AuCut,
+        AuPaste,
+        AuDelete,
+        AuLeft,
+        AuRight,
+        AuHome,
+        AuPlay,
+        AuToolDraw,
+        AuToolErase,
+        AuToolOut,
+        AuToolPencil,
+        AuToolSelect
     ]
 );
 
@@ -137,7 +187,7 @@ actions!(
 /// One entry of the registry
 #[derive(Clone, Copy, Debug)]
 pub struct ActionDef {
-    /// The registry's id (I-19), stable: the preferences' `shortcuts` use it
+    /// The registry's id (I-19), stable: the preferences' `keymaps` and the presets use it
     pub id: &'static str,
     /// GPUI's name of the action type (`lm::TogglePlay`)
     pub gpui: &'static str,
@@ -394,6 +444,113 @@ pub const REGISTRY: &[ActionDef] = &[
     a("desk.move_right", "mixing::MoveChannelRight", "Move the channel right", "Desk", &["alt-right"], Some("Mixing")),
     a("desk.remove_channel", "mixing::RemoveChannel", "Remove the channel", "Desk", &["delete"], Some("Mixing")),
     a("desk.rename_channel", "mixing::RenameChannel", "Rename the channel", "Desk", &["enter", "f2"], Some("Mixing")),
+    a("notes.kb_octave_down", "piano_roll::PrKbOctaveDown", "Keyboard octave down", "Notes", &["-"], Some("PianoRoll")),
+    a("notes.kb_octave_up", "piano_roll::PrKbOctaveUp", "Keyboard octave up", "Notes", &["="], Some("PianoRoll")),
+    a("notes.step_rest", "piano_roll::PrStepRest", "Step input: a rest", "Notes", &["right"], Some("PianoRoll")),
+    a("notes.step_back", "piano_roll::PrStepBack", "Step input: back", "Notes", &["left"], Some("PianoRoll")),
+    a(
+        "notes.step_shorter",
+        "piano_roll::PrStepShorter",
+        "Step input: shorter",
+        "Notes",
+        &["alt-left"],
+        Some("PianoRoll"),
+    ),
+    a(
+        "notes.step_longer",
+        "piano_roll::PrStepLonger",
+        "Step input: longer",
+        "Notes",
+        &["alt-right"],
+        Some("PianoRoll"),
+    ),
+    a("notes.scroll_up", "piano_roll::PrScrollUp", "Scroll up", "Notes", &["up"], Some("PianoRoll")),
+    a("notes.scroll_down", "piano_roll::PrScrollDown", "Scroll down", "Notes", &["down"], Some("PianoRoll")),
+    a("notes.home", "piano_roll::PrHome", "Back to the start", "Notes", &["home"], Some("PianoRoll")),
+    a(
+        "notes.length_0",
+        "piano_roll::PrLen0",
+        "Note length: the last one",
+        "Notes",
+        &["secondary-0"],
+        Some("PianoRoll"),
+    ),
+    a("notes.length_1", "piano_roll::PrLen1", "Note length 1", "Notes", &["secondary-1"], Some("PianoRoll")),
+    a("notes.length_2", "piano_roll::PrLen2", "Note length 2", "Notes", &["secondary-2"], Some("PianoRoll")),
+    a("notes.length_3", "piano_roll::PrLen3", "Note length 3", "Notes", &["secondary-3"], Some("PianoRoll")),
+    a("notes.length_4", "piano_roll::PrLen4", "Note length 4", "Notes", &["secondary-4"], Some("PianoRoll")),
+    a("notes.length_5", "piano_roll::PrLen5", "Note length 5", "Notes", &["secondary-5"], Some("PianoRoll")),
+    a("notes.length_6", "piano_roll::PrLen6", "Note length 6", "Notes", &["secondary-6"], Some("PianoRoll")),
+    a("notes.length_7", "piano_roll::PrLen7", "Note length 7", "Notes", &["secondary-7"], Some("PianoRoll")),
+    a("notes.length_8", "piano_roll::PrLen8", "Note length 8", "Notes", &["secondary-8"], Some("PianoRoll")),
+    a("notes.length_9", "piano_roll::PrLen9", "Note length 9", "Notes", &["secondary-9"], Some("PianoRoll")),
+    a("notes.grid_0", "piano_roll::PrGrid0", "Quantization 0", "Notes", &["alt-0"], Some("PianoRoll")),
+    a("notes.grid_1", "piano_roll::PrGrid1", "Quantization 1", "Notes", &["alt-1"], Some("PianoRoll")),
+    a("notes.grid_2", "piano_roll::PrGrid2", "Quantization 2", "Notes", &["alt-2"], Some("PianoRoll")),
+    a("notes.grid_3", "piano_roll::PrGrid3", "Quantization 3", "Notes", &["alt-3"], Some("PianoRoll")),
+    a("notes.grid_4", "piano_roll::PrGrid4", "Quantization 4", "Notes", &["alt-4"], Some("PianoRoll")),
+    a("notes.grid_5", "piano_roll::PrGrid5", "Quantization 5", "Notes", &["alt-5"], Some("PianoRoll")),
+    a("notes.grid_6", "piano_roll::PrGrid6", "Quantization 6", "Notes", &["alt-6"], Some("PianoRoll")),
+    a("notes.grid_7", "piano_roll::PrGrid7", "Quantization 7", "Notes", &["alt-7"], Some("PianoRoll")),
+    a("notes.grid_8", "piano_roll::PrGrid8", "Quantization 8", "Notes", &["alt-8"], Some("PianoRoll")),
+    a("notes.grid_9", "piano_roll::PrGrid9", "Quantization 9", "Notes", &["alt-9"], Some("PianoRoll")),
+    a(
+        "auto.select_all",
+        "automation::AuSelectAll",
+        "Select all points",
+        "Automation",
+        &["secondary-a"],
+        Some("AutomationEditor"),
+    ),
+    a(
+        "auto.select_none",
+        "automation::AuSelectNone",
+        "Select no points",
+        "Automation",
+        &["secondary-shift-a", "escape"],
+        Some("AutomationEditor"),
+    ),
+    a("auto.copy", "automation::AuCopy", "Copy", "Automation", &["secondary-c"], Some("AutomationEditor")),
+    a("auto.cut", "automation::AuCut", "Cut", "Automation", &["secondary-x"], Some("AutomationEditor")),
+    a("auto.paste", "automation::AuPaste", "Paste", "Automation", &["secondary-v"], Some("AutomationEditor")),
+    a(
+        "auto.delete",
+        "automation::AuDelete",
+        "Delete points",
+        "Automation",
+        &["delete", "backspace"],
+        Some("AutomationEditor"),
+    ),
+    a("auto.left", "automation::AuLeft", "Cursor a step back", "Automation", &["left"], Some("AutomationEditor")),
+    a("auto.right", "automation::AuRight", "Cursor a step forward", "Automation", &["right"], Some("AutomationEditor")),
+    a("auto.home", "automation::AuHome", "Back to the start", "Automation", &["home"], Some("AutomationEditor")),
+    a("auto.play", "automation::AuPlay", "Play or stop", "Automation", &["space"], Some("AutomationEditor")),
+    a("auto.tool_draw", "automation::AuToolDraw", "Draw tool", "Automation", &["shift-d"], Some("AutomationEditor")),
+    a("auto.tool_erase", "automation::AuToolErase", "Erase tool", "Automation", &["shift-e"], Some("AutomationEditor")),
+    a(
+        "auto.tool_out",
+        "automation::AuToolOut",
+        "Outgoing value tool",
+        "Automation",
+        &["shift-c"],
+        Some("AutomationEditor"),
+    ),
+    a(
+        "auto.tool_pencil",
+        "automation::AuToolPencil",
+        "Pencil tool",
+        "Automation",
+        &["shift-p"],
+        Some("AutomationEditor"),
+    ),
+    a(
+        "auto.tool_select",
+        "automation::AuToolSelect",
+        "Select tool",
+        "Automation",
+        &["shift-s"],
+        Some("AutomationEditor"),
+    ),
     a("browser.down", "browser::BrowserDown", "Next entry (previews it)", "Browser", &["down"], Some("Browser")),
     a("browser.up", "browser::BrowserUp", "Previous entry (previews it)", "Browser", &["up"], Some("Browser")),
     a(
@@ -424,18 +581,15 @@ pub fn keys_for_platform(keys: &str) -> String {
         .join(" ")
 }
 
-/// The keys of an action: the user's change from the preferences' `shortcuts`, else the defaults
+/// The keys of an action: the user's change, else the preset chosen for its context, else the defaults
 pub fn keys_of(def: &ActionDef, preferences: &Value) -> Vec<String> {
-    match preferences.get("shortcuts").and_then(|s| s.get(def.id)).and_then(Value::as_text) {
-        Some("") => Vec::new(),
-        Some(user) => vec![user.to_string()],
-        None => def.keys.iter().map(|k| k.to_string()).collect(),
-    }
+    crate::keymap::keys_for(def, preferences, &crate::keymap::user_presets())
 }
 
 /// Binds every action of the registry, with the user's changes. A stroke that does not parse is skipped (and listed,
 /// so the settings can say which)
 pub fn bind_keys(cx: &mut App, preferences: &Value) -> Vec<&'static str> {
+    crate::keymap::install(preferences);
     let mut bad = Vec::new();
     let mut bindings = Vec::new();
     for def in REGISTRY {
@@ -443,8 +597,15 @@ pub fn bind_keys(cx: &mut App, preferences: &Value) -> Vec<&'static str> {
             bad.push(def.id);
             continue;
         };
-        let context = def.context.and_then(|c| KeyBindingContextPredicate::parse(c).ok()).map(Rc::new);
         for keys in keys_of(def, preferences) {
+            // plain typing belongs to a text field: such a key works only while none has the focus
+            let text = match (def.context, crate::keymap::is_typing(&keys)) {
+                (Some(c), true) => format!("{c} && !TextEntry"),
+                (None, true) => "!TextEntry".to_string(),
+                (Some(c), false) => c.to_string(),
+                (None, false) => String::new(),
+            };
+            let context = KeyBindingContextPredicate::parse(&text).ok().filter(|_| !text.is_empty()).map(Rc::new);
             match KeyBinding::load(&keys_for_platform(&keys), action.boxed_clone(), context.clone(), false, None, cx) {
                 Ok(b) => bindings.push(b),
                 Err(_) => bad.push(def.id),
@@ -458,12 +619,6 @@ pub fn bind_keys(cx: &mut App, preferences: &Value) -> Vec<&'static str> {
 /// The registry's entry of an id
 pub fn find(id: &str) -> Option<&'static ActionDef> {
     REGISTRY.iter().find(|d| d.id == id)
-}
-
-/// Changes an action's keys in the preferences (the settings' shortcuts page); the bindings are rebuilt by the caller
-#[expect(dead_code, reason = "the settings' shortcuts page (agent C's) uses it")]
-pub fn set_keys(port: &mut dyn CorePort, id: &str, keys: &str) {
-    let _ = port.set_preference(vec![PathStep::key("shortcuts"), PathStep::key(id)], Value::text(keys));
 }
 
 #[cfg(test)]
@@ -496,7 +651,8 @@ mod tests {
 
     #[test]
     fn the_users_keys_win() {
-        let prefs = Value::object([("shortcuts", Value::object([("project.save", Value::text("f2"))]))]);
+        let global = Value::object([("keys", Value::object([("project.save", Value::text("f2"))]))]);
+        let prefs = Value::object([("keymaps", Value::object([("Global", global)]))]);
         assert_eq!(keys_of(find("project.save").unwrap(), &prefs), vec!["f2".to_string()]);
         assert_eq!(keys_of(find("edit.redo").unwrap(), &prefs).len(), 2);
     }

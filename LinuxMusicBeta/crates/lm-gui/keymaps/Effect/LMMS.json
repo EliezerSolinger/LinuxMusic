@@ -1,0 +1,25 @@
+{
+  "context": "Effect",
+  "name": "LMMS",
+  "keys": {},
+  "mouse": {
+    "param.carry": [
+      "shift-click"
+    ],
+    "param.type": [
+      "double-click"
+    ],
+    "param.fine": [
+      "shift-drag"
+    ],
+    "param.wheel": [
+      "wheel"
+    ],
+    "param.wheel_coarse": [
+      "shift-wheel"
+    ],
+    "param.wheel_fine": [
+      "secondary-wheel"
+    ]
+  }
+}

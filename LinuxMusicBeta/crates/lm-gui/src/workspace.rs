@@ -397,7 +397,12 @@ impl Render for Workspace {
             .key_context("Workspace")
             .on_mouse_move(cx.listener(|ws, ev: &gpui::MouseMoveEvent, _, cx| {
                 if ws.tempo_drag.is_some() {
-                    transport::drag_tempo(ws, ev.position.y.as_f32(), ev.modifiers.shift, cx);
+                    transport::drag_tempo(
+                        ws,
+                        ev.position.y.as_f32(),
+                        crate::keymap::holds("Transport", "transport.tempo_fine", &ev.modifiers),
+                        cx,
+                    );
                 }
             }))
             .on_mouse_up(

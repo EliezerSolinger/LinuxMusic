@@ -1,0 +1,83 @@
+{
+  "context": "Automation",
+  "name": "LMMS",
+  "keys": {
+    "auto.select_all": [
+      "secondary-a"
+    ],
+    "auto.select_none": [
+      "secondary-shift-a",
+      "escape"
+    ],
+    "auto.copy": [
+      "secondary-c"
+    ],
+    "auto.cut": [
+      "secondary-x"
+    ],
+    "auto.paste": [
+      "secondary-v"
+    ],
+    "auto.delete": [
+      "delete",
+      "backspace"
+    ],
+    "auto.left": [
+      "left"
+    ],
+    "auto.right": [
+      "right"
+    ],
+    "auto.home": [
+      "home"
+    ],
+    "auto.play": [
+      "space"
+    ],
+    "auto.tool_draw": [
+      "shift-d"
+    ],
+    "auto.tool_erase": [
+      "shift-e"
+    ],
+    "auto.tool_out": [
+      "shift-c"
+    ],
+    "auto.tool_pencil": [
+      "shift-p"
+    ],
+    "auto.tool_select": [
+      "shift-s"
+    ]
+  },
+  "mouse": {
+    "au.select_override": [
+      "secondary-click"
+    ],
+    "au.extend": [
+      "shift-click"
+    ],
+    "au.free": [
+      "secondary-drag",
+      "alt-drag"
+    ],
+    "au.draw.line": [
+      "shift-click"
+    ],
+    "au.erase": [
+      "right-click"
+    ],
+    "au.point.entry": [
+      "double-click"
+    ],
+    "au.view.grid_wheel": [
+      "secondary-alt-wheel"
+    ],
+    "au.view.zoom": [
+      "secondary-wheel"
+    ],
+    "au.view.scroll": [
+      "wheel"
+    ]
+  }
+}

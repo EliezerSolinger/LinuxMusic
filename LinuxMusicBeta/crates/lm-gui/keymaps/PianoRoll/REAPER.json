@@ -1,0 +1,249 @@
+{
+  "context": "PianoRoll",
+  "name": "REAPER",
+  "keys": {
+    "notes.play": [
+      "space"
+    ],
+    "notes.mode_draw": [
+      "b"
+    ],
+    "notes.mode_erase": [
+      "e"
+    ],
+    "notes.mode_select": [
+      "v"
+    ],
+    "notes.mode_pitch": [
+      "shift-t"
+    ],
+    "notes.mode_knife": [
+      "k"
+    ],
+    "notes.mode_strum": [
+      "shift-j"
+    ],
+    "notes.glue": [
+      "secondary-j"
+    ],
+    "notes.fill": [
+      "shift-f"
+    ],
+    "notes.cut_overlaps": [
+      "secondary-shift-j"
+    ],
+    "notes.reverse": [
+      "shift-r"
+    ],
+    "notes.select_all": [
+      "secondary-a"
+    ],
+    "notes.select_none": [
+      "secondary-shift-a",
+      "escape"
+    ],
+    "notes.copy": [
+      "secondary-c"
+    ],
+    "notes.cut": [
+      "secondary-x"
+    ],
+    "notes.paste": [
+      "secondary-v"
+    ],
+    "notes.delete": [
+      "delete",
+      "backspace"
+    ],
+    "notes.transpose_up": [
+      "up"
+    ],
+    "notes.transpose_down": [
+      "down"
+    ],
+    "notes.octave_up": [
+      "secondary-up"
+    ],
+    "notes.octave_down": [
+      "secondary-down"
+    ],
+    "notes.move_left": [
+      "left"
+    ],
+    "notes.move_right": [
+      "right"
+    ],
+    "notes.move_bar_left": [
+      "secondary-left"
+    ],
+    "notes.move_bar_right": [
+      "secondary-right"
+    ],
+    "notes.kb_octave_down": [
+      "z"
+    ],
+    "notes.kb_octave_up": [
+      "x"
+    ],
+    "notes.step_rest": [
+      "alt-right"
+    ],
+    "notes.step_back": [
+      "alt-left"
+    ],
+    "notes.step_shorter": [
+      "secondary-alt-left"
+    ],
+    "notes.step_longer": [
+      "secondary-alt-right"
+    ],
+    "notes.scroll_up": [
+      "alt-up"
+    ],
+    "notes.scroll_down": [
+      "alt-down"
+    ],
+    "notes.home": [
+      "home"
+    ],
+    "notes.length_0": [
+      "secondary-0"
+    ],
+    "notes.length_1": [
+      "secondary-1"
+    ],
+    "notes.length_2": [
+      "secondary-2"
+    ],
+    "notes.length_3": [
+      "secondary-3"
+    ],
+    "notes.length_4": [
+      "secondary-4"
+    ],
+    "notes.length_5": [
+      "secondary-5"
+    ],
+    "notes.length_6": [
+      "secondary-6"
+    ],
+    "notes.length_7": [
+      "secondary-7"
+    ],
+    "notes.length_8": [
+      "secondary-8"
+    ],
+    "notes.length_9": [
+      "secondary-9"
+    ],
+    "notes.grid_0": [
+      "alt-0"
+    ],
+    "notes.grid_1": [
+      "alt-1"
+    ],
+    "notes.grid_2": [
+      "alt-2"
+    ],
+    "notes.grid_3": [
+      "alt-3"
+    ],
+    "notes.grid_4": [
+      "alt-4"
+    ],
+    "notes.grid_5": [
+      "alt-5"
+    ],
+    "notes.grid_6": [
+      "alt-6"
+    ],
+    "notes.grid_7": [
+      "alt-7"
+    ],
+    "notes.grid_8": [
+      "alt-8"
+    ],
+    "notes.grid_9": [
+      "alt-9"
+    ]
+  },
+  "mouse": {
+    "pr.grid.select_override": [
+      "secondary-click"
+    ],
+    "pr.note.copy": [
+      "secondary-drag"
+    ],
+    "pr.note.stretch": [
+      "alt-shift-drag"
+    ],
+    "pr.grid.free": [
+      "alt-drag"
+    ],
+    "pr.grid.extend": [
+      "shift-click"
+    ],
+    "pr.draw.arpeggio": [
+      "shift-click"
+    ],
+    "pr.grid.erase": [
+      "right-click"
+    ],
+    "pr.knife.drop_short": [
+      "shift-drag"
+    ],
+    "pr.knife.free": [
+      "alt-drag"
+    ],
+    "pr.lane.under": [
+      "alt-click"
+    ],
+    "pr.lane.entry": [
+      "double-click"
+    ],
+    "pr.ruler.select": [
+      "drag"
+    ],
+    "pr.ruler.loop": [
+      "shift-click"
+    ],
+    "pr.view.grid_wheel": [
+      "secondary-alt-wheel"
+    ],
+    "pr.view.length_wheel": [
+      "secondary-shift-wheel"
+    ],
+    "pr.view.zoom": [
+      "wheel"
+    ],
+    "pr.view.scroll_h": [
+      "shift-wheel"
+    ],
+    "pr.view.scroll": [
+      "alt-wheel"
+    ]
+  },
+  "unsure": {
+    "notes.transpose_up": "REAPER MIDI editor: Up/Down move the selected notes by a semitone",
+    "notes.octave_up": "REAPER: Ctrl+Up/Down by an octave; confirm",
+    "notes.move_left": "REAPER: Left/Right nudge by the grid; confirm",
+    "notes.mode_draw": "REAPER draws with B (pencil); confirm",
+    "notes.mode_erase": "REAPER: E erases; confirm",
+    "notes.mode_select": "placeholder: REAPER selects with the mouse modifiers",
+    "notes.mode_knife": "REAPER: no key; placeholder",
+    "notes.glue": "REAPER: no default key; placeholder",
+    "notes.cut_overlaps": "REAPER: no default key; placeholder",
+    "notes.step_rest": "REAPER has no step input keys; placeholders",
+    "notes.kb_octave_down": "REAPER virtual keyboard: Z and X change the octave",
+    "notes.scroll_up": "placeholder",
+    "pr.note.copy": "REAPER: Ctrl+drag copies notes (default)",
+    "pr.note.stretch": "REAPER: no equivalent; placeholder",
+    "pr.grid.free": "REAPER: Shift ignores the grid in the MIDI editor? confirm",
+    "pr.knife.free": "placeholder",
+    "pr.knife.drop_short": "placeholder",
+    "pr.ruler.select": "REAPER: dragging the ruler makes a time selection; confirm",
+    "pr.view.zoom": "REAPER: the wheel zooms horizontally in the MIDI editor; confirm",
+    "pr.view.scroll_h": "REAPER: Shift+wheel scrolls sideways; confirm",
+    "pr.view.scroll": "REAPER: Alt+wheel scrolls vertically; confirm"
+  }
+}

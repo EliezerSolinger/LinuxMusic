@@ -21,15 +21,13 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    Bounds, Context, CursorStyle, FocusHandle, KeyDownEvent, KeyUpEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, ScrollEvent, SharedString, Subscription, Window,
-    canvas, div, fill, point, prelude::*, px, size,
+    Bounds, Context, CursorStyle, FocusHandle, KeyDownEvent, KeyUpEvent, Modifiers, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, ScrollEvent, SharedString,
+    Subscription, Window, canvas, div, fill, point, prelude::*, px, size,
 };
 use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, NoteRef, PathStep, Ref, Topic, Value};
 
-use self::kit::{
-    MenuItem, ValueEntry, dropdown, dropdown_icon, icon_button, paint_text, popup, primary, sep, tip, with_alpha,
-};
+use self::kit::{MenuItem, ValueEntry, dropdown, dropdown_icon, icon_button, paint_text, popup, sep, tip, with_alpha};
 use self::music::{
     BAR, BEAT, CHORDS, Clip, GRIDS, KEY_NAMES, Note, NoteChange, NoteMap, QuantizeWhat, SCALES, format_bbt, format_len,
     key_name,
@@ -41,8 +39,22 @@ use crate::actions::{
     PrModeSelect, PrModeStrum, PrMoveBarLeft, PrMoveBarRight, PrMoveLeft, PrMoveRight, PrOctaveDown, PrOctaveUp,
     PrPaste, PrPlay, PrReverse, PrSelectAll, PrSelectNone, PrTransposeDown, PrTransposeUp,
 };
+use crate::keymap;
 use crate::model;
 use crate::ui::{THEME, c, tr, track_color, trf};
+
+mod keys;
+
+const CTX: &str = "PianoRoll";
+
+/// The mouse actions of this screen (`keymap/mouse_defs.rs`): the gestures are the user's, never read from the event
+fn holds(id: &str, m: &Modifiers) -> bool {
+    keymap::holds(CTX, id, m)
+}
+
+fn fires(id: &str, button: MouseButton, clicks: usize, m: &Modifiers) -> bool {
+    keymap::fires(CTX, id, button, clicks, m)
+}
 
 const ROW_H: f32 = 26.0;
 const RULER_H: f32 = 18.0;
@@ -607,10 +619,10 @@ impl PianoRoll {
         let (x, y) = Self::local(&self.grid_bounds, ev.position);
         let tick = self.x_to_tick(x);
         let key = self.y_to_key(y);
-        let free = ev.modifiers.alt;
+        let free = holds("pr.grid.free", &ev.modifiers);
         let notes = clip.notes.clone();
         let hit = self.note_at(&notes, tick, key);
-        if ev.button == MouseButton::Right {
+        if fires("pr.grid.erase", ev.button, ev.click_count, &ev.modifiers) {
             // the right button erases (dragging erases more); with the knife it cancels; in pitch bend it keeps the
             // first point of the curve
             match self.tool {
@@ -627,7 +639,7 @@ impl PianoRoll {
             cx.notify();
             return;
         }
-        let tool = if primary(&ev.modifiers) { Tool::Select } else { self.tool };
+        let tool = if holds("pr.grid.select_override", &ev.modifiers) { Tool::Select } else { self.tool };
         match (tool, hit) {
             (Tool::Erase, _) => self.drag = Some(Drag::Erase { gone: hit.map(|h| h.0).into_iter().collect() }),
             (Tool::Knife, _) => {
@@ -655,7 +667,7 @@ impl PianoRoll {
                 // a click on a note makes its length, velocity and panning the "last" ones (F-NOT-001)
                 let x = notes[&n].clone();
                 self.last = x.clone();
-                let toggle = primary(&ev.modifiers);
+                let toggle = holds("pr.grid.select_override", &ev.modifiers);
                 if !self.sel.contains(&n) {
                     let mut s = if toggle { (*self.sel).clone() } else { BTreeSet::new() };
                     s.insert(n);
@@ -663,8 +675,13 @@ impl PianoRoll {
                 }
                 let origin = self.selected(&notes);
                 if part == 1 {
-                    self.drag =
-                        Some(Drag::Resize { g: None, origin, anchor: x, from: tick, stretch: ev.modifiers.shift });
+                    self.drag = Some(Drag::Resize {
+                        g: None,
+                        origin,
+                        anchor: x,
+                        from: tick,
+                        stretch: holds("pr.note.stretch", &ev.modifiers),
+                    });
                 } else {
                     self.pressed = [x.key].into_iter().collect();
                     self.audition(&[x.key], cx);
@@ -673,7 +690,7 @@ impl PianoRoll {
                         origin,
                         anchor: x,
                         from: (tick, key),
-                        copy: ev.modifiers.shift,
+                        copy: holds("pr.note.copy", &ev.modifiers),
                         delta: (0, 0),
                         clicked: n,
                         toggle,
@@ -682,8 +699,9 @@ impl PianoRoll {
             }
             (Tool::Select | Tool::Pitch | Tool::Strum, None) => {
                 let p = point(px(x), px(y));
-                let before = if ev.modifiers.shift { self.sel.clone() } else { Rc::new(BTreeSet::new()) };
-                self.drag = Some(Drag::Rect { from: p, to: p, toggle: ev.modifiers.shift, before });
+                let before =
+                    if holds("pr.grid.extend", &ev.modifiers) { self.sel.clone() } else { Rc::new(BTreeSet::new()) };
+                self.drag = Some(Drag::Rect { from: p, to: p, toggle: holds("pr.grid.extend", &ev.modifiers), before });
             }
             (Tool::Draw, None) => {
                 if tick < 0.0 || !(0..=127).contains(&key) {
@@ -697,7 +715,7 @@ impl PianoRoll {
                     None => vec![base_key as u8],
                 };
                 // Shift with a chord: an arpeggio, one grid step apart
-                let arp = ev.modifiers.shift && keys.len() > 1;
+                let arp = holds("pr.draw.arpeggio", &ev.modifiers) && keys.len() > 1;
                 let base: Vec<Note> = keys
                     .iter()
                     .enumerate()
@@ -729,7 +747,7 @@ impl PianoRoll {
         let (x, y) = Self::local(&self.grid_bounds, ev.position);
         let tick = self.x_to_tick(x);
         let key = self.y_to_key(y);
-        let free = ev.modifiers.alt;
+        let free = holds("pr.grid.free", &ev.modifiers);
         let grid = self.grid_ticks();
         let notes = self.notes(cx);
         match &mut drag {
@@ -920,7 +938,13 @@ impl PianoRoll {
                 }
                 self.set_sel(s);
             }
-            Drag::Knife { from, to } => self.knife(from, to, ev.modifiers.shift, primary(&ev.modifiers), cx),
+            Drag::Knife { from, to } => self.knife(
+                from,
+                to,
+                holds("pr.knife.drop_short", &ev.modifiers),
+                holds("pr.knife.free", &ev.modifiers),
+                cx,
+            ),
             Drag::Loop { .. } | Drag::RulerSelect { .. } | Drag::Keys => {}
         }
         self.pressed.clear();
@@ -1017,7 +1041,7 @@ impl PianoRoll {
             self.transact("Reset", ch, cx);
             return;
         }
-        if ev.click_count >= 2 {
+        if fires("pr.lane.entry", ev.button, ev.click_count, &ev.modifiers) {
             // a double click asks the value (F-NOT-010)
             let v = self
                 .lane_hits(&notes, x, x, false)
@@ -1028,7 +1052,7 @@ impl PianoRoll {
             cx.notify();
             return;
         }
-        let only_under = ev.modifiers.alt;
+        let only_under = holds("pr.lane.under", &ev.modifiers);
         let v = self.lane_value(y);
         let ch: Vec<NoteChange> = self
             .lane_hits(&notes, x, x, only_under)
@@ -1054,7 +1078,7 @@ impl PianoRoll {
         }
         let step = if d > 0.0 { 0.01 } else { -0.01 };
         let ch = self
-            .lane_hits(&notes, x, x, ev.modifiers.alt)
+            .lane_hits(&notes, x, x, holds("pr.lane.under", &ev.modifiers))
             .into_iter()
             .map(|n| {
                 let x = &notes[&n];
@@ -1085,9 +1109,9 @@ impl PianoRoll {
         let (x, _) = Self::local(&self.ruler_bounds, ev.position);
         let tick = self.x_to_tick(x);
         let t = music::snap(tick, self.grid_ticks()).max(0);
-        if primary(&ev.modifiers) {
+        if holds("pr.ruler.select", &ev.modifiers) {
             self.drag = Some(Drag::RulerSelect { from: tick });
-        } else if ev.button == MouseButton::Right || ev.modifiers.shift {
+        } else if fires("pr.ruler.loop", ev.button, ev.click_count, &ev.modifiers) {
             // the loop points: the right button (or Shift) moves the nearer one
             let which = if (t - self.play.loop_a).abs() <= (t - self.play.loop_b).abs() { 0 } else { 1 };
             self.play.loop_on = true;
@@ -1427,64 +1451,22 @@ impl PianoRoll {
     // --- the keyboard: the piano keys (the commands are actions of the registry) ---------------------------------
 
     fn key_down(&mut self, ev: &KeyDownEvent, cx: &mut Context<Self>) {
-        let k = ev.keystroke.key.as_str();
-        let m = ev.keystroke.modifiers;
-        if primary(&m) || m.alt || m.control || m.shift {
-            // Ctrl+0..9: the note length (0 = last note); Alt+0..9: the quantization (F-NOT-009)
-            if self.rec == Rec::Step && m.shift && !primary(&m) && !m.alt && (k == "left" || k == "right") {
-                // the last chord gets shorter or longer, the cursor with it (the core's `notes.step_length`)
-                let d = if k == "right" { 1 } else { -1 } * self.grid_ticks();
-                self.step_action("notes.step_length", vec![("delta", Value::int(d))], cx);
-                cx.stop_propagation();
-                cx.notify();
-                return;
-            }
-            if k.len() == 1 && k.as_bytes()[0].is_ascii_digit() && (primary(&m) || m.alt) {
-                let d = (k.as_bytes()[0] - b'0') as usize;
-                if m.alt {
-                    self.grid = d.saturating_sub(1).min(GRIDS.len() - 1);
-                } else {
-                    self.length = d.checked_sub(1).map(|i| i.min(GRIDS.len() - 1));
-                    if self.rec == Rec::Step {
-                        let step = self.new_len();
-                        self.step_action("notes.step_record", vec![("step", Value::int(step))], cx);
-                    }
-                }
-                cx.stop_propagation();
-                cx.notify();
-            }
+        // keymap-ok: the piano keys are a key down and up pair that sounds a note, not a command
+        let (k, m) = (ev.keystroke.key.as_str(), ev.keystroke.modifiers);
+        if m.control || m.alt || m.shift || m.platform {
             return;
         }
-        match k {
-            "-" => self.octave = (self.octave - 1).max(0),
-            "=" => self.octave = (self.octave + 1).min(8),
-            // step mode: right is a rest, left goes back (the core's `notes.step_rest` and `notes.step_back`)
-            "right" if self.rec == Rec::Step => self.step_action("notes.step_rest", Vec::new(), cx),
-            "left" if self.rec == Rec::Step => self.step_action("notes.step_back", Vec::new(), cx),
-            "up" | "down" => {
-                let d = if k == "up" { 1.0 } else { -1.0 };
-                self.scroll_y = (self.scroll_y - d * self.key_h * 2.0).max(0.0);
-            }
-            "home" => {
-                self.play.cursor = 0;
-                if self.rec == Rec::Step {
-                    self.step_action("notes.step_record", vec![("at", Value::int(0))], cx);
-                }
-                self.scroll = 0.0;
-            }
-            _ => {
-                let Some(off) = piano_key(k) else { return };
-                if !ev.is_held {
-                    let key = (self.octave * 12 + off).clamp(0, 127) as u8;
-                    self.note_on(k, key, cx);
-                }
-            }
+        let Some(off) = piano_key(k) else { return };
+        if !ev.is_held {
+            let key = (self.octave * 12 + off).clamp(0, 127) as u8;
+            self.note_on(k, key, cx);
         }
         cx.stop_propagation();
         cx.notify();
     }
 
     fn key_up(&mut self, ev: &KeyUpEvent, cx: &mut Context<Self>) {
+        // keymap-ok: the piano keys
         if let Some(h) = self.held.remove(&ev.keystroke.key) {
             self.note_off(h, cx);
         }
@@ -1582,21 +1564,28 @@ impl PianoRoll {
         let d = ev.delta.pixel_delta(px(16.0));
         let (dx, dy) = (d.x.as_f32(), d.y.as_f32());
         let (x, _) = Self::local(&self.grid_bounds, ev.position);
-        let m = ev.modifiers;
-        if primary(&m) && m.alt {
-            self.grid = (self.grid as i32 - dy.signum() as i32).clamp(0, GRIDS.len() as i32 - 1) as usize;
-        } else if primary(&m) && m.shift {
-            let l = self.length.map_or(0, |i| i + 1) as i32 - dy.signum() as i32;
-            self.length = (l.clamp(0, GRIDS.len() as i32) as usize).checked_sub(1);
-        } else if primary(&m) {
-            let anchor = self.x_to_tick(x);
-            self.tpp = (self.tpp * (-dy * 0.01).exp() as f64).clamp(TPP_100 / 8.0, TPP_100 * 8.0);
-            self.scroll = (anchor - x as f64 * self.tpp).max(0.0);
-        } else {
-            let (dx, dy) = if m.shift && dx.abs() < 0.01 { (dy, 0.0) } else { (dx, dy) };
-            self.scroll = (self.scroll - dx as f64 * self.tpp).max(0.0);
-            let max = (128.0 * self.key_h - self.grid_bounds.get().size.height.as_f32()).max(0.0);
-            self.scroll_y = (self.scroll_y - dy).clamp(0.0, max);
+        let ids = ["pr.view.grid_wheel", "pr.view.length_wheel", "pr.view.zoom", "pr.view.scroll_h", "pr.view.scroll"];
+        match keymap::pick_wheel(CTX, &ids, &ev.modifiers) {
+            Some("pr.view.grid_wheel") => {
+                self.grid = (self.grid as i32 - dy.signum() as i32).clamp(0, GRIDS.len() as i32 - 1) as usize;
+            }
+            Some("pr.view.length_wheel") => {
+                let l = self.length.map_or(0, |i| i + 1) as i32 - dy.signum() as i32;
+                self.length = (l.clamp(0, GRIDS.len() as i32) as usize).checked_sub(1);
+            }
+            Some("pr.view.zoom") => {
+                let anchor = self.x_to_tick(x);
+                self.tpp = (self.tpp * (-dy * 0.01).exp() as f64).clamp(TPP_100 / 8.0, TPP_100 * 8.0);
+                self.scroll = (anchor - x as f64 * self.tpp).max(0.0);
+            }
+            Some(which) => {
+                // sideways: the wheel's turn goes to the horizontal scroll when the mouse has no sideways axis
+                let (dx, dy) = if which == "pr.view.scroll_h" && dx.abs() < 0.01 { (dy, 0.0) } else { (dx, dy) };
+                self.scroll = (self.scroll - dx as f64 * self.tpp).max(0.0);
+                let max = (128.0 * self.key_h - self.grid_bounds.get().size.height.as_f32()).max(0.0);
+                self.scroll_y = (self.scroll_y - dy).clamp(0.0, max);
+            }
+            None => {}
         }
         cx.notify();
     }
@@ -1816,7 +1805,7 @@ impl Render for PianoRoll {
         }
         let entity = cx.entity();
         let clip = self.clip(cx);
-        div()
+        let root = div()
             .id("piano-roll")
             .size_full()
             .flex()
@@ -1860,8 +1849,11 @@ impl Render for PianoRoll {
             .on_action(cx.listener(|pr, _: &PrMoveRight, _, cx| pr.shift(pr.grid_ticks(), cx)))
             .on_action(cx.listener(|pr, _: &PrMoveBarLeft, _, cx| pr.shift(-BAR, cx)))
             .on_action(cx.listener(|pr, _: &PrMoveBarRight, _, cx| pr.shift(BAR, cx)))
+            // keymap-ok: the piano keys
             .on_key_down(cx.listener(|pr, ev: &KeyDownEvent, _, cx| pr.key_down(ev, cx)))
-            .on_key_up(cx.listener(|pr, ev: &KeyUpEvent, _, cx| pr.key_up(ev, cx)))
+            // keymap-ok: the piano keys
+            .on_key_up(cx.listener(|pr, ev: &KeyUpEvent, _, cx| pr.key_up(ev, cx)));
+        self.key_actions(root, cx)
             .child(self.render_toolbars(clip.as_ref(), cx))
             .child(match clip {
                 None => div()
@@ -2892,19 +2884,14 @@ pub mod kit {
     use std::rc::Rc;
 
     use gpui::{
-        AnyView, App, AppContext, Context, Div, ElementId, Entity, FontWeight, Hsla, IntoElement, Modifiers,
-        MouseButton, MouseMoveEvent, MouseUpEvent, Pixels, Point, Rgba, SharedString, Stateful, Subscription,
-        TextAlign, TextRun, WeakEntity, Window, anchored, canvas, deferred, div, prelude::*, px,
+        AnyView, App, AppContext, Context, Div, ElementId, Entity, FontWeight, Hsla, IntoElement, MouseButton,
+        MouseMoveEvent, MouseUpEvent, Pixels, Point, Rgba, SharedString, Stateful, Subscription, TextAlign, TextRun,
+        WeakEntity, Window, anchored, canvas, deferred, div, prelude::*, px,
     };
     use gpui_component::input::{Input, InputEvent, InputState};
     use gpui_component::tooltip::Tooltip;
 
     use crate::ui::{THEME, c, tr};
-
-    /// Cmd on macOS, Ctrl elsewhere
-    pub fn primary(m: &Modifiers) -> bool {
-        if cfg!(target_os = "macos") { m.platform } else { m.control }
-    }
 
     pub fn with_alpha(col: u32, a: f32) -> Rgba {
         let mut x = c(col);
@@ -3097,6 +3084,7 @@ pub mod kit {
                         .border_color(c(THEME.menu_border))
                         .shadow_lg()
                         .on_mouse_down_out(move |_, w, cx| close2(w, cx))
+                        // keymap-ok: text entry, Enter takes the typed value and Escape drops it
                         .on_key_down(move |ev: &gpui::KeyDownEvent, w, cx| {
                             match ev.keystroke.key.as_str() {
                                 "enter" => {
@@ -3108,7 +3096,7 @@ pub mod kit {
                             }
                             cx.stop_propagation();
                         })
-                        .child(Input::new(&self.state)),
+                        .child(crate::ui::text_entry(Input::new(&self.state))),
                 ),
             )
             .with_priority(2)

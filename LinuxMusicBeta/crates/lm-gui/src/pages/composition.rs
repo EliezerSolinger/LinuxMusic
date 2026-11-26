@@ -31,8 +31,10 @@ use crate::ui::{THEME, button, c, knob_face, loading_component, meter, midi, tr,
 use crate::view::{self, TimelineView};
 
 mod edit;
+mod gestures;
 
 use self::edit::EditState;
+use self::gestures::{fires, holds, pick_wheel};
 use super::marks::{self, MarksState};
 use crate::workspace::Workspace;
 
@@ -301,7 +303,11 @@ impl CompositionPage {
 
     fn drag_knob(&mut self, ev: &MouseMoveEvent, cx: &mut Context<Self>) {
         let Some(d) = &self.drag else { return };
-        let t = view::knob_drag(d.start_t, (ev.position.y.as_f32() - d.start_y) as f64, ev.modifiers.shift);
+        let t = view::knob_drag(
+            d.start_t,
+            (ev.position.y.as_f32() - d.start_y) as f64,
+            holds("comp.knob.fine", &ev.modifiers),
+        );
         let op = EditOp::set(d.track, &["volume"], Value::real(view::travel_to_gain(t)).unwrap_or_default());
         self.core.update(cx, |core, _| core.port_mut().gesture_apply(&self.drag.as_ref().unwrap().gesture, vec![op]));
         cx.notify();
@@ -345,30 +351,47 @@ impl CompositionPage {
             .map_or(0.0, |r| (r.top + r.h) as f64)
     }
 
-    /// REAPER's wheel (F-ARR-007): a mouse wheel zooms; Ctrl+wheel changes every track's height; Alt (or Shift)
-    /// +wheel scrolls sideways. A trackpad pans both ways; with Cmd/Ctrl it zooms
+    /// The wheel (F-ARR-007) does what the mouse actions say (REAPER's by default: zoom, Ctrl track height, Alt or
+    /// Shift sideways). A trackpad pans both ways, and zooms when the zoom gesture has a modifier held
     fn on_scroll(&mut self, ev: &ScrollEvent, window: &mut Window, cx: &mut Context<Self>) {
         let d = ev.delta.pixel_delta(px(16.0));
         let b = *self.timeline_bounds.borrow();
         let x = (ev.position.x - b.origin.x).as_f32() as f64;
         let (dx, dy) = (d.x.as_f32() as f64, d.y.as_f32() as f64);
         let wheel = matches!(ev.delta, ScrollDelta::Lines(_));
-        // Ctrl+Alt+wheel: +-1 px, Shift+Alt+wheel: +-5 px on every track's height (F-TRK-030)
-        if wheel && ev.modifiers.alt && (ev.modifiers.control || ev.modifiers.shift) {
-            let step = if ev.modifiers.shift { 5.0 } else { 1.0 };
-            self.track_h = (self.track_h + step * dy.signum() as f32).clamp(24.0, 160.0);
-            self.track_heights.clear();
-            cx.notify();
-            return;
+        let ids = [
+            "comp.view.track_height_fine",
+            "comp.view.track_height_coarse",
+            "comp.view.track_height",
+            "comp.view.zoom",
+            "comp.view.scroll_h",
+            "comp.view.scroll_v",
+        ];
+        // a mouse wheel does what the table says; a trackpad pans both ways and, with Cmd/Ctrl, zooms
+        let which = if wheel { pick_wheel(&ids, &ev.modifiers) } else { None };
+        match which {
+            Some("comp.view.track_height_fine" | "comp.view.track_height_coarse") => {
+                let step = if which == Some("comp.view.track_height_coarse") { 5.0 } else { 1.0 };
+                self.track_h = (self.track_h + step * dy.signum() as f32).clamp(24.0, 160.0);
+                self.track_heights.clear();
+                cx.notify();
+                return;
+            }
+            Some("comp.view.track_height") => {
+                self.track_h = (self.track_h * (1.0 + dy as f32 * 0.004)).clamp(24.0, 160.0);
+                self.track_heights.clear();
+                cx.notify();
+                return;
+            }
+            None if wheel => return,
+            _ => {}
         }
-        if ev.modifiers.control && wheel {
-            self.track_h = (self.track_h * (1.0 + dy as f32 * 0.004)).clamp(24.0, 160.0);
-            self.track_heights.clear();
-            cx.notify();
-            return;
-        }
-        let sideways = ev.modifiers.alt || ev.modifiers.shift;
-        let zoom = if wheel { !sideways } else { ev.modifiers.platform || ev.modifiers.control };
+        let sideways = which == Some("comp.view.scroll_h");
+        let zoom = if wheel {
+            which == Some("comp.view.zoom")
+        } else {
+            holds("comp.view.zoom", &ev.modifiers) && ev.modifiers.modified()
+        };
         let (dx, dy) = if wheel && sideways { (dy, 0.0) } else { (dx, dy) };
         let content = self.content_h(cx);
         self.view.wheel(dx, if zoom { -dy } else { dy }, zoom, x, content, Self::view_h(window));
@@ -393,7 +416,7 @@ impl CompositionPage {
     /// A click on the ruler moves the cursor there
     fn on_ruler(&mut self, ev: &MouseDownEvent, cx: &mut Context<Self>) {
         // Ctrl+drag selects the items of every track in that stretch (F-REG-008)
-        if (ev.modifiers.control || ev.modifiers.platform) && !ev.modifiers.shift && !ev.modifiers.alt {
+        if holds("comp.ruler.range_select", &ev.modifiers) {
             let b = *self.timeline_bounds.borrow();
             let tick = self.view.tick_at((ev.position.x - b.origin.x).as_f32()).max(0.0) as i64;
             self.ed.ruler_select = Some((tick, tick));
@@ -888,7 +911,7 @@ impl CompositionPage {
                 cx.listener(move |p, ev: &MouseDownEvent, _, cx| {
                     p.ed.track = Some(id);
                     // Shift+click: the default height again (F-TRK-030)
-                    if ev.modifiers.shift {
+                    if holds("comp.track.reset_height", &ev.modifiers) {
                         p.track_h = view::TRACK_H;
                         p.track_heights.remove(&id);
                     }
@@ -1107,7 +1130,7 @@ impl CompositionPage {
                     MouseButton::Left,
                     cx.listener(move |p, ev: &MouseDownEvent, _, cx| {
                         cx.stop_propagation();
-                        if ev.modifiers.shift {
+                        if holds("comp.track.reset_height", &ev.modifiers) {
                             p.track_heights.remove(&id);
                         } else {
                             let h = p.track_heights.get(&id).copied().unwrap_or(p.track_h);
@@ -1126,7 +1149,12 @@ impl CompositionPage {
         let id = t.id;
         let plugin = t.instrument.as_ref().map(|i| i.0);
         if let Some((_, state, _)) = self.renaming.as_ref().filter(|(r, ..)| *r == id) {
-            return div().flex_1().h(px(22.)).text_size(px(11.)).child(Input::new(state)).into_any_element();
+            return div()
+                .flex_1()
+                .h(px(22.))
+                .text_size(px(11.))
+                .child(crate::ui::text_entry(Input::new(state)))
+                .into_any_element();
         }
         div()
             .id(("tname", t.index))

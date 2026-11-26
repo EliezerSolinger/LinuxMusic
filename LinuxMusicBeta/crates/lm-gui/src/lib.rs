@@ -17,6 +17,7 @@
 mod actions;
 mod bench;
 mod core;
+mod keymap;
 mod model;
 mod pages;
 mod screens;
@@ -47,6 +48,9 @@ pub fn run(make_port: impl FnOnce() -> Box<dyn CorePort> + 'static) {
 pub fn run_with(make_port: impl FnOnce() -> Box<dyn CorePort> + 'static, options: Options) {
     gpui_platform::application().run(move |cx: &mut App| {
         let port = make_port();
+        if let Some(dir) = port.config_dir() {
+            keymap::set_user_presets(keymap::presets::load_user(&dir));
+        }
         workspace::start(cx, port.preferences());
         let bounds = Bounds::new(point(px(0.), px(0.)), size(px(view::WINDOW_W), px(view::WINDOW_H)));
         let titlebar =

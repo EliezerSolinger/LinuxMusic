@@ -148,7 +148,8 @@ fn every_registry_entry_binds(cx: &mut TestAppContext) {
 #[gpui::test]
 fn the_users_shortcut_works(cx: &mut TestAppContext) {
     let (ws, cx) = open(cx);
-    let prefs = Value::object([("shortcuts", Value::object([("view.mixing", Value::text("f2"))]))]);
+    let global = Value::object([("keys", Value::object([("view.mixing", Value::text("f2"))]))]);
+    let prefs = Value::object([("keymaps", Value::object([("Global", global)]))]);
     cx.update(|_, cx| {
         cx.clear_key_bindings();
         crate::actions::bind_keys(cx, &prefs)
@@ -1582,10 +1583,11 @@ fn settings_change_a_shortcut(cx: &mut TestAppContext) {
     let (ws, cx) = open(cx);
     open_part(&ws, cx, Screen::Settings, Some("keys"));
     let i = REGISTRY.iter().position(|d| d.id == "transport.loop").unwrap();
+    click(cx, "kctx-1"); // the Transport context
     click(cx, &format!("key-change-{i}"));
     keys(cx, "alt-x");
     let k = |ws: &Entity<Workspace>, cx: &mut VisualTestContext, id: &str| {
-        pref_at(ws, cx, &["shortcuts", id]).and_then(|v| v.as_text().map(str::to_string))
+        pref_at(ws, cx, &["keymaps", "Transport", "keys", id]).and_then(|v| v.as_text().map(str::to_string))
     };
     assert_eq!(k(&ws, cx, "transport.loop").as_deref(), Some("alt-x"));
     click(cx, &format!("key-change-{i}"));
@@ -2341,3 +2343,5 @@ fn piano_roll_draw_auditions(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(log.held().is_empty());
 }
+
+mod keymap_tests;

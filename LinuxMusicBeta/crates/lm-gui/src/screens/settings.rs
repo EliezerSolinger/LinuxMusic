@@ -25,9 +25,10 @@ use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::switch::Switch;
 use lm_port::{DeviceInfo, Loading, PathStep, Pending, Target, Value};
 
+mod keys;
+
 use super::ScreenCx;
 use super::palette::{fold, keys_label, keys_of_event, take_screen_arg};
-use crate::actions::{REGISTRY, keys_of};
 use crate::ui::{THEME, button, c, caption, loading_component, tbutton, tr, trf};
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -241,7 +242,7 @@ impl Page {
             Page::Plugins => "Plugins",
             Page::Folders => "Folders",
             Page::Appearance => "Appearance",
-            Page::Keys => "Keyboard and shortcuts",
+            Page::Keys => "Shortcuts",
             Page::Autosave => "Autosave and backup",
             Page::Advanced => "Advanced",
         }
@@ -294,9 +295,18 @@ pub struct Settings {
     /// The alias being typed, per MIDI port of the preferences (by index)
     aliases: Vec<Entity<InputState>>,
     devices: Option<Vec<DeviceInfo>>,
-    /// The shortcut being changed, and the keys of a conflict waiting for a second press
-    capturing: Option<&'static str>,
+    /// The Shortcuts page: the context and tab shown, the preset menu open, the key or gesture being captured, the keys
+    /// of a conflict waiting for a second press, the search and the pressed key it looks for, the new preset's name
+    capturing: Option<keys::Capture>,
     pending_keys: Option<String>,
+    kconfirm: Option<String>,
+    kctx: &'static str,
+    ktab: keys::KeysTab,
+    kmenu: Option<&'static str>,
+    ksearch: Entity<InputState>,
+    kname: Entity<InputState>,
+    kfind: Option<String>,
+    kstatus: Option<&'static str>,
     focus: FocusHandle,
     band_hidden: bool,
     _reopen: Option<Task<()>>,
@@ -315,11 +325,18 @@ impl Settings {
         let projects_dir = input(text_at(&["projectsFolder"]), "", window, cx);
         let soundfont = input(text_at(&["folders", "soundfont"]), "/usr/share/sounds/sf2/FluidR3_GM.sf2", window, cx);
         let new_folder = input(String::new(), "/a/folder/to/allow", window, cx);
+        let ksearch = input(String::new(), "Search shortcuts…", window, cx);
+        let kname = input(String::new(), "Name", window, cx);
         let ports: Vec<Value> =
             prefs.at_path(&path(&["midi", "ports"])).map(|l| l.items().cloned().collect()).unwrap_or_default();
         let aliases: Vec<_> = ports.iter().map(|p| input(text_of(p, "alias"), "alias", window, cx)).collect();
         let mut subs = vec![
             cx.subscribe(&search, |_: &mut Settings, _, ev: &InputEvent, cx| {
+                if matches!(ev, InputEvent::Change) {
+                    cx.notify();
+                }
+            }),
+            cx.subscribe(&ksearch, |_: &mut Settings, _, ev: &InputEvent, cx| {
                 if matches!(ev, InputEvent::Change) {
                     cx.notify();
                 }
@@ -361,6 +378,14 @@ impl Settings {
             devices: None,
             capturing: None,
             pending_keys: None,
+            kconfirm: None,
+            kctx: "Global",
+            ktab: keys::KeysTab::Keys,
+            kmenu: None,
+            ksearch,
+            kname,
+            kfind: None,
+            kstatus: None,
             focus: cx.focus_handle(),
             band_hidden: false,
             _reopen: None,
@@ -470,35 +495,7 @@ impl Settings {
     }
 
     fn on_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        let Some(action) = self.capturing else { return };
-        cx.stop_propagation();
-        if ev.keystroke.key == "escape" {
-            self.capturing = None;
-            self.pending_keys = None;
-            cx.notify();
-            return;
-        }
-        let Some(keys) = keys_of_event(ev) else { return };
-        let prefs = self.prefs(cx).clone();
-        let conflict = REGISTRY.iter().find(|d| d.id != action && keys_of(d, &prefs).contains(&keys)).map(|d| d.id);
-        match conflict {
-            // a second press of the same keys takes them from the other action
-            Some(other) if self.pending_keys.as_deref() == Some(keys.as_str()) => {
-                self.set(cx, &["shortcuts", other], Value::text(""));
-                self.set(cx, &["shortcuts", action], Value::text(keys));
-                self.capturing = None;
-                self.pending_keys = None;
-                self.rebind(cx);
-            }
-            Some(_) => self.pending_keys = Some(keys),
-            None => {
-                self.set(cx, &["shortcuts", action], Value::text(keys));
-                self.capturing = None;
-                self.pending_keys = None;
-                self.rebind(cx);
-            }
-        }
-        cx.notify();
+        self.capture_key(ev, cx);
     }
 
     /// The keybindings again, from the registry and the user's shortcuts
@@ -956,7 +953,7 @@ impl Settings {
                             )
                             .child(caption(format!("{} · {}", text_of(p, "port"), text_of(p, "backend")))),
                     )
-                    .child(div().w(px(110.)).flex_none().children(alias.map(|a| Input::new(&a))))
+                    .child(div().w(px(110.)).flex_none().children(alias.map(|a| crate::ui::text_entry(Input::new(&a)))))
                     .child(switch(
                         format!("midi-in-{i}"),
                         p.get("input").and_then(Value::as_bool).unwrap_or(false),
@@ -1212,13 +1209,13 @@ impl Settings {
             })
             .collect();
         vec![
-            row("Working folder", Apply::Restart, div().w(px(360.)).child(Input::new(&self.projects_dir))),
-            row("Default SoundFont", Apply::Now, div().w(px(360.)).child(Input::new(&self.soundfont))),
+            row("Working folder", Apply::Restart, div().w(px(360.)).child(crate::ui::text_entry(Input::new(&self.projects_dir)))),
+            row("Default SoundFont", Apply::Now, div().w(px(360.)).child(crate::ui::text_entry(Input::new(&self.soundfont)))),
             wide(
                 "Folders a project may read",
                 Some(Apply::Now),
                 div().flex().flex_col().gap(px(3.)).children(lines).child(
-                    div().flex().gap(px(6.)).child(div().w(px(360.)).child(Input::new(&self.new_folder))).child(
+                    div().flex().gap(px(6.)).child(div().w(px(360.)).child(crate::ui::text_entry(Input::new(&self.new_folder)))).child(
                         button("add-allowed", tr("Allow"), false, 0)
                             .debug_selector(|| "add-allowed".into())
                             .on_click(cx.listener(|s, _, _, cx| s.add_folder(cx))),
@@ -1261,80 +1258,6 @@ impl Settings {
             self.toggle("Compact track headers", "compact", &["interface", "compactHeaders"], false, cx),
             self.toggle("Note names in the Piano Roll", "note-names", &["interface", "noteNames"], true, cx),
         ]
-    }
-
-    fn keys(&mut self, cx: &mut Context<Self>) -> Vec<Row> {
-        let prefs = self.prefs(cx).clone();
-        let mut groups: Vec<&'static str> = Vec::new();
-        for d in REGISTRY {
-            if !groups.contains(&d.group) {
-                groups.push(d.group);
-            }
-        }
-        groups
-            .into_iter()
-            .map(|g| {
-                let lines: Vec<AnyElement> = REGISTRY
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, d)| d.group == g)
-                    .map(|(i, d)| {
-                        let id = d.id;
-                        let keys = keys_of(d, &prefs);
-                        let capturing = self.capturing == Some(id);
-                        let changed = prefs.get("shortcuts").and_then(|s| s.get(id)).is_some();
-                        let shown: AnyElement = if capturing {
-                            let conflict = self.pending_keys.as_deref().and_then(|k| {
-                                REGISTRY.iter().find(|o| o.id != id && keys_of(o, &prefs).iter().any(|x| x == k))
-                            });
-                            match conflict {
-                                Some(o) => caption(trf("Used by \"{0}\": press again to take them", &[&tr(o.label)]))
-                                    .into_any_element(),
-                                None => caption(tr("Press the new keys…")).into_any_element(),
-                            }
-                        } else if keys.is_empty() {
-                            caption(tr("none")).into_any_element()
-                        } else {
-                            let text = keys.iter().map(|k| keys_label(k)).collect::<Vec<_>>().join("  ");
-                            div().text_size(px(12.)).text_color(c(THEME.text2)).child(text).into_any_element()
-                        };
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(10.))
-                            .py(px(2.))
-                            .when(capturing, |d| d.bg(c(THEME.bg4)))
-                            .child(div().flex_1().text_size(px(12.)).child(tr(d.label)))
-                            .child(div().w(px(300.)).flex().justify_end().child(shown))
-                            .child(
-                                button(("key-change", i), tr("Change"), capturing, THEME.green)
-                                    .debug_selector(move || format!("key-change-{i}"))
-                                    .on_click(cx.listener(move |s, _, window, cx| {
-                                        s.capturing = Some(id);
-                                        s.pending_keys = None;
-                                        window.focus(&s.focus, cx);
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(div().w(px(60.)).when(changed, |d| {
-                                d.child(button(("key-default", i), tr("Default"), false, 0).on_click(cx.listener(
-                                    move |s, _, _, cx| {
-                                        let without = s
-                                            .prefs(cx)
-                                            .get("shortcuts")
-                                            .map(|sc| sc.without(id))
-                                            .unwrap_or_else(Value::empty_object);
-                                        s.set(cx, &["shortcuts"], without);
-                                        s.rebind(cx);
-                                    },
-                                )))
-                            }))
-                            .into_any_element()
-                    })
-                    .collect();
-                wide(g, Some(Apply::Now), div().flex().flex_col().children(lines))
-            })
-            .collect()
     }
 
     fn autosave(&mut self, cx: &mut Context<Self>) -> Vec<Row> {
@@ -1502,7 +1425,7 @@ impl Render for Settings {
             .bg(c(THEME.bg1))
             .border_r_1()
             .border_color(c(THEME.line))
-            .child(div().mb(px(8.)).child(Input::new(&self.search)))
+            .child(div().mb(px(8.)).child(crate::ui::text_entry(Input::new(&self.search))))
             .children(Page::ALL.iter().map(|&p| {
                 let on = p == self.page && !searching;
                 div()
@@ -1539,6 +1462,7 @@ impl Render for Settings {
             .border_color(c(THEME.line2))
             .shadow_lg()
             .track_focus(&self.focus)
+            // keymap-ok: the key capture
             .on_key_down(cx.listener(Self::on_key))
             .child(nav)
             .child(div().flex_1().min_w_0().h_full().flex().flex_col().child(content).children(band))

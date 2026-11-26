@@ -1,0 +1,226 @@
+{
+  "context": "PianoRoll",
+  "name": "LMMS",
+  "keys": {
+    "notes.play": [
+      "space"
+    ],
+    "notes.mode_draw": [
+      "shift-d"
+    ],
+    "notes.mode_erase": [
+      "shift-e"
+    ],
+    "notes.mode_select": [
+      "shift-s"
+    ],
+    "notes.mode_pitch": [
+      "shift-t"
+    ],
+    "notes.mode_knife": [
+      "shift-k"
+    ],
+    "notes.mode_strum": [
+      "shift-j"
+    ],
+    "notes.glue": [
+      "shift-g"
+    ],
+    "notes.fill": [
+      "shift-f"
+    ],
+    "notes.cut_overlaps": [
+      "shift-c"
+    ],
+    "notes.reverse": [
+      "shift-r"
+    ],
+    "notes.select_all": [
+      "secondary-a"
+    ],
+    "notes.select_none": [
+      "secondary-shift-a",
+      "escape"
+    ],
+    "notes.copy": [
+      "secondary-c"
+    ],
+    "notes.cut": [
+      "secondary-x"
+    ],
+    "notes.paste": [
+      "secondary-v"
+    ],
+    "notes.delete": [
+      "delete",
+      "backspace"
+    ],
+    "notes.transpose_up": [
+      "shift-up"
+    ],
+    "notes.transpose_down": [
+      "shift-down"
+    ],
+    "notes.octave_up": [
+      "secondary-up"
+    ],
+    "notes.octave_down": [
+      "secondary-down"
+    ],
+    "notes.move_left": [
+      "shift-left"
+    ],
+    "notes.move_right": [
+      "shift-right"
+    ],
+    "notes.move_bar_left": [
+      "secondary-left"
+    ],
+    "notes.move_bar_right": [
+      "secondary-right"
+    ],
+    "notes.kb_octave_down": [
+      "-"
+    ],
+    "notes.kb_octave_up": [
+      "="
+    ],
+    "notes.step_rest": [
+      "right"
+    ],
+    "notes.step_back": [
+      "left"
+    ],
+    "notes.step_shorter": [
+      "alt-left"
+    ],
+    "notes.step_longer": [
+      "alt-right"
+    ],
+    "notes.scroll_up": [
+      "up"
+    ],
+    "notes.scroll_down": [
+      "down"
+    ],
+    "notes.home": [
+      "home"
+    ],
+    "notes.length_0": [
+      "secondary-0"
+    ],
+    "notes.length_1": [
+      "secondary-1"
+    ],
+    "notes.length_2": [
+      "secondary-2"
+    ],
+    "notes.length_3": [
+      "secondary-3"
+    ],
+    "notes.length_4": [
+      "secondary-4"
+    ],
+    "notes.length_5": [
+      "secondary-5"
+    ],
+    "notes.length_6": [
+      "secondary-6"
+    ],
+    "notes.length_7": [
+      "secondary-7"
+    ],
+    "notes.length_8": [
+      "secondary-8"
+    ],
+    "notes.length_9": [
+      "secondary-9"
+    ],
+    "notes.grid_0": [
+      "alt-0"
+    ],
+    "notes.grid_1": [
+      "alt-1"
+    ],
+    "notes.grid_2": [
+      "alt-2"
+    ],
+    "notes.grid_3": [
+      "alt-3"
+    ],
+    "notes.grid_4": [
+      "alt-4"
+    ],
+    "notes.grid_5": [
+      "alt-5"
+    ],
+    "notes.grid_6": [
+      "alt-6"
+    ],
+    "notes.grid_7": [
+      "alt-7"
+    ],
+    "notes.grid_8": [
+      "alt-8"
+    ],
+    "notes.grid_9": [
+      "alt-9"
+    ]
+  },
+  "mouse": {
+    "pr.grid.select_override": [
+      "secondary-click"
+    ],
+    "pr.note.copy": [
+      "shift-click"
+    ],
+    "pr.note.stretch": [
+      "shift-click"
+    ],
+    "pr.grid.free": [
+      "alt-drag"
+    ],
+    "pr.grid.extend": [
+      "shift-click"
+    ],
+    "pr.draw.arpeggio": [
+      "shift-click"
+    ],
+    "pr.grid.erase": [
+      "right-click"
+    ],
+    "pr.knife.drop_short": [
+      "shift-drag"
+    ],
+    "pr.knife.free": [
+      "secondary-drag"
+    ],
+    "pr.lane.under": [
+      "alt-click"
+    ],
+    "pr.lane.entry": [
+      "double-click"
+    ],
+    "pr.ruler.select": [
+      "secondary-click"
+    ],
+    "pr.ruler.loop": [
+      "shift-click"
+    ],
+    "pr.view.grid_wheel": [
+      "secondary-alt-wheel"
+    ],
+    "pr.view.length_wheel": [
+      "secondary-shift-wheel"
+    ],
+    "pr.view.zoom": [
+      "secondary-wheel"
+    ],
+    "pr.view.scroll_h": [
+      "shift-wheel"
+    ],
+    "pr.view.scroll": [
+      "wheel"
+    ]
+  }
+}

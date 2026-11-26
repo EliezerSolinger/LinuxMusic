@@ -650,7 +650,7 @@ impl Render for Browser {
                 b.start_search(q, cx);
             }))
             .on_action(cx.listener(|b, _: &BrowserFind, window, cx| b.search.update(cx, |i, cx| i.focus(window, cx))))
-            // Space held previews the selected entry (F-BRW-005)
+            // Space held previews the selected entry (F-BRW-005); keymap-ok: a key held, down and up, is not a command
             .on_key_down(cx.listener(|b, ev: &KeyDownEvent, _, cx| {
                 if ev.keystroke.key == "space"
                     && !ev.is_held
@@ -660,7 +660,9 @@ impl Render for Browser {
                     cx.stop_propagation();
                 }
             }))
+            // keymap-ok: a key held, down and up, is not a command
             .on_key_up(cx.listener(|b, ev: &KeyUpEvent, _, cx| {
+                // keymap-ok: a key held, down and up, is not a command
                 if ev.keystroke.key == "space" {
                     b.stop_preview(cx);
                 }
@@ -731,7 +733,7 @@ impl Render for Browser {
                     .debug_selector(|| "br-search".into())
                     .px(px(4.))
                     .py(px(4.))
-                    .child(Input::new(&self.search).small().cleanable(true)),
+                    .child(crate::ui::text_entry(Input::new(&self.search).small().cleanable(true))),
             )
             .child(div().id("br-list").flex_1().overflow_y_scroll().children(list))
             .children(self.status(cx))

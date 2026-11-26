@@ -1,0 +1,32 @@
+{
+  "context": "Instrument",
+  "name": "REAPER",
+  "keys": {},
+  "mouse": {
+    "param.carry": [
+      "shift-click"
+    ],
+    "param.type": [
+      "double-click"
+    ],
+    "param.fine": [
+      "secondary-drag"
+    ],
+    "param.wheel": [
+      "wheel"
+    ],
+    "param.wheel_coarse": [
+      "shift-wheel"
+    ],
+    "param.wheel_fine": [
+      "secondary-wheel"
+    ],
+    "param.spin_coarse": [
+      "shift-click"
+    ]
+  },
+  "unsure": {
+    "param.fine": "REAPER: Ctrl+drag is the fine mode of a plug-in control (default)",
+    "param.carry": "REAPER has no carry gesture; placeholder"
+  }
+}

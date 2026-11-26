@@ -488,6 +488,8 @@ impl EffectWindow {
 }
 
 impl ParamHost<EfPopup> for EffectWindow {
+    const KEYMAP: &'static str = "Effect";
+
     fn core(&self) -> &Entity<Core> {
         &self.scx.core
     }

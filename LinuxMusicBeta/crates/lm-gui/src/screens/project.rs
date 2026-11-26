@@ -144,7 +144,7 @@ impl ProjectDialog {
                 div()
                     .flex()
                     .gap(px(4.))
-                    .child(div().flex_1().child(Input::new(&self.path)))
+                    .child(div().flex_1().child(crate::ui::text_entry(Input::new(&self.path))))
                     .children(self.choose_button("choose-open", true, cx)),
             ))
             .child(div().flex().justify_end().gap(px(8.)).child(
@@ -197,7 +197,7 @@ impl ProjectDialog {
             .flex()
             .flex_col()
             .gap(px(8.))
-            .child(form_row(tr("File"), Input::new(&self.path)))
+            .child(form_row(tr("File"), crate::ui::text_entry(Input::new(&self.path))))
             .child(
                 div().flex().justify_end().child(
                     tbutton("path-go", if import { tr("Import") } else { tr("Export") }, true, THEME.green)
@@ -239,7 +239,7 @@ impl ProjectDialog {
                 div()
                     .flex()
                     .gap(px(4.))
-                    .child(div().flex_1().child(Input::new(&self.folder)))
+                    .child(div().flex_1().child(crate::ui::text_entry(Input::new(&self.folder))))
                     .children(self.choose_button("choose-save", false, cx))
                     .child(button("version-down", "−", false, 0).h(px(24.)).w(px(24.)).on_click(cx.listener(
                         |d, _, window, cx| {

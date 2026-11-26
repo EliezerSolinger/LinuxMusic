@@ -1,0 +1,69 @@
+{
+  "context": "Global",
+  "name": "REAPER",
+  "keys": {
+    "view.composition": [
+      "secondary-1"
+    ],
+    "view.mixing": [
+      "secondary-2"
+    ],
+    "view.midi_maps": [
+      "secondary-3"
+    ],
+    "view.next_page": [
+      "ctrl-tab"
+    ],
+    "view.palette": [
+      "secondary-k"
+    ],
+    "view.settings": [
+      "secondary-p"
+    ],
+    "view.close": [
+      "escape"
+    ],
+    "edit.undo": [
+      "secondary-z"
+    ],
+    "edit.redo": [
+      "secondary-shift-z",
+      "secondary-y"
+    ],
+    "project.save": [
+      "secondary-s"
+    ],
+    "app.quit": [
+      "secondary-q"
+    ],
+    "file.open": [
+      "secondary-o"
+    ],
+    "file.save_as": [
+      "secondary-alt-s"
+    ],
+    "file.new": [
+      "secondary-n"
+    ],
+    "file.export": [
+      "secondary-alt-r"
+    ],
+    "file.import": [
+      "secondary-i"
+    ],
+    "file.export_midi": [],
+    "view.notices": [],
+    "help.about": [
+      "f1"
+    ]
+  },
+  "mouse": {},
+  "unsure": {
+    "view.composition": "REAPER has no page keys; its views are other windows (Ctrl+1 is a placeholder)",
+    "view.mixing": "REAPER shows the mixer with Alt+M; Ctrl+2 is a placeholder",
+    "file.save_as": "Ctrl+Alt+S in REAPER",
+    "file.export": "REAPER renders with Ctrl+Alt+R",
+    "view.settings": "REAPER preferences: Ctrl+P",
+    "file.import": "REAPER inserts media with Ctrl+I"
+  }
+}
