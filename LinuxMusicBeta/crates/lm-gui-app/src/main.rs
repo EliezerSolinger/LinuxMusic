@@ -96,6 +96,16 @@ fn device(prefs: &lm_session::prefs::Preferences) -> Option<DeviceSetup> {
         let input = prefs.text(&["audio", "input"]).filter(|i| !i.is_empty()).map(str::to_owned);
         return Some(DeviceSetup::CoreAudio { output, input });
     }
+    #[cfg(feature = "jack")]
+    if system == "jack" {
+        // `audio.output` may name a server (`jack:<server>`); anything else is the default server
+        let device = if output.starts_with("jack:") { output } else { "jack".to_owned() };
+        return Some(DeviceSetup::jack(&device));
+    }
+    #[cfg(not(feature = "jack"))]
+    if system == "jack" {
+        eprintln!("audio.system is \"jack\", but this build has no JACK support (build with --features jack)");
+    }
     None
 }
 

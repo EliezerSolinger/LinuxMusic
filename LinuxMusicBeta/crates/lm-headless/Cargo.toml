@@ -14,6 +14,11 @@ workspace = true
 name = "lm-headless"
 path = "src/main.rs"
 
+[features]
+default = []
+# `--device jack` (needs libjack at build time)
+jack = ["lm-session/jack"]
+
 [dependencies]
 lm-base.workspace = true
 lm-state.workspace = true

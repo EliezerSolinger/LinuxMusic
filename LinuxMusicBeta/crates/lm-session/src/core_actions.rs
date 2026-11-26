@@ -970,6 +970,15 @@ impl Session {
                 output: if audio("output").is_empty() { "default".to_owned() } else { audio("output") },
                 input: Some(audio("input")).filter(|i| !i.is_empty()),
             },
+            // The ports and the MIDI state stay; the server may change (`jack:<server>` in the preferences)
+            #[cfg(feature = "jack")]
+            DeviceSetup::Jack { device, client, inputs, outputs, midi } => DeviceSetup::Jack {
+                device: if name.starts_with("jack") { name } else { device.clone() },
+                client: client.clone(),
+                inputs: *inputs,
+                outputs: *outputs,
+                midi: midi.clone(),
+            },
         };
         self.device_setup = setup.clone();
         let (spec, source) = (self.spec, self.dummy_source);
@@ -1166,6 +1175,8 @@ impl Session {
                     let _ = (cancel, progress);
                     0
                 };
+                #[cfg(feature = "jack")]
+                let count = count + lm_io::jack_list_devices(cancel, progress)?.len() as i64;
                 Ok(Value::object([("devices", Value::int(count))]))
             },
         );

@@ -66,6 +66,26 @@ pub enum DeviceSetup {
     /// (macOS asks for the microphone permission the first time an input is read). An input on a different
     /// device than the output is an explicit private aggregate the user chose (U7)
     CoreAudio { output: String, input: Option<String> },
+    /// A JACK server (feature `jack`): one client with audio and MIDI ports. `device` is `jack` (the default server)
+    /// or `jack:<server>`; `inputs` and `outputs` are the audio ports registered; `midi` is the state the session's
+    /// MIDI link shares with the backend (I-21.1)
+    #[cfg(feature = "jack")]
+    Jack { device: String, client: String, inputs: u32, outputs: u32, midi: lm_io::JackMidiShared },
+}
+
+impl DeviceSetup {
+    /// The JACK server `device` names (`jack` or `jack:<server>`), with the default client name and ports
+    #[cfg(feature = "jack")]
+    pub fn jack(device: &str) -> Self {
+        let defaults = lm_io::JackOptions::default();
+        DeviceSetup::Jack {
+            device: device.to_owned(),
+            client: defaults.client_name,
+            inputs: defaults.inputs,
+            outputs: defaults.outputs,
+            midi: lm_io::JackMidiShared::new(),
+        }
+    }
 }
 
 /// What a session is made from
@@ -520,11 +540,23 @@ fn open_device(
         DeviceSetup::CoreAudio { .. } => Box::new(lm_io::CoreAudioBackend::new()),
         #[cfg(not(target_os = "macos"))]
         DeviceSetup::CoreAudio { .. } => return Err(err("session.device.coreaudio_unavailable")),
+        #[cfg(feature = "jack")]
+        DeviceSetup::Jack { client, inputs, outputs, midi, .. } => {
+            Box::new(lm_io::JackBackend::new(lm_io::JackOptions {
+                client_name: client.clone(),
+                inputs: *inputs,
+                outputs: *outputs,
+                auto_connect: true,
+                midi: Some(midi.clone()),
+            }))
+        }
     };
     let name = match setup {
         DeviceSetup::Dummy(_) => "dummy".to_owned(),
         DeviceSetup::Alsa { device } => device.clone(),
         DeviceSetup::CoreAudio { output, .. } => output.clone(),
+        #[cfg(feature = "jack")]
+        DeviceSetup::Jack { device, .. } => device.clone(),
     };
     let config = match setup {
         // The input only when one is named: opening it triggers the microphone permission
@@ -680,6 +712,10 @@ impl Session {
         #[cfg(target_os = "linux")]
         if matches!(s.device_setup, DeviceSetup::Alsa { .. }) {
             s.midi_open_devices();
+        }
+        #[cfg(feature = "jack")]
+        if matches!(s.device_setup, DeviceSetup::Jack { .. }) {
+            s.midi_open_jack();
         }
         Ok(s)
     }

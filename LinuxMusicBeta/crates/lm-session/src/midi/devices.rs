@@ -159,6 +159,37 @@ impl MidiDeviceLink for lm_io::MidiDevices {
     }
 }
 
+#[cfg(feature = "jack")]
+impl MidiDeviceLink for lm_io::JackMidiLink {
+    fn set_settings(&mut self, settings: Vec<PortSettings>) -> Result<()> {
+        lm_io::JackMidiLink::set_settings(self, settings)
+    }
+    fn poll(&mut self, f: &mut dyn FnMut(MidiDeviceEvent)) {
+        lm_io::JackMidiLink::poll(self, f)
+    }
+    fn activity(&mut self, f: &mut dyn FnMut(lm_io::MidiActivity)) {
+        lm_io::JackMidiLink::activity(self, f)
+    }
+    fn sysex(&mut self, f: &mut dyn FnMut(SysexIn)) {
+        lm_io::JackMidiLink::sysex(self, f)
+    }
+    fn add_output_source(&mut self, source: lm_base::ring::Consumer<MidiOutEvent>) -> Result<()> {
+        lm_io::JackMidiLink::add_output_source(self, source)
+    }
+    fn add_sysex_output(&mut self, source: lm_base::ring::Consumer<SysexOut>) -> Result<()> {
+        lm_io::JackMidiLink::add_sysex_output(self, source)
+    }
+    fn wake(&self) {
+        lm_io::JackMidiLink::wake(self)
+    }
+    fn ports(&self) -> Vec<PortInfo> {
+        lm_io::JackMidiLink::ports(self)
+    }
+    fn rescan_raw(&mut self) {
+        lm_io::JackMidiLink::rescan(self)
+    }
+}
+
 /// The SysEx ring to the devices: 64 messages (the MCU display is 16 cells at most per refresh)
 const SYSEX_RING: usize = 64;
 /// Raw MIDI ports are looked for again this often (ns)
@@ -202,6 +233,22 @@ impl Session {
             )
         });
         self.midi.devices.opening = Some(handle);
+    }
+
+    /// Starts the JACK MIDI link on the backend's client (the ports are the backend's: nothing here blocks)
+    #[cfg(feature = "jack")]
+    pub fn midi_open_jack(&mut self) {
+        let crate::session::DeviceSetup::Jack { midi, .. } = &self.device_setup else { return };
+        let midi = midi.clone();
+        let settings = self.midi_port_settings();
+        match lm_io::JackMidiLink::start(&midi, settings, lm_render::ProducerIndex(SEQ_PRODUCER)) {
+            Ok((link, input)) => {
+                if let Err(e) = self.attach_midi_devices(Box::new(link), input) {
+                    self.notices.error(&e, None, None);
+                }
+            }
+            Err(e) => self.notices.error(&e, None, None),
+        }
     }
 
     /// Attaches a device service: its input ring goes to the engine, the feedback and SysEx rings go to it, and it
@@ -353,7 +400,14 @@ impl Session {
                 Value::object([
                     ("client", Value::text(p.id.client.as_str())),
                     ("port", Value::text(p.id.port.as_str())),
-                    ("backend", Value::text(if p.backend == MidiBackendKind::Raw { "raw" } else { "seq" })),
+                    (
+                        "backend",
+                        Value::text(match p.backend {
+                            MidiBackendKind::Raw => "raw",
+                            MidiBackendKind::Jack => "jack",
+                            MidiBackendKind::Seq => "seq",
+                        }),
+                    ),
                     ("alias", Value::text(alias)),
                     ("connected", Value::bool(connected)),
                     ("readable", Value::bool(p.readable)),

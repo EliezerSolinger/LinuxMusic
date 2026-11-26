@@ -17,6 +17,8 @@ path = "src/main.rs"
 [features]
 default = ["runtime-shaders"]
 runtime-shaders = ["lm-gui/runtime-shaders"]
+# audio.system = "jack" (needs libjack at build time)
+jack = ["lm-session/jack"]
 
 [dependencies]
 lm-base.workspace = true

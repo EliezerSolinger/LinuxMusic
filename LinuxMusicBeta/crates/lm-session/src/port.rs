@@ -830,5 +830,17 @@ fn list_devices(cancel: &lm_base::Cancel, progress: &lm_base::Progress) -> Resul
     {
         let _ = (cancel, progress);
     }
+    // JACK: one entry when a server runs (audio.system = "jack"; the id is the device name the session opens)
+    #[cfg(feature = "jack")]
+    for d in lm_io::jack_list_devices(cancel, progress)? {
+        out.push(DeviceInfo {
+            id: Arc::from(d.name.as_str()),
+            name: Arc::from(d.description.as_str()),
+            inputs: d.capture.as_ref().map_or(0, |c| c.channels_max),
+            outputs: d.playback.as_ref().map_or(0, |c| c.channels_max),
+            rates: d.playback.as_ref().or(d.capture.as_ref()).map(|c| c.rates.clone()).unwrap_or_default(),
+            details: Value::object([("busy", Value::bool(d.busy)), ("denied", Value::bool(d.denied))]),
+        });
+    }
     Ok(out)
 }

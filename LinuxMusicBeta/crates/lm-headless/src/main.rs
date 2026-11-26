@@ -264,6 +264,10 @@ fn main() {
 
 /// `--device NAME` on this system: ALSA on Linux, CoreAudio (output only) on macOS
 fn platform_device(device: String) -> DeviceSetup {
+    #[cfg(feature = "jack")]
+    if device == "jack" || device.starts_with("jack:") {
+        return DeviceSetup::jack(&device);
+    }
     if cfg!(target_os = "macos") {
         DeviceSetup::CoreAudio { output: device, input: None }
     } else {

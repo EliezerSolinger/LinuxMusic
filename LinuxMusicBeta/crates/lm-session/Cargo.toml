@@ -10,6 +10,11 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+# audio.system = "jack": the JACK backend and JACK MIDI (needs libjack at build time)
+jack = ["lm-io/jack"]
+
 [dependencies]
 lm-base.workspace = true
 lm-state.workspace = true
