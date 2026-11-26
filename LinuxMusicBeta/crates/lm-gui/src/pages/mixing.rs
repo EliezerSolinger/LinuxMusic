@@ -645,13 +645,20 @@ impl MixingPage {
     /// The fader and the wheel: the legacy's steps (Fader::determineAdjustmentDelta): 1 dB, Shift 3 dB, Ctrl (Cmd on
     /// macOS) 0.1 dB, for one channel
     fn nudge_channel(&mut self, id: NodeId, db: f64, cx: &mut Context<Self>) {
-        let Some(ch) = self.channel(id, cx) else { return };
-        let v = (view::gain_to_db(ch.volume).max(-60.0) + db).clamp(-60.0, 12.0);
-        self.apply(
-            "Fader",
-            vec![EditOp::set(id, &["volume"], Value::real(view::db_to_gain(v)).unwrap_or_default())],
-            cx,
-        );
+        // linked faders (P-18) move together, each by the same number of dB (one undo step)
+        let mut ids = vec![id];
+        if self.linked.contains(&id) {
+            ids.extend(self.linked.iter().copied().filter(|c| *c != id));
+        }
+        let mut ops = Vec::new();
+        for c in ids {
+            let Some(ch) = self.channel(c, cx) else { continue };
+            let v = (view::gain_to_db(ch.volume).max(-60.0) + db).clamp(-60.0, 12.0);
+            ops.push(EditOp::set(c, &["volume"], Value::real(view::db_to_gain(v)).unwrap_or_default()));
+        }
+        if !ops.is_empty() {
+            self.apply("Fader", ops, cx);
+        }
     }
 
     fn wheel_fader(&mut self, id: NodeId, ev: &ScrollEvent, cx: &mut Context<Self>) {
@@ -836,31 +843,35 @@ impl MixingPage {
         cx.notify();
     }
 
-    /// The sidechain sends of a channel's inserts: toggled from a source channel to the first insert of `to` whose
-    /// plugin has a sidechain input (a send with `port: "sidechain"`, as the effect window's source)
-    fn toggle_sidechain(&mut self, from: NodeId, to: NodeId, cx: &mut Context<Self>) {
-        let port = self.core.read(cx).port();
-        let plugins = port.plugins();
-        let chs = model::channels(port.root());
-        let Some(target) = chs
-            .iter()
-            .find(|c| c.id == to)
-            .and_then(|c| c.inserts.iter().find(|i| plugins.iter().any(|p| p.id == i.plugin && p.sidechain)))
-            .map(|i| i.id)
-        else {
-            return;
-        };
+    /// The first insert of a channel whose plugin has a sidechain input
+    fn sidechain_insert(&self, ch: &ChannelView, cx: &Context<Self>) -> Option<NodeId> {
+        let plugins = self.core.read(cx).port().plugins();
+        ch.inserts.iter().find(|i| plugins.iter().any(|p| p.id == i.plugin && p.sidechain)).map(|i| i.id)
+    }
+
+    /// The sidechain send from a source channel to one insert, made or removed (a send with `port: "sidechain"`,
+    /// as the effect window's source). A loop is refused here and by the document (`doc.routing.cycle`)
+    fn toggle_sidechain(&mut self, from: NodeId, target: NodeId, cx: &mut Context<Self>) {
+        let chs = channels(self.core.read(cx));
         let Some(src) = chs.iter().find(|c| c.id == from) else { return };
         let existing = src.sends.iter().find(|s| s.to == target).map(|s| s.id);
         let op = match existing {
             Some(sid) => EditOp::Remove { id: Ref::Id(sid) },
-            None => EditOp::Insert {
-                temp: 0,
-                parent: Ref::Id(from),
-                list: "sends".into(),
-                index: src.sends.len(),
-                node: Value::object([("to", Value::text(target.to_string())), ("port", Value::text("sidechain"))]),
-            },
+            None => {
+                let Some(owner) = chs.iter().find(|c| c.inserts.iter().any(|i| i.id == target)).map(|c| c.id) else {
+                    return;
+                };
+                if owner == from || leads_to(&chs, owner, from) {
+                    return;
+                }
+                EditOp::Insert {
+                    temp: 0,
+                    parent: Ref::Id(from),
+                    list: "sends".into(),
+                    index: src.sends.len(),
+                    node: Value::object([("to", Value::text(target.to_string())), ("port", Value::text("sidechain"))]),
+                }
+            }
         };
         self.apply("Sidechain", vec![op], cx);
     }
@@ -1769,6 +1780,8 @@ fn fader_label(text: &'static str) -> Div {
 
 /// Whether `from`'s routes lead to `to` (Mixer::isInfiniteLoop): outputs and sends
 fn leads_to(chs: &[ChannelView], from: NodeId, to: NodeId) -> bool {
+    // a send to an insert's sidechain input leads to the insert's channel
+    let owner = |n: NodeId| chs.iter().find(|c| c.inserts.iter().any(|i| i.id == n)).map_or(n, |c| c.id);
     let mut seen = HashSet::new();
     let mut stack = vec![from];
     while let Some(n) = stack.pop() {
@@ -1780,7 +1793,7 @@ fn leads_to(chs: &[ChannelView], from: NodeId, to: NodeId) -> bool {
         }
         if let Some(c) = chs.iter().find(|c| c.id == n) {
             stack.extend(c.output);
-            stack.extend(c.sends.iter().map(|s| s.to));
+            stack.extend(c.sends.iter().map(|s| owner(s.to)));
         }
     }
     false
@@ -2479,6 +2492,34 @@ impl MixingPage {
                         }))
                         .into_any_element(),
                 );
+                // The sidechain source of this insert (per insert): every channel that makes no loop
+                let plugins = self.core.read(cx).port().plugins();
+                let owner = chs.iter().find(|c| c.id == ch);
+                let has_port = owner
+                    .and_then(|c| c.inserts.iter().find(|i| i.id == ins))
+                    .is_some_and(|i| plugins.iter().any(|p| p.id == i.plugin && p.sidechain));
+                if has_port {
+                    items.push(separator());
+                    items.push(caption_row("Sidechain input from"));
+                    for src in
+                        chs.iter().filter(|c| c.id != ch && c.kind != ChannelKind::Master && !leads_to(chs, ch, c.id))
+                    {
+                        let sid = src.id;
+                        let on = src.sends.iter().any(|s| s.to == ins && s.port.as_deref() == Some("sidechain"));
+                        items.push(
+                            menu_item(
+                                format!("menu-effect-sc-{}", sid.number),
+                                format!("{}{}", if on { "✓ " } else { "" }, src.name),
+                            )
+                            .on_click(cx.listener(move |p, _, _, cx| {
+                                p.menu = None;
+                                p.toggle_sidechain(sid, ins, cx);
+                            }))
+                            .into_any_element(),
+                        );
+                    }
+                    items.push(separator());
+                }
                 items.push(
                     menu_item("menu-effect-remove", tr("Remove this plugin"))
                         .on_click(cx.listener(move |p, _, _, cx| {
@@ -2640,6 +2681,7 @@ impl MixingPage {
                     chs.iter().filter(|c| c.id != id && c.kind != ChannelKind::Master && !leads_to(chs, id, c.id))
                 {
                     let sid = src.id;
+                    let Some(target) = self.sidechain_insert(chv, cx) else { continue };
                     let on = feeds(src, chv);
                     items.push(
                         menu_item(
@@ -2648,7 +2690,7 @@ impl MixingPage {
                         )
                         .on_click(cx.listener(move |p, _, _, cx| {
                             p.menu = None;
-                            p.toggle_sidechain(sid, id, cx);
+                            p.toggle_sidechain(sid, target, cx);
                         }))
                         .into_any_element(),
                     );
@@ -2661,6 +2703,7 @@ impl MixingPage {
                 items.push(caption_row("Send as sidechain to"));
                 for to in targets {
                     let tid = to.id;
+                    let Some(target) = self.sidechain_insert(to, cx) else { continue };
                     let on = feeds(chv, to);
                     items.push(
                         menu_item(
@@ -2669,7 +2712,7 @@ impl MixingPage {
                         )
                         .on_click(cx.listener(move |p, _, _, cx| {
                             p.menu = None;
-                            p.toggle_sidechain(id, tid, cx);
+                            p.toggle_sidechain(id, target, cx);
                         }))
                         .into_any_element(),
                     );
