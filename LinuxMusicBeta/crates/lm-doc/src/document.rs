@@ -779,6 +779,15 @@ impl Document {
         self.steps.get(self.cursor).map(|s| &s.label)
     }
 
+    /// Forgets every step, undoable and redoable: the state stays as it is (the files the steps could bring back
+    /// are gone, H4). Open gestures are committed first
+    pub fn clear_history(&mut self) {
+        self.commit_all_gestures();
+        self.checkpoints = VecDeque::from([self.current.clone()]);
+        self.steps.clear();
+        self.cursor = 0;
+    }
+
     /// The number of steps kept (undoable and redoable)
     pub fn history_len(&self) -> usize {
         self.steps.len()
