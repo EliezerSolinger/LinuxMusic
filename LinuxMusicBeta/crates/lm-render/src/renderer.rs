@@ -245,6 +245,10 @@ struct Transport {
     recording: bool,
     position: i64,
     take_frames: u64,
+    /// Where the playhead goes back to when a recording started from a stop ends (F-REC-020)
+    return_to: Option<i64>,
+    /// The pre-roll is running: recording begins when the playhead gets here (F-REC-023)
+    record_from: Option<i64>,
 }
 
 #[derive(Debug, Default)]
@@ -333,6 +337,8 @@ pub struct Renderer {
     preview_mix: Box<[f32]>,
     metronome: MetronomeState,
     counting: Option<Counting>,
+    /// The peak of each device input channel since the last telemetry frame
+    input_peaks: Box<[f32]>,
     workers: Workers,
     gain: Box<[f32]>,
     pan: Box<[f32]>,
@@ -428,6 +434,7 @@ impl Renderer {
             preview_mix: vec![0.0; 2 * spec.max_block].into_boxed_slice(),
             metronome: MetronomeState::default(),
             counting: None,
+            input_peaks: vec![0.0; crate::telemetry::INPUT_METERS].into_boxed_slice(),
             workers,
             gain: vec![0.0; spec.max_block].into_boxed_slice(),
             pan: vec![0.0; spec.max_block].into_boxed_slice(),
@@ -505,6 +512,10 @@ impl Renderer {
             self.apply(install);
         }
         self.take_commands(host_time, frames);
+        for (peak, ch) in self.input_peaks.iter_mut().zip(inputs.iter()) {
+            let n = frames.min(ch.len());
+            *peak = ch[..n].iter().fold(*peak, |a, x| if x.is_finite() { a.max(x.abs()) } else { a });
+        }
 
         if capture_lost > 0 {
             let at = self.transport.position;
@@ -892,6 +903,17 @@ impl Renderer {
         match cmd {
             Command::Play => {
                 if !self.transport.playing && self.counting.is_none() {
+                    self.transport.return_to = None;
+                    self.transport.record_from = None;
+                    if self.transport.armed {
+                        // Recording from a stop: the playhead goes back where it started when it ends, and the
+                        // pre-roll begins that many bars earlier (F-REC-020, F-REC-023)
+                        self.transport.return_to = Some(self.transport.position);
+                        if let Some(back) = self.pre_roll_start() {
+                            self.transport.record_from = Some(self.transport.position);
+                            self.transport.position = back;
+                        }
+                    }
                     match self.count_in() {
                         Some(c) => self.counting = Some(c),
                         None => {
@@ -903,6 +925,14 @@ impl Renderer {
             }
             Command::Stop => {
                 self.counting = None;
+                self.transport.record_from = None;
+                if let Some(back) = self.transport.return_to.take()
+                    && self.transport.armed
+                {
+                    self.transport.position = back;
+                    self.release_item_notes();
+                    self.jump = true;
+                }
                 self.unlatch();
                 if self.transport.playing {
                     self.transport.playing = false;
@@ -958,6 +988,23 @@ impl Renderer {
                 _ => None,
             });
         }
+    }
+
+    /// Where the pre-roll starts: the program's bars before the playhead, by the tempo map (never before 0); `None`
+    /// when there is no pre-roll or no room for one
+    fn pre_roll_start(&self) -> Option<i64> {
+        let bars = self.program.transport.pre_roll_bars;
+        if bars == 0 {
+            return None;
+        }
+        let tempo = &self.program.tempo;
+        let t0 = tempo.tick_at(self.transport.position);
+        let sig = tempo.time_signature_at(t0);
+        let beat = sig.beat_ticks(tempo.ppq())?.max(1);
+        let per_bar = i64::from(sig.numerator()).max(1);
+        let back = (t0 - i64::from(bars) * per_bar * beat).max(0);
+        let start = tempo.sample_at(back);
+        (start < self.transport.position).then_some(start)
     }
 
     /// The count-in the program asks for at the playhead, if any
@@ -1050,6 +1097,11 @@ impl Renderer {
             {
                 n = n.min(b - pos);
             }
+            if let Some(from) = self.transport.record_from
+                && pos < from
+            {
+                n = n.min(from - pos);
+            }
             if self.transport.armed
                 && let Some((a, b)) = self.program.transport.punch
             {
@@ -1073,8 +1125,13 @@ impl Renderer {
             Some((a, b)) => (a..b).contains(&t.position),
             None => true,
         };
-        let should = t.playing && t.armed && inside;
-        if should != t.recording {
+        let reached = t.record_from.is_none_or(|from| t.position >= from);
+        let should = t.playing && t.armed && inside && reached;
+        if reached && t.playing {
+            self.transport.record_from = None;
+        }
+        if should != self.transport.recording {
+            let t = &self.transport;
             let (sample, frame) = (t.position, self.frame);
             self.transport.recording = should;
             if should {
@@ -2366,7 +2423,9 @@ impl Renderer {
 
     fn metronome_into(&mut self, buffer: &mut [f32], layout: &BufferLayout, n: usize) {
         let Some((_, m)) = &self.program.metronome else { return };
-        if !m.enabled {
+        // The pre-roll counts even when the metronome is off (F-REC-024)
+        let pre_roll = self.transport.record_from.is_some();
+        if !pre_roll && (!m.enabled || (m.only_recording && !self.transport.recording)) {
             return;
         }
         let tempo = &self.program.tempo;
@@ -2654,6 +2713,11 @@ impl Renderer {
         f.load = self.load;
         f.flushing_denormals = crate::spec::flushing_denormals();
         f.protection = self.protection.engaged;
+        f.counting_in = self.counting.is_some() || self.transport.record_from.is_some();
+        for (d, p) in f.inputs.iter_mut().zip(self.input_peaks.iter_mut()) {
+            *d = *p;
+            *p = 0.0;
+        }
         for (m, s) in f.meters.iter_mut().zip(self.slots.iter_mut()) {
             m.generation = s.generation;
             m.channels = s.channels;

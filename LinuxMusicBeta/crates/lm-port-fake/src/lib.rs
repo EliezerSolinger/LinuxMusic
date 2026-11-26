@@ -433,7 +433,7 @@ impl FakePort {
                 .and_then(|t| t.get("preRoll"))
                 .and_then(|p| p.get("bars"))
                 .and_then(Value::as_int)
-                .unwrap_or(1);
+                .unwrap_or(0);
             let back = self.ticks_to_samples(bars * BAR);
             self.locate(at - back);
             self.play();

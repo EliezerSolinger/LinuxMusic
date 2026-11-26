@@ -1258,6 +1258,7 @@ impl CompilerCore {
         let master_devices = master_value.map(|m| device_channels(m.get("output").and_then(|o| o.get("channels"))));
         let metro = plan.add(PNode::sum(NodeKey::Metronome, 2));
         if let Some((accent, beat)) = &env.metronome_sounds
+            && env.metronome_when != crate::types::MetronomeWhen::Never
             && accent.rate() == s.sample_rate
             && beat.rate() == s.sample_rate
         {
@@ -1269,6 +1270,7 @@ impl CompilerCore {
                     beat: beat.clone(),
                     gain: real(&m, "volume", 0.8) as f32,
                     enabled: flag(&m, "on", false),
+                    only_recording: env.metronome_when == crate::types::MetronomeWhen::Recording,
                 },
             ));
         }
@@ -1829,6 +1831,7 @@ impl CompilerCore {
         plan.transport.punch = range("punch").filter(|(a, b)| b > a);
         let bars = transport.get("metronome").map_or(0, |m| int(m, "countIn", 0)).clamp(0, 64) as u32;
         plan.transport.count_in = (bars > 0).then_some(CountIn { bars, on_play: env.count_in_on_play });
+        plan.transport.pre_roll_bars = transport.get("preRoll").map_or(0, |p| int(p, "bars", 0)).clamp(0, 16) as u32;
         Ok(plan)
     }
 

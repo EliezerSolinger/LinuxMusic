@@ -142,6 +142,29 @@ pub struct BuildRequest {
     pub shape: PluginShape,
 }
 
+/// When the metronome sounds (the preference `metronome.when`, F-REC-025)
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MetronomeWhen {
+    /// Playing and recording
+    Always,
+    /// Only while recording
+    #[default]
+    Recording,
+    /// Never: the count-in is silent too
+    Never,
+}
+
+impl MetronomeWhen {
+    /// From the preference's text; anything unknown is the default
+    pub fn parse(text: &str) -> Self {
+        match text {
+            "always" => Self::Always,
+            "never" => Self::Never,
+            _ => Self::Recording,
+        }
+    }
+}
+
 /// What the machine adds to the tree for one compilation (preferences and devices, never in the project)
 #[derive(Clone, Debug, Default)]
 pub struct Environment {
@@ -149,6 +172,8 @@ pub struct Environment {
     pub metronome_sounds: Option<(Arc<SampleData>, Arc<SampleData>)>,
     /// The device channels of the metronome (a preference, I-5.5); `None`: the master's output
     pub metronome_output: Option<Vec<u16>>,
+    /// When the metronome sounds (`metronome.when`)
+    pub metronome_when: MetronomeWhen,
     /// The live MIDI input ports of the instrument role: an armed track with an instrument and no ports of its own
     /// takes all of them (I-7.1)
     pub midi_ports: Vec<PortIndex>,

@@ -515,6 +515,7 @@ fn loop_and_punch_at_exact_samples() {
             punch: Some((6000, 7000)),
             midi: MidiTiming::FixedBlock,
             count_in: None,
+            pre_roll_bars: 0,
         });
         let mut i = Install::new(b.build().expect("program"));
         i.add(n(1), core(Position));
@@ -709,7 +710,7 @@ fn metronome_on_the_beats() {
     b.feed(Feed::new(click, m, 1).mix(ChannelMix::UpMix { to: 2 }));
     let accent = Arc::new(SampleData::from_channels(RATE, vec![vec![1.0; 10]]).expect("sample"));
     let beat = Arc::new(SampleData::from_channels(RATE, vec![vec![0.5; 10]]).expect("sample"));
-    b.metronome(click, Metronome { accent, beat, gain: 1.0, enabled: true });
+    b.metronome(click, Metronome { accent, beat, gain: 1.0, enabled: true, only_recording: false });
     install(&mut control, Install::new(b.build().expect("program")));
     control.commands().send(Command::Play).expect("play");
     let out = render(&mut dummy, 4 * 24_000 + 100, 333);

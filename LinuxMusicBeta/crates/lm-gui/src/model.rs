@@ -436,7 +436,7 @@ pub fn song(root: &Value) -> Song {
         loop_range: (tr(&["loop", "from"]).as_int().unwrap_or(0), tr(&["loop", "to"]).as_int().unwrap_or(0)),
         punch_on: tr(&["punch", "on"]).as_bool().unwrap_or(false),
         punch_range: (tr(&["punch", "from"]).as_int().unwrap_or(0), tr(&["punch", "to"]).as_int().unwrap_or(0)),
-        pre_roll: tr(&["preRoll", "bars"]).as_int().unwrap_or(1),
+        pre_roll: tr(&["preRoll", "bars"]).as_int().unwrap_or(0),
         metronome: tr(&["metronome", "on"]).as_bool().unwrap_or(false),
         count_in: tr(&["metronome", "countIn"]).as_int().unwrap_or(0),
         transpose: tr(&["transpose"]).as_int().unwrap_or(0),

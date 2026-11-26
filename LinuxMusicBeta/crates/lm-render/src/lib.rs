@@ -64,7 +64,7 @@ pub use sample::SampleData;
 pub use spec::{Limits, ProcessSpec, RenderThreads, ThreadHook, ThreadKind, flushing_denormals};
 pub use stream::{Stream, StreamFeeder, StreamSpec, stream};
 pub use telemetry::{
-    METER_CHANNELS, Meter, PanicReport, PreviewEnded, PreviewReturn, Telemetry, TelemetryFrame, TelemetryKind, Touched,
-    TransportEvent,
+    INPUT_METERS, METER_CHANNELS, Meter, PanicReport, PreviewEnded, PreviewReturn, Telemetry, TelemetryFrame,
+    TelemetryKind, Touched, TransportEvent,
 };
 pub use voice::{Policy, Voice, VoiceGain, VoiceNote, VoicePool};

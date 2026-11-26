@@ -417,6 +417,8 @@ pub struct Metronome {
     pub beat: Arc<SampleData>,
     pub gain: f32,
     pub enabled: bool,
+    /// Plays only while recording (the preference "only recording", F-REC-025); the count-in always sounds
+    pub only_recording: bool,
 }
 
 /// Live MIDI routing: the port table (I-7.1). `channel: None` takes all channels
@@ -542,6 +544,9 @@ pub struct TransportSettings {
     pub midi: MidiTiming,
     /// The count-in before the music starts (I-5.5)
     pub count_in: Option<CountIn>,
+    /// Bars played before a recording starts (F-REC-023): the transport starts that many bars (by the tempo map)
+    /// before the playhead, and recording begins when it gets back to it. 0: none
+    pub pre_roll_bars: u32,
 }
 
 // ---------------------------------------------------------------------------------------------------------------

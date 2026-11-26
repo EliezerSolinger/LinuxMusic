@@ -51,6 +51,10 @@ pub struct TelemetryFrame {
     pub flushing_denormals: bool,
     /// The master protection is cutting the output (U20)
     pub protection: bool,
+    /// The count-in or the pre-roll is running (F-REC-026)
+    pub counting_in: bool,
+    /// The peak of each device input channel since the previous frame (linear): the input meters (F-REC-009)
+    pub inputs: Box<[f32]>,
     pub meters: Box<[Meter]>,
     /// The current value of every automated parameter slot, for the interface to move the knob (arquitetura,
     /// piece 4); other slots are not written
@@ -71,11 +75,16 @@ impl TelemetryFrame {
             load: 0.0,
             flushing_denormals: false,
             protection: false,
+            counting_in: false,
+            inputs: vec![0.0; INPUT_METERS].into_boxed_slice(),
             meters: vec![Meter::default(); max_nodes].into_boxed_slice(),
             params: vec![0.0; max_params].into_boxed_slice(),
         }
     }
 }
+
+/// The device input channels whose peak is published each frame
+pub const INPUT_METERS: usize = 64;
 
 /// What kind of event was dropped
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
