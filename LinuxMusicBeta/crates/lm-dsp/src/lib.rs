@@ -104,6 +104,7 @@ pub mod slew_distortion;
 pub mod slicert;
 pub mod small_effects;
 pub mod sound_shaping;
+pub mod spectrum;
 pub mod tolerance;
 pub mod tube;
 pub mod vibed;

@@ -21,6 +21,7 @@ use std::sync::LazyLock;
 
 use lm_base::Result;
 use lm_dsp::eq::{Eq, EqBand, EqSettings, Slope};
+use lm_dsp::spectrum::{BANDS, Spectrum};
 use lm_plugin::{BuildContext, Descriptor, DisplaySpec, PluginKind, StateView, TestHints, Velocity};
 use lm_render::Processor;
 use lm_state::{FieldSpec, NodeSchema, ParamSpec, Scale, Value};
@@ -28,6 +29,15 @@ use lm_state::{FieldSpec, NodeSchema, ParamSpec, Scale, Value};
 use crate::effect::{Effect, EffectProcessor, Knobs, no_ports, put_f32s, raise_peaks};
 
 pub const ID: &str = "eq";
+
+/// The live frame, in `f32` words: `[0..4)` the input's then the output's peaks (left, right; linear), `[4]` and `[5]`
+/// the lowest and the highest frequency of the spectrum's bands (Hz, logarithmically spaced from one to the other),
+/// `[6]` the bands per spectrum, `[7]` unused (0), `[8..8+BANDS)` the input's spectrum and `[8+BANDS..8+2*BANDS)` the
+/// output's, in dBFS (NaN while its analyser is off, the `analyseIn` and `analyseOut` fields)
+pub const FRAME_FLOATS: usize = 8 + 2 * BANDS;
+/// Where the input's and the output's spectra start in the frame
+pub const SPECTRUM_IN: usize = 8;
+pub const SPECTRUM_OUT: usize = 8 + BANDS;
 const COUNT: usize = 32;
 const KEYS: [&str; COUNT] = [
     "inputGain",
@@ -75,7 +85,7 @@ pub static DESCRIPTOR: Descriptor = Descriptor {
     schemas,
     ports: no_ports,
     velocity: Velocity::Ignored,
-    display: Some(DisplaySpec { bytes: 16 }),
+    display: Some(DisplaySpec { bytes: 4 * FRAME_FLOATS }),
     build,
     tests: TestHints::new(),
 };
@@ -132,6 +142,8 @@ struct Equalizer {
     slopes: [Slope; 2],
     dsp: Eq,
     peaks: [[f32; 2]; 2],
+    /// The analysers (input, output), made with the plugin; `None`: that analyser is off
+    spectra: [Option<Spectrum>; 2],
 }
 
 impl Equalizer {
@@ -165,13 +177,22 @@ impl Effect for Equalizer {
 
     fn process(&mut self, frames: &mut [[f32; 2]]) {
         raise_peaks(&mut self.peaks[0], frames);
+        if let Some(a) = &mut self.spectra[0] {
+            a.push(frames);
+        }
         let s = self.settings();
         let out = self.dsp.process(frames, &s);
+        if let Some(a) = &mut self.spectra[1] {
+            a.push(frames);
+        }
         self.peaks[1] = [self.peaks[1][0].max(out[0]), self.peaks[1][1].max(out[1])];
     }
 
     fn reset(&mut self) {
         self.dsp.reset();
+        for a in self.spectra.iter_mut().flatten() {
+            a.reset();
+        }
     }
 
     fn adopt(&mut self, old: &mut Self) -> bool {
@@ -183,6 +204,24 @@ impl Effect for Equalizer {
         let [i, o] = self.peaks;
         put_f32s(frame, &[i[0], i[1], o[0], o[1]]);
         self.peaks = [[0.0; 2]; 2];
+        let mut words = |at: usize, values: &[f32]| {
+            for (chunk, v) in frame[4 * at..].as_chunks_mut::<4>().0.iter_mut().zip(values) {
+                chunk.copy_from_slice(&v.to_le_bytes());
+            }
+        };
+        if let Some(a) = self.spectra.iter().flatten().next() {
+            let (lo, hi) = a.range_hz();
+            words(4, &[lo, hi, BANDS as f32, 0.0]);
+        }
+        for (k, at) in [SPECTRUM_IN, SPECTRUM_OUT].into_iter().enumerate() {
+            match &mut self.spectra[k] {
+                Some(a) => {
+                    a.update();
+                    words(at, a.db());
+                }
+                None => words(at, &[f32::NAN; BANDS]),
+            }
+        }
     }
 }
 
@@ -191,5 +230,9 @@ fn build(state: &Value, cx: &BuildContext<'_>) -> Result<Box<dyn Processor>> {
     let view = StateView::new(state);
     let slopes = [view.choice("hpSlope", slope)?, view.choice("lpSlope", slope)?];
     let rate = cx.spec.sample_rate as f32;
-    EffectProcessor::build(cx, || Ok(Equalizer { knobs, slopes, dsp: Eq::new(rate), peaks: [[0.0; 2]; 2] }))
+    let analyse = [view.boolean("analyseIn")?, view.boolean("analyseOut")?];
+    EffectProcessor::build(cx, || {
+        let spectra = analyse.map(|on| on.then(|| Spectrum::new(rate)));
+        Ok(Equalizer { knobs, slopes, dsp: Eq::new(rate), peaks: [[0.0; 2]; 2], spectra })
+    })
 }

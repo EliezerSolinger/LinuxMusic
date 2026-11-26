@@ -8,8 +8,11 @@
 //! gain faders (the input and output ones with their peak meters from the plugin's live frame), the frequency and
 //! resonance (bandwidth for the peaks) knobs, the slope buttons of the two passes and the two analyser LEDs.
 //!
-//! Not in the panel: the spectrum analysers (the legacy drew its own FFT of the channel's audio under the curve;
-//! the host's analysis is not on the port yet), the info box on a hovered handle, and the band turning on by itself
+//! Under the curve the two spectrum analysers (the legacy `EqSpectrumView`s, input in blue and output in cyan, 150
+//! alpha), drawn from the plugin's live frame (`lm_plugins_effects::eq::FRAME_FLOATS`: the plugin runs the FFT on the
+//! audio side and publishes 256 log-spaced bands in dBFS, NaN when its analyser is off).
+//!
+//! Not in the panel: the info box on a hovered handle, and the band turning on by itself
 //! when its knob or fader moves (a handle dragged does turn it on).
 
 use std::sync::LazyLock;
@@ -298,7 +301,39 @@ fn handle_at(cx: &SurfaceCx<'_>, band: &Band) -> (f32, f32) {
     (x, y)
 }
 
+/// The plugin's frame (`lm_plugins_effects::eq`, whose constants the test below checks these against)
+const FRAME_FLOATS: usize = 8 + 2 * 256;
+const SPECTRUM_IN: usize = 8;
+const SPECTRUM_OUT: usize = 8 + 256;
+
+/// One analyser's bands under the curve: a column per pixel, from the band the pixel's frequency falls in
+fn spectrum(c: &mut Canvas, cx: &SurfaceCx<'_>, at: usize, color: Rgba) {
+    let (lo, hi, n) = (cx.live(4, 0.0), cx.live(5, 0.0), cx.live(6, 0.0) as usize);
+    if cx.frame.len() < FRAME_FLOATS || lo <= 0.0 || hi <= lo || n == 0 {
+        return;
+    }
+    let span = (f64::from(hi) / f64::from(lo)).ln();
+    for x in 0..W as usize {
+        let f = x_to_freq(x as f32);
+        let band = ((f / f64::from(lo)).ln() / span * n as f64).floor();
+        if !(0.0..n as f64).contains(&band) {
+            continue;
+        }
+        let db = cx.frame[at + band as usize];
+        if db.is_nan() {
+            return;
+        }
+        // -90 dBFS at the bottom, 0 dBFS at the top
+        let h = (H * (db + 90.0) / 90.0).clamp(0.0, H);
+        if h >= 1.0 {
+            c.fill_rect(x as f32, H - h, 1.0, h, color);
+        }
+    }
+}
+
 fn draw(c: &mut Canvas, cx: &SurfaceCx<'_>) {
+    spectrum(c, cx, SPECTRUM_IN, Rgba::alpha(77, 101, 242, 150));
+    spectrum(c, cx, SPECTRUM_OUT, Rgba::alpha(0, 255, 239, 150));
     // the response: the middle line plus each active band's offset from it
     let on: Vec<&Band> = BANDS.iter().filter(|b| active(cx, b)).collect();
     if !on.is_empty() {
@@ -417,7 +452,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             drag: Some(drag),
             grab: 10.0,
             set_on_press: false,
-            live: false,
+            live: true,
             wheel: false,
             wheel_edit: Some(wheel),
             peaks: None,
@@ -537,3 +572,14 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
         file_drop: None,
     }
 });
+
+#[cfg(test)]
+mod frame_layout {
+    #[test]
+    fn the_panel_reads_the_plugins_frame() {
+        use lm_plugins_effects::eq as plugin;
+        assert_eq!(super::FRAME_FLOATS, plugin::FRAME_FLOATS);
+        assert_eq!(super::SPECTRUM_IN, plugin::SPECTRUM_IN);
+        assert_eq!(super::SPECTRUM_OUT, plugin::SPECTRUM_OUT);
+    }
+}
