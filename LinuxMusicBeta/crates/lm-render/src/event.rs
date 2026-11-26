@@ -58,8 +58,66 @@ impl EventKind {
     }
 
     /// Events that end sound are never refused while there is room: a part of a node's event list is kept for them, so an overflow can lose a note-on but never strand a note (U25)
-    fn ends_sound(&self) -> bool {
+    pub(crate) fn ends_sound(&self) -> bool {
         self.rank() <= 2
+    }
+
+    /// Whether this is part of a track's note stream: what a chain of note effects handles (notes, their
+    /// expressions, the other channel messages and the releases). A [`EventKind::Param`] is the node's own
+    pub fn is_note_stream(&self) -> bool {
+        !matches!(self, EventKind::Param { .. })
+    }
+}
+
+/// The events a note effect emits in one call (the output of a [`crate::Processor::process_notes`]): a fixed
+/// capacity, so pushing never allocates. Like [`EventList`], a part of it is kept for the events that end sound, so
+/// an overflow can lose a note-on but never strand a note (U25). The order of the pushes does not matter: the next
+/// stage sorts by (offset, [`EventKind::rank`], arrival)
+#[derive(Debug)]
+pub struct NoteOut {
+    events: Vec<Event>,
+    soft: usize,
+    dropped: u32,
+}
+
+impl NoteOut {
+    /// Room for `capacity` events of any kind, plus a third more kept for the ones that end sound
+    pub fn with_capacity(capacity: usize) -> Self {
+        let soft = capacity.max(6);
+        let hard = soft + soft / 3 + 2;
+        Self { events: Vec::with_capacity(hard), soft, dropped: 0 }
+    }
+
+    /// Adds an event; `false` (and counted as dropped) when the list is full for this kind of event
+    pub fn push(&mut self, offset: u32, kind: EventKind) -> bool {
+        let limit = if kind.ends_sound() { self.events.capacity() } else { self.soft };
+        if self.events.len() >= limit {
+            self.dropped = self.dropped.saturating_add(1);
+            return false;
+        }
+        self.events.push(Event { offset, kind });
+        true
+    }
+
+    pub fn clear(&mut self) {
+        self.events.clear();
+    }
+
+    pub fn len(&self) -> usize {
+        self.events.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
+
+    pub fn as_slice(&self) -> &[Event] {
+        &self.events
+    }
+
+    /// The events refused since the last call
+    pub fn take_dropped(&mut self) -> u32 {
+        std::mem::take(&mut self.dropped)
     }
 }
 

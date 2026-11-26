@@ -9,7 +9,7 @@ use std::fmt;
 
 use lm_time::TimeSignature;
 
-use crate::event::Event;
+use crate::event::{Event, NoteOut};
 use crate::rng::Rng;
 
 /// A sound processor: an instrument, an insert, the desk rack, or one of the host's own (`crate::builtin`).
@@ -18,6 +18,21 @@ use crate::rng::Rng;
 pub trait Processor: Send {
     /// Renders `cx.frames` samples. Outputs come zeroed (an in-place channel holds its input) (U23)
     fn process(&mut self, cx: &mut ProcessContext<'_>);
+
+    /// A **note effect** (`NodeKind::NoteEffect`): turns the track's note stream into another one, with no audio.
+    /// `cx.events` holds the processor's own parameter changes and the stream arriving (notes, expressions, the other
+    /// channel messages, `AllNotesRelease`, `AllSoundOff`), sorted; it pushes what it emits to `cx.out`, at offsets
+    /// of the block. Sample-accurate (every emitted event has the offset it is due at) and deterministic (the
+    /// same events and transport always give the same output; random choices come from `cx.rng`). It must forward
+    /// `AllNotesRelease` and `AllSoundOff` after ending what it started, and give an unknown note-off no output.
+    /// The default passes the stream through
+    fn process_notes(&mut self, cx: &mut NoteContext<'_>) {
+        for e in cx.events {
+            if e.kind.is_note_stream() {
+                cx.out.push(e.offset, e.kind);
+            }
+        }
+    }
 
     /// Clears the sound state (voices, tails, delay memories). Called by the panic command
     fn reset(&mut self) {}
@@ -339,6 +354,24 @@ pub struct ProcessContext<'b> {
     pub host: &'b mut HostOutbox,
     /// Live data for the plugin's window (F2, I-9.5)
     pub display: Option<&'b mut DisplayWriter>,
+}
+
+/// What a note effect gets for one call (see [`Processor::process_notes`])
+pub struct NoteContext<'b> {
+    pub frames: usize,
+    /// The processor's own `Param` events and the incoming stream, sorted by (offset, rank, arrival)
+    pub events: &'b [Event],
+    pub transport: &'b TransportInfo,
+    pub rng: &'b mut Rng,
+    /// What it emits (cleared before the call)
+    pub out: &'b mut NoteOut,
+    pub host: &'b mut HostOutbox,
+}
+
+impl fmt::Debug for NoteContext<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NoteContext").field("frames", &self.frames).field("events", &self.events.len()).finish()
+    }
 }
 
 impl fmt::Debug for ProcessContext<'_> {

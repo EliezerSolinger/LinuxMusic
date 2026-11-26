@@ -32,7 +32,7 @@ use crate::midimap::{MapEvent, MapTarget, MidiMap, MidiOutEvent, RETURN_DIV, Rec
 use crate::notes::{ActiveNotes, NoteSource};
 use crate::panic::RenderThreadGuard;
 use crate::params::ParamSlots;
-use crate::processor::{Adopted, BufferLayout, Buffers, HostOutbox, ProcessContext, TransportInfo};
+use crate::processor::{Adopted, BufferLayout, Buffers, HostOutbox, NoteContext, ProcessContext, TransportInfo};
 use crate::program::{
     AUTOMATION_GRID, AutomationMode, ChannelMix, DelayLine, MidiTiming, NONE, NodeKind, PFeed, PHostParam, PNode,
     Program, Rate, Target,
@@ -788,6 +788,33 @@ impl Renderer {
                 }
             },
         );
+        // A chain that changed (an effect added, removed, bypassed or moved) ends what the old one had started: the
+        // instrument releases its notes, through the new chain
+        let effects_of = |p: &Program, ci: usize| -> Vec<NodeIndex> {
+            p.chains[ci].effects.iter().map(|&e| p.nodes[e as usize].desc.node).collect()
+        };
+        let chain_of = |p: &Program, target: NodeIndex| -> Option<usize> {
+            p.chains.iter().position(|c| p.nodes[c.target as usize].desc.node == target)
+        };
+        for ci in 0..program.chains.len() {
+            let target = program.nodes[program.chains[ci].target as usize].desc.node;
+            let changed = match chain_of(old, target) {
+                Some(oi) => effects_of(old, oi) != effects_of(program, ci),
+                None => old.node_of(target).is_some(),
+            };
+            if changed && pending.len() < pending.capacity() {
+                pending.push((target, EventKind::AllNotesRelease));
+            }
+        }
+        for oi in 0..old.chains.len() {
+            let target = old.nodes[old.chains[oi].target as usize].desc.node;
+            if chain_of(program, target).is_none()
+                && program.node_of(target).is_some()
+                && pending.len() < pending.capacity()
+            {
+                pending.push((target, EventKind::AllNotesRelease));
+            }
+        }
     }
 
     // ------------------------------------------------------------------------------------------------------------
@@ -1316,6 +1343,19 @@ impl Renderer {
     }
 
     fn push_event(&mut self, node: u32, offset: u32, kind: EventKind) {
+        // The note stream of a node with note effects goes through them first (`run_chains`)
+        let chain = self.program.nodes[node as usize].chain;
+        if chain != NONE && kind.is_note_stream() {
+            if !self.program.chains[chain as usize].source.push(offset, kind) {
+                self.dropped[1] = self.dropped[1].saturating_add(1);
+            }
+            return;
+        }
+        self.deliver(node, offset, kind);
+    }
+
+    /// An event for a node's processor, and out to its devices
+    fn deliver(&mut self, node: u32, offset: u32, kind: EventKind) {
         if let Some(io) = self.program.nodes[node as usize].io.as_mut()
             && !io.events.push(offset, kind)
         {
@@ -1394,6 +1434,9 @@ impl Renderer {
             self.item_events(n);
         }
         self.live_events(off, n, live_next);
+        if !self.program.chains.is_empty() {
+            self.run_chains(n, &info);
+        }
         for node in self.program.nodes.iter_mut() {
             if let Some(io) = node.io.as_mut() {
                 io.events.finish();
@@ -1414,6 +1457,88 @@ impl Renderer {
             }
         }
         self.jump = false;
+    }
+
+    /// The note effects: for each chain, the stream the sources pushed goes through its effects in order, and what
+    /// comes out is delivered to the instrument (and its MIDI out). An effect that is not built yet, or is dead,
+    /// passes the stream through
+    fn run_chains(&mut self, n: usize, info: &TransportInfo) {
+        for c in 0..self.program.chains.len() {
+            {
+                let chain = &mut self.program.chains[c];
+                chain.cur.clear();
+                chain.source.finish();
+                for e in chain.source.sorted() {
+                    chain.cur.push(e.offset, e.kind);
+                }
+                chain.source.clear();
+            }
+            for k in 0..self.program.chains[c].effects.len() {
+                let ei = self.program.chains[c].effects[k];
+                let node = self.program.nodes[ei as usize].desc.node;
+                let slot = node.slot();
+                let ready = self.slots[slot].core.is_some()
+                    && !self.slots[slot].dead
+                    && self.slots[slot].generation == node.generation;
+                if !ready {
+                    continue;
+                }
+                let Some(mut core) = self.slots[slot].core.take() else { continue };
+                let Program { nodes, chains, .. } = &mut *self.program;
+                let chain = &mut chains[c];
+                chain.merge.clear();
+                if let Some(io) = nodes[ei as usize].io.as_mut() {
+                    io.events.finish();
+                    for e in io.events.sorted() {
+                        chain.merge.push(e.offset, e.kind);
+                    }
+                }
+                for e in chain.cur.as_slice() {
+                    chain.merge.push(e.offset, e.kind);
+                }
+                chain.merge.finish();
+                chain.next.clear();
+                let started = std::time::Instant::now();
+                self.watch.current[0].store(slot as u32 + 1, Ordering::Relaxed);
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    let mut cx = NoteContext {
+                        frames: n,
+                        events: chain.merge.sorted(),
+                        transport: info,
+                        rng: &mut core.rng,
+                        out: &mut chain.next,
+                        host: &mut core.outbox,
+                    };
+                    core.processor.process_notes(&mut cx);
+                }));
+                self.watch.current[0].store(0, Ordering::Relaxed);
+                let measured = started.elapsed().as_nanos() as f32;
+                let cost = &mut self.slots[slot].cost_ns;
+                *cost = if *cost >= UNMEASURED_NS { measured } else { 0.9 * *cost + 0.1 * measured };
+                let generation = self.program.generation;
+                for request in core.outbox.drain() {
+                    if self.out.events.push(Telemetry::PluginRequest { generation, node, request }).is_err() {
+                        self.dropped[0] = self.dropped[0].saturating_add(1);
+                    }
+                }
+                self.dropped[4] = self.dropped[4].saturating_add(core.outbox.take_dropped());
+                self.slots[slot].core = Some(core);
+                let chain = &mut self.program.chains[c];
+                self.dropped[1] = self.dropped[1].saturating_add(chain.next.take_dropped());
+                match result {
+                    Ok(()) => std::mem::swap(&mut chain.cur, &mut chain.next),
+                    Err(payload) => {
+                        self.slots[slot].dead = true;
+                        self.report_panic(Some(node), None, payload);
+                    }
+                }
+            }
+            let target = self.program.chains[c].target;
+            for j in 0..self.program.chains[c].cur.len() {
+                let e = self.program.chains[c].cur.as_slice()[j];
+                self.deliver(target, e.offset, e.kind);
+            }
+        }
     }
 
     fn take_dirty_params(&mut self) {
@@ -1486,7 +1611,7 @@ impl Renderer {
         let jump = self.jump;
         let playing = self.transport.playing;
         let ret_len = u64::from(self.spec.sample_rate) / RETURN_DIV;
-        let Program { automated, bindings, nodes, .. } = &mut *self.program;
+        let Program { automated, bindings, nodes, chains, .. } = &mut *self.program;
         let dropped = &mut self.dropped[1];
         for &bi in automated.iter() {
             let b = &bindings[bi as usize];
@@ -1519,6 +1644,7 @@ impl Renderer {
             }
             let resume = jump || st.resume || st.emitted.is_nan();
             st.resume = false;
+            let chain = nodes[node as usize].chain;
             let Some(io) = nodes[node as usize].io.as_mut() else { continue };
             let returning = st.ret.is_some();
             let mut emit = |offset: usize, v: f32, force: bool| {
@@ -1529,7 +1655,13 @@ impl Renderer {
                     if force || st.emitted.is_nan() || st.emitted.round() != q {
                         st.emitted = v;
                         let kind = EventKind::Midi { bytes: [0xB0 | channel, number, q as u8] };
-                        if !io.events.push(offset as u32, kind) {
+                        // (a controller of the rack goes through the note effects too)
+                        let pushed = if chain != NONE {
+                            chains[chain as usize].source.push(offset as u32, kind)
+                        } else {
+                            io.events.push(offset as u32, kind)
+                        };
+                        if !pushed {
                             *dropped = dropped.saturating_add(1);
                         }
                     }
