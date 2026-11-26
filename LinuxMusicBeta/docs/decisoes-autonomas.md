@@ -1818,3 +1818,47 @@ conflito com seções anteriores deste arquivo e com o `funcionalidades-legado.m
 - A aba Afinação: interruptor, dois seletores de arquivo, Limpar e "faixa de notas do mapa". O editor de escalas e mapas
   saiu (a edição é a do arquivo, em qualquer editor de texto).
 - O `note` v3 já traz as listas opcionais `pressure` e `timbre` (para o MPE, abaixo).
+
+
+### Sampler único: o que foi escolhido (26/11)
+
+Item 3 acima, implementado em `lm-sampler` (motor e importadores) e `lm-plugins-sampler` (plugin `sampler`).
+Escrito sem rodar testes (regra do dia): só `cargo check`; os testes existem e rodam na próxima sessão.
+
+- **Motor.** Rust seguro, sem threads, determinístico (gerador próprio para os grupos aleatórios, semente na
+  configuração), sem alocação depois de `Engine::new`. Pool de 256 vozes mais 16 de reserva: o roubo (a voz solta mais
+  quieta, ou a mais antiga) a faz cair em 4 ms numa voz de reserva enquanto a nova entra, sem clique. Interpolação própria
+  (sinc de 16 pontos com janela Kaiser, cúbica de Hermite, linear): `lm-dsp` não tem interpolador avulso (só o de
+  `sample_player`, que é a libsamplerate por trás de um trait), e a libsamplerate não é pura. A diferença em relação ao
+  som legado da libsamplerate é aceita; o A/B compara nível e início, não anula.
+- **Pan.** Amostra mono: potência constante (centro −3 dB, como o FluidSynth); amostra estéreo: balanço. Os importadores
+  de formatos legados (PAT, áudio, bateria) somam +3 dB às mono para manter o ganho unitário do centro que o legado tinha.
+- **Velocidade.** Curva côncava (v²) para SF2 e SFZ; linear (o nível é a velocidade) para os formatos legados. Os
+  moduladores SF2 de velocidade para atenuação e para corte (padrões e os do arquivo) viram `vel_track` e `vel_cents`; os
+  de controlador, os LFOs e os envios de reverb e chorus ficam de fora do modelo.
+- **A fonte no estado.** Um campo `format` (`none`, `sf2`, `sfz`, `pat`, `audio`, `kit`, `gig`) e um campo de recurso
+  por formato (`soundfont`, `sfz`, `patch`, `sample`, `gig`), mais `kit` (as baterias que o programa traz, como antes:
+  dados do programa, não do projeto) e `bank` e `program`. Um campo de recurso só tem um tipo, por isso um por formato.
+- **Parâmetros.** `gain` (dB), `pan`, `tune` (cents), `polyphony`, `bendRange`; o envelope de volume que substitui o da
+  fonte quando `volAmount` > 0 (mesmas chaves do Sf2 Player); e os pontos do AudioFileProcessor (`startPoint`, `endPoint`,
+  `loopPoint`, `reverse`, `stutter`), aplicados ao vivo às zonas "com janela". Tudo isso é parâmetro do esquema: mapeável
+  por MIDI e automatável, e uma mudança não reconstrói o instrumento.
+- **Saídas.** `outputs`: `main` (um par estéreo) ou `groups` (kick, snare, hi-hat, tom, floor tom mono; cymbals,
+  percussion estéreo), só para kits; o kit de percussão AVL não tem grupos. O mapa nota para grupo é o do avldrums.lv2 e
+  vale também para os kits DrumMachines.
+- **Troca de fonte.** Uma fonte nova é uma construção nova (numa `Operation`, fora da thread de áudio; o som antigo
+  continua até a nova ficar pronta). O `adopt` leva as vozes se o instrumento é o mesmo; se não, o motor antigo vira
+  fantasma que termina as notas dele (recebe os note-offs delas) misturado com o novo. Mudar a disposição das saídas não é
+  adotado.
+- **Fora desta passada.** Acordes e arpejo são efeitos de nota (item 2); mono, legato e glide do instrumento ainda não
+  existem no Sampler; GIG é TODO marcado (leitor RIFF/DLS próprio, sem libgig); a vista da foto dos kits AVL e a GUI de
+  escolha de fonte e preset; amostras de SF2 ficam todas em memória como f32 (um instrumento grande lê só o preset
+  escolhido; carregar em streaming fica para depois).
+- **Migração.** Os seis plugins antigos continuam registrados (projetos antigos abrem e tocam) e saem das listas de
+  instrumento novo (`lm-session/src/deprecated.rs`, filtrado em `plugins()` e no navegador). Quem substitui quem: Sf2
+  Player, `format sf2`; GigPlayer, `format gig` (TODO); PatMan, `format pat`; AudioFileProcessor, `format audio`; AvlDrums e
+  DrumMachines, `format kit`. Os crates antigos serão apagados numa passada própria.
+- **Testes dos jogadores antigos a aposentar** quando os crates saírem: `lm-plugins-fluidsynth` (`ab`,
+  `avldrums_contract`, `sf2player_contract`), `lm-plugins-gigplayer` (`contract`) e, em `lm-plugins-instruments`,
+  `audio_file_processor`, `patman` e `drum_machines`. Os que já falham hoje (`ab`, `avldrums_contract`, o `contract` do
+  GigPlayer e o `drum_machines`) não precisam ser consertados.
