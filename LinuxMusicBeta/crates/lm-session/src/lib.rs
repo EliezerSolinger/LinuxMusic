@@ -7,6 +7,7 @@ pub mod arrange;
 pub mod browser;
 pub mod clips;
 mod crashnote;
+pub mod deprecated;
 pub mod export;
 pub mod folder;
 pub mod journal;

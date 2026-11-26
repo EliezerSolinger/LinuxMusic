@@ -306,7 +306,7 @@ impl LocalPort {
                 self.session
                     .registry()
                     .descriptors()
-                    .filter(|d| d.kind == want)
+                    .filter(|d| d.kind == want && !crate::deprecated::is_deprecated(d.id))
                     .map(|d| {
                         (
                             BrowseEntry {
@@ -745,6 +745,7 @@ impl CorePort for LocalPort {
         self.session
             .registry()
             .descriptors()
+            .filter(|d| !crate::deprecated::is_deprecated(d.id))
             .map(|d| lm_port::PluginInfo {
                 id: Arc::from(d.id),
                 name: Arc::from(d.name),
