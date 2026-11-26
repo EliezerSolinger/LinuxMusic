@@ -5,8 +5,7 @@
 //! x 594, each on its own vertical track, the zero pixmap while the value is exactly 0). In the middle the two 100×100
 //! transfer curves with their grid, drawn from the band's type, drive, bias, warp and crush exactly as the legacy
 //! `paintEvent` does, and beside the handles the input and output meters (the dark cover over the artwork's meter,
-//! from the live frame: four input peaks then four output peaks, which the plugin does not write yet, so the
-//! meters show the floor until it does). Below: the DC and multiband switches, the split knob, the oversampling group.
+//! from the live frame: four input peaks then four output peaks). Below: the DC and multiband switches, the split knob, the oversampling group.
 //!
 //! The help button (a window of text) is not in the panel.
 

@@ -169,6 +169,9 @@ pub struct SlewDistortion {
     dc_offset: [f32; 4],
     in_env: [f32; 4],
     out_env: [f32; 4],
+    // The loudest input (times the band's drive) and output of each channel since the last `take_peaks`
+    in_peak: [f32; 4],
+    out_peak: [f32; 4],
     over: [[f32; MAX_FACTOR]; 2],
     true_bias: [f32; 2],
 }
@@ -190,11 +193,19 @@ impl SlewDistortion {
             dc_offset: [0.0; 4],
             in_env: [0.0; 4],
             out_env: [0.0; 4],
+            in_peak: [0.0; 4],
+            out_peak: [0.0; 4],
             over: [[0.0; MAX_FACTOR]; 2],
             true_bias: [0.0; 2],
         };
         s.set_stages(0);
         s
+    }
+
+    /// The panel's meters (the legacy's): the peaks since the last call, as the input's (times the band's drive) and
+    /// the output's per channel (high band left and right, low band left and right), and starts again
+    pub fn take_peaks(&mut self) -> ([f32; 4], [f32; 4]) {
+        (std::mem::take(&mut self.in_peak), std::mem::take(&mut self.out_peak))
     }
 
     pub fn reset(&mut self) {
@@ -298,6 +309,7 @@ impl SlewDistortion {
                 for i in 0..channels {
                     let p = &band[i];
                     let abs_in = input[i].abs();
+                    self.in_peak[i] = self.in_peak[i].max(abs_in * p.drive);
                     self.in_env[i] = if abs_in > self.in_env[i] {
                         self.in_env[i] * p.attack + abs_in * (1.0 - p.attack)
                     } else {
@@ -333,6 +345,7 @@ impl SlewDistortion {
                     }
                     dist *= lerp(1.0, self.in_env[i] / self.out_env[i], p.dynamics);
                     out[i] = lerp(input[i], dist, p.mix) * p.out_volume;
+                    self.out_peak[i] = self.out_peak[i].max(out[i].abs());
                 }
                 self.over[0][n] = out[0] + out[2];
                 self.over[1][n] = out[1] + out[3];

@@ -14,11 +14,11 @@ use std::sync::LazyLock;
 
 use lm_base::Result;
 use lm_dsp::slew_distortion::{SlewBand, SlewDistortion, SlewDistortionSettings, SlewShape};
-use lm_plugin::{BuildContext, Descriptor, PluginKind, StateView, TestHints, Velocity};
+use lm_plugin::{BuildContext, Descriptor, DisplaySpec, PluginKind, StateView, TestHints, Velocity};
 use lm_render::Processor;
 use lm_state::{FieldSpec, NodeSchema, ParamSpec, Scale, Value};
 
-use crate::effect::{Effect, EffectProcessor, Knobs, no_ports};
+use crate::effect::{Effect, EffectProcessor, Knobs, no_ports, put_f32s};
 
 pub const ID: &str = "slewdistortion";
 const PER_BAND: usize = 13;
@@ -66,7 +66,7 @@ pub static DESCRIPTOR: Descriptor = Descriptor {
     schemas,
     ports: no_ports,
     velocity: Velocity::Ignored,
-    display: None,
+    display: Some(DisplaySpec { bytes: 32 }),
     build,
     tests: TestHints::new(),
 };
@@ -157,6 +157,13 @@ impl Effect for Slew {
     fn adopt(&mut self, old: &mut Self) -> bool {
         std::mem::swap(&mut self.dsp, &mut old.dsp);
         true
+    }
+
+    /// The meters' frame: eight peaks (linear), the input's four (each band's left and right, times its drive) then
+    /// the output's four
+    fn display(&mut self, frame: &mut [u8]) {
+        let (i, o) = self.dsp.take_peaks();
+        put_f32s(frame, &[i[0], i[1], i[2], i[3], o[0], o[1], o[2], o[3]]);
     }
 }
 
