@@ -755,6 +755,11 @@ fn delay(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn oscilloscope(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::oscilloscope::DESCRIPTOR);
+}
+
+#[gpui::test]
 fn slewdistortion(cx: &mut TestAppContext) {
     effect(cx, &lm_plugins_effects::slew_distortion::DESCRIPTOR);
 }

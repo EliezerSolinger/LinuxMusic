@@ -241,6 +241,11 @@ impl<const N: usize> Knobs<N> {
         Ok(Self { now, before: now })
     }
 
+    /// From the values themselves (tests)
+    pub fn from_values(now: [f32; N]) -> Self {
+        Self { now, before: now }
+    }
+
     /// A parameter event; an index past the parameters is ignored
     pub fn set(&mut self, index: usize, value: f32) {
         if let Some(v) = self.now.get_mut(index) {

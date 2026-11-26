@@ -33,13 +33,13 @@ a ação contam como parcial.
 | F-MIX | Mixer e mesa analógica | 56 | 51 | 4 | 1 |
 | F-INS | Instrumentos | 24 | 14 | 9 | 1 |
 | F-HOST | Plugins de terceiros (hospedagem) | 3 | 1 | 1 | 1 |
-| F-FX | Efeitos e ferramentas | 35 | 20 | 7 | 8 |
+| F-FX | Efeitos e ferramentas | 35 | 20 | 8 | 7 |
 | F-CTL | Automação e controladores | 9 | 3 | 3 | 3 |
 | F-PRJ | Projeto e arquivos | 23 | 15 | 6 | 2 |
 | F-CFG | Configurações | 12 | 2 | 10 | 0 |
 | F-BRW | Navegador | 12 | 1 | 10 | 1 |
 | F-GER | Outros | 12 | 2 | 10 | 0 |
-| **Total** | | **406** | **225** | **147** | **34** |
+| **Total** | | **406** | **225** | **148** | **33** |
 
 ## Seções
 
@@ -440,7 +440,7 @@ a ação contam como parcial.
 | F-FX-019 | Guitarix (pedais, amplificadores e gabinetes do Guitarix, em | feito |  | lm-plugins-guitarix/src/lib.rs,lm-gui/src/screens/effect.rs |
 | F-FX-020 | LOMM (compressor multibanda para cima e para baixo, estilo O | parcial | painel feito, mas sem os medidores ao vivo das 3 bandas nem as zonas de limiar arrastáveis (declarado não portado no painel) | lm-plugins-effects/src/lomm.rs,lm-gui-plugins/src/panels/lomm.rs |
 | F-FX-021 | MultitapEcho | feito |  | lm-plugins-effects/src/multitap_echo.rs,lm-gui-plugins/src/panels/multitapecho.rs |
-| F-FX-022 | Oscilloscope | falta | nenhum plugin Oscilloscope (só o goniômetro/correlação do master na mesa) | lm-gui/src/pages/mixing.rs |
+| F-FX-022 | Oscilloscope | parcial | plugin e painel feitos (histórico de 5 s, janela, offset, escala, estéreo, pausa; o áudio passa sem mudar); falta arrastar o gráfico para rolar o offset e o zoom da roda que mantém o ponto sob o cursor (a roda muda o tamanho da janela) | lm-plugins-effects/src/oscilloscope.rs,lm-gui-plugins/src/panels/oscilloscope.rs |
 | F-FX-023 | Peak Controller (seguidor de envelope que vira controlador) | falta | nenhum plugin Peak Controller nem controlador seguidor de envelope |  |
 | F-FX-024 | ReverbSC | feito |  | lm-plugins-effects/src/reverb_sc.rs,lm-gui-plugins/src/panels/effects.rs |
 | F-FX-025 | SlewDistortion (distorção de 2 bandas e limitador de slew) | feito |  | lm-plugins-effects/src/slew_distortion.rs,lm-gui/src/screens/effect.rs |

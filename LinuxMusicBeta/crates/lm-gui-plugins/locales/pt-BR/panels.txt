@@ -852,3 +852,13 @@ Enable Lookahead, which introduces 20 milliseconds of latency = Liga a antecipa�
 Knob ring = Anel do knob
 Compressor graph = Gráfico do compressor
 Controls box = Caixa de controles
+
+# Oscilloscope
+Oscilloscope = Osciloscópio
+Pause = Pausar
+Stereo = Estéreo
+Amplitude = Amplitude
+Phase = Fase
+Window Size = Tamanho da janela
+Offset = Deslocamento
+

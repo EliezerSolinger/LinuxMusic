@@ -20,6 +20,7 @@ pub mod multitapecho;
 pub mod nes;
 pub mod opulenz;
 pub mod organic;
+pub mod oscilloscope;
 pub mod patman;
 pub mod sfxr;
 pub mod shapers;
@@ -64,6 +65,7 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (patman::ID, || &patman::PANEL),
     (slewdistortion::ID, || &slewdistortion::PANEL),
     (multitapecho::ID, || &multitapecho::PANEL),
+    (oscilloscope::ID, || &oscilloscope::PANEL),
     (shapers::DYNAMICS_ID, || &shapers::DYNAMICS_PANEL),
     (shapers::WAVESHAPER_ID, || &shapers::WAVESHAPER_PANEL),
 ];
@@ -97,6 +99,7 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     patman::ASSETS,
     slewdistortion::ASSETS,
     multitapecho::ASSETS,
+    oscilloscope::ASSETS,
     shapers::DYNAMICS_ASSETS,
     shapers::WAVESHAPER_ASSETS,
 ];

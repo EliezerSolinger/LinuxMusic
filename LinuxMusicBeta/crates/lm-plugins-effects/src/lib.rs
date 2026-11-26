@@ -24,6 +24,7 @@ pub mod frequency_shifter;
 pub mod granular_pitch_shifter;
 pub mod lomm;
 pub mod multitap_echo;
+pub mod oscilloscope;
 pub mod reverb_sc;
 pub mod slew_distortion;
 pub mod stereo_enhancer;
@@ -49,6 +50,7 @@ pub static ALL: &[&Descriptor] = &[
     &granular_pitch_shifter::DESCRIPTOR,
     &lomm::DESCRIPTOR,
     &multitap_echo::DESCRIPTOR,
+    &oscilloscope::DESCRIPTOR,
     &reverb_sc::DESCRIPTOR,
     &slew_distortion::DESCRIPTOR,
     &stereo_enhancer::DESCRIPTOR,

@@ -1,0 +1,14 @@
+{
+  "plugin:oscilloscope": {
+    "defaults": {
+      "params": {
+        "amp": 100.0,
+        "length": 500.0,
+        "pause": 0.0,
+        "phase": 1.0,
+        "stereo": 0.0
+      }
+    },
+    "version": 1
+  }
+}
