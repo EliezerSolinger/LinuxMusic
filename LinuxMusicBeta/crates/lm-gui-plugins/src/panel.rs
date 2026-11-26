@@ -226,6 +226,7 @@ impl<H: PortHost> PluginPanel<H> {
         c.in_view(self.view)
             && c.when.is_none_or(|(p, on)| (self.param(p, cx) >= 0.5) == on)
             && c.unless.is_none_or(|(f, v)| self.field(f, cx).as_text() != Some(v))
+            && c.only.is_none_or(|(f, v)| self.field(f, cx).as_text() == Some(v))
     }
 
     fn control_at(&self, x: f32, y: f32, cx: &App) -> Option<usize> {

@@ -125,6 +125,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                 view: None,
                 when: None,
                 unless: None,
+                only: None,
             });
         }
     }
@@ -176,6 +177,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                 view: None,
                 when: None,
                 unless: None,
+                only: None,
             });
         }
         let btn_y = 96.0 + osc as f32 * OSC_H;
@@ -195,6 +197,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             view: None,
             when: None,
             unless: None,
+            only: None,
         });
         let field = leak(format!("wave{n}"));
         let user = leak(format!("userWave{n}"));
@@ -214,6 +217,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                 view: None,
                 when: None,
                 unless: None,
+                only: None,
             });
         }
     }

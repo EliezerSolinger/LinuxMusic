@@ -793,3 +793,8 @@ fn monstro(cx: &mut TestAppContext) {
 fn eq(cx: &mut TestAppContext) {
     effect(cx, &lm_plugins_effects::eq::DESCRIPTOR);
 }
+
+#[gpui::test]
+fn compressor(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::compressor::DESCRIPTOR);
+}

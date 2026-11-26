@@ -435,6 +435,8 @@ pub struct Control {
     pub when: Option<(&'static str, bool)>,
     /// Hidden while this choice field has this key (AudioFileProcessor's loop point, shown only while it loops)
     pub unless: Option<(&'static str, &'static str)>,
+    /// Shown only while this choice field has this key (the compressor's blend knob, with the blend link mode)
+    pub only: Option<(&'static str, &'static str)>,
 }
 
 impl Control {
@@ -580,6 +582,7 @@ pub fn knob(
         view: None,
         when: None,
         unless: None,
+        only: None,
     }
 }
 
@@ -603,6 +606,7 @@ pub fn led(
         view: None,
         when: None,
         unless: None,
+        only: None,
     }
 }
 
@@ -626,6 +630,7 @@ pub fn button(
         view: None,
         when: None,
         unless: None,
+        only: None,
     }
 }
 
@@ -717,6 +722,13 @@ impl Control {
         self
     }
 
+    /// Shown only while the choice field is `value`
+    #[must_use]
+    pub fn only_while(mut self, field: &'static str, value: &'static str) -> Self {
+        self.only = Some((field, value));
+        self
+    }
+
     /// A readout in the small font
     #[must_use]
     pub fn small(mut self) -> Self {
@@ -771,6 +783,7 @@ pub fn combo(field: &'static str, x: f32, y: f32, w: f32, name: &'static str, it
         view: None,
         when: None,
         unless: None,
+        only: None,
     }
 }
 
@@ -791,6 +804,7 @@ pub fn graph(spec: GraphSpec, x: f32, y: f32, name: &'static str) -> Control {
         view: None,
         when: None,
         unless: None,
+        only: None,
     }
 }
 
@@ -806,6 +820,7 @@ pub fn lcd(param: &'static str, x: f32, y: f32, sheet: LcdSheet, digits: usize, 
         view: None,
         when: None,
         unless: None,
+        only: None,
     }
 }
 
@@ -831,6 +846,7 @@ pub fn lcd_float(
         view: None,
         when: None,
         unless: None,
+        only: None,
     }
 }
 
@@ -855,6 +871,7 @@ pub fn fader(param: &'static str, x: f32, y: f32, h: f32, name: &'static str, hi
         view: None,
         when: None,
         unless: None,
+        only: None,
     }
 }
 
@@ -915,6 +932,7 @@ pub fn surface(spec: SurfaceSpec, id: &'static str, x: f32, y: f32, name: &'stat
         view: None,
         when: None,
         unless: None,
+        only: None,
     }
 }
 
@@ -937,6 +955,7 @@ pub fn readout(field: &'static str, x: f32, y: f32, w: f32, color: u32, empty: &
         view: None,
         when: None,
         unless: None,
+        only: None,
     }
 }
 
@@ -962,6 +981,7 @@ pub fn toggle(
         view: None,
         when: None,
         unless: None,
+        only: None,
     }
 }
 
@@ -988,5 +1008,6 @@ pub fn slider(
         view: None,
         when: None,
         unless: None,
+        only: None,
     }
 }

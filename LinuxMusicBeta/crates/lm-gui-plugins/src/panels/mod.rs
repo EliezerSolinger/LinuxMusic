@@ -4,6 +4,7 @@ use crate::spec::PanelSpec;
 
 pub mod audiofileprocessor;
 pub mod bitinvader;
+pub mod compressor;
 pub mod crossovereq;
 pub mod delay;
 pub mod effects;
@@ -54,6 +55,7 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (lomm::ID, || &lomm::PANEL),
     (crossovereq::ID, || &crossovereq::PANEL),
     (delay::ID, || &delay::PANEL),
+    (compressor::ID, || &compressor::PANEL),
     (eq::ID, || &eq::PANEL),
     (monstro::ID, || &monstro::PANEL),
     (vibed::ID, || &vibed::PANEL),
@@ -86,6 +88,7 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     lomm::ASSETS,
     crossovereq::ASSETS,
     delay::ASSETS,
+    compressor::ASSETS,
     eq::ASSETS,
     monstro::ASSETS,
     vibed::ASSETS,
