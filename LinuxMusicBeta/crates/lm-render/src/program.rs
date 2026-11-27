@@ -845,6 +845,7 @@ pub struct ProgramBuilder {
     nodes: Vec<NodeDesc>,
     feeds: Vec<Feed>,
     params: Vec<(ParamSlot, NodeIndex, u32, ParamInfo, Option<Curve>)>,
+    param_limits: Vec<(NodeIndex, u32, f32, f32)>,
     audio: Vec<(NodeIndex, Vec<AudioItem>)>,
     inputs: Vec<(NodeIndex, Vec<u16>)>,
     midi: Vec<(NodeIndex, Vec<Arc<MidiItem>>)>,
@@ -862,6 +863,9 @@ pub struct ProgramBuilder {
     mod_params: Vec<(ParamSlot, usize, usize, ParamInfo, Option<Curve>)>,
     chains: Vec<(NodeIndex, Vec<NodeIndex>)>,
 }
+
+/// The most parameters of one processor that are given a declared range
+const MAX_LIMITED_PARAMS: u32 = 4096;
 
 fn invalid(key: &'static str) -> Error {
     Error::new(key)
@@ -882,6 +886,7 @@ impl ProgramBuilder {
             nodes: Vec::new(),
             feeds: Vec::new(),
             params: Vec::new(),
+            param_limits: Vec::new(),
             audio: Vec::new(),
             inputs: Vec::new(),
             midi: Vec::new(),
@@ -954,6 +959,16 @@ impl ProgramBuilder {
         automation: Option<Curve>,
     ) -> &mut Self {
         self.params.push((slot, node, index, info, automation));
+        self
+    }
+
+    /// The declared range of parameter `index` of the processor in `node`: every value that reaches the processor
+    /// (document, automation, modulation, MIDI, a hand) is limited to it, so no processor repeats the check. A
+    /// reversed pair is read as (lo, hi); one that is not finite is ignored. Without it the parameter is not limited
+    pub fn param_limits(&mut self, node: NodeIndex, index: u32, min: f32, max: f32) -> &mut Self {
+        if min.is_finite() && max.is_finite() {
+            self.param_limits.push((node, index, min.min(max), min.max(max)));
+        }
         self
     }
 
@@ -1509,6 +1524,18 @@ impl ProgramBuilder {
             return Err(invalid("render.program.punch_empty"));
         }
 
+        // The declared ranges, by node
+        let mut node_limits: Vec<Vec<(f32, f32)>> = vec![Vec::new(); n];
+        for &(node, index, lo, hi) in &self.param_limits {
+            let limits = &mut node_limits[find(node)? as usize];
+            if index < MAX_LIMITED_PARAMS {
+                if limits.len() <= index as usize {
+                    limits.resize(index as usize + 1, (f32::NEG_INFINITY, f32::INFINITY));
+                }
+                limits[index as usize] = (lo, hi);
+            }
+        }
+
         // Memory: one block and one event list per node
         for (i, p) in pnodes.iter_mut().enumerate() {
             let d = &p.desc;
@@ -1520,11 +1547,10 @@ impl ProgramBuilder {
                 stride: max_block,
             };
             let events = 64 + event_room[i] + if p.has_midi { 1024 } else { 0 };
-            p.io = Some(Box::new(NodeIo {
-                layout,
-                buffer: vec![0.0; layout.len()].into_boxed_slice(),
-                events: EventList::with_capacity(events),
-            }));
+            let mut list = EventList::with_capacity(events);
+            let limits = std::mem::take(&mut node_limits[i]);
+            list.set_limits(limits.into_boxed_slice());
+            p.io = Some(Box::new(NodeIo { layout, buffer: vec![0.0; layout.len()].into_boxed_slice(), events: list }));
         }
 
         Ok(Box::new(Program {

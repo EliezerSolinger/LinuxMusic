@@ -795,6 +795,7 @@ impl CompilerCore {
                 ParamInfo { rate: p.rate, discrete: p.discrete, initial: p.value },
                 curve,
             );
+            b.param_limits(index_of[p.node], p.index, p.range.min, p.range.max);
         }
         for pm in &plan.mods {
             let mut spec = ModulatorSpec::new(pm.kind, pm.seed);

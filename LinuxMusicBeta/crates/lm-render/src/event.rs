@@ -135,6 +135,10 @@ pub(crate) struct EventList {
     seq: u32,
     /// Events that do not end sound are refused past this; the rest of the capacity is kept for those that do
     soft: usize,
+    /// The declared range of each of the node's parameters, by index (empty: none known). Every parameter event
+    /// enters the node through [`EventList::push`], so this is the one place a value is limited to its schema range,
+    /// whether it came from the document, an automation curve, a modulator, a MIDI control or a hand
+    limits: Box<[(f32, f32)]>,
 }
 
 impl EventList {
@@ -142,7 +146,12 @@ impl EventList {
     pub(crate) fn with_capacity(capacity: usize) -> Self {
         let soft = capacity.max(6);
         let hard = soft + soft / 3 + 2;
-        Self { keyed: Vec::with_capacity(hard), sorted: Vec::with_capacity(hard), seq: 0, soft }
+        Self { keyed: Vec::with_capacity(hard), sorted: Vec::with_capacity(hard), seq: 0, soft, limits: Box::default() }
+    }
+
+    /// The parameter ranges (index -> (min, max)); a parameter with no entry is not limited
+    pub(crate) fn set_limits(&mut self, limits: Box<[(f32, f32)]>) {
+        self.limits = limits;
     }
 
     pub(crate) fn clear(&mut self) {
@@ -151,8 +160,17 @@ impl EventList {
         self.seq = 0;
     }
 
-    /// Adds an event; `false` (and nothing added) when the list is full for this kind of event
-    pub(crate) fn push(&mut self, offset: u32, kind: EventKind) -> bool {
+    /// Adds an event; `false` (and nothing added) when the list is full for this kind of event. A parameter value is
+    /// limited to its declared range first; one that is not a number is dropped (it counts as accepted)
+    pub(crate) fn push(&mut self, offset: u32, mut kind: EventKind) -> bool {
+        if let EventKind::Param { index, value } = &mut kind {
+            if !value.is_finite() {
+                return true;
+            }
+            if let Some(&(lo, hi)) = self.limits.get(*index as usize) {
+                *value = value.clamp(lo, hi);
+            }
+        }
         let limit = if kind.ends_sound() { self.keyed.capacity() } else { self.soft };
         if self.keyed.len() >= limit {
             return false;
@@ -185,6 +203,21 @@ mod tests {
     }
     fn off(key: u8) -> EventKind {
         EventKind::NoteOff { note: NoteId(u32::from(key)), channel: 0, key, velocity: 0.0 }
+    }
+
+    #[test]
+    fn parameter_values_are_limited_to_the_declared_range_on_push() {
+        let mut l = EventList::with_capacity(8);
+        l.set_limits(vec![(0.0, 1.0), (-1.0, 1.0)].into_boxed_slice());
+        assert!(l.push(0, EventKind::Param { index: 0, value: 7.0 }));
+        assert!(l.push(1, EventKind::Param { index: 1, value: -9.0 }));
+        assert!(l.push(2, EventKind::Param { index: 2, value: 123.0 }), "no limit declared for index 2");
+        assert!(l.push(3, EventKind::Param { index: 0, value: f32::NAN }));
+        let e = l.finish();
+        assert_eq!(e.len(), 3, "the NaN is dropped");
+        assert_eq!(e[0].kind, EventKind::Param { index: 0, value: 1.0 });
+        assert_eq!(e[1].kind, EventKind::Param { index: 1, value: -1.0 });
+        assert_eq!(e[2].kind, EventKind::Param { index: 2, value: 123.0 });
     }
 
     #[test]
