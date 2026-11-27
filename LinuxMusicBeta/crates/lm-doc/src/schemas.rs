@@ -142,9 +142,10 @@ pub const POINT_SHAPES: &[&str] = &["curve", "step", "smooth"];
 pub const CONTROL_KINDS: &[&str] = &["cc", "pitchBend", "channelPressure", "polyPressure", "programChange"];
 /// How MIDI recording treats what is under it (I-21.4, F-REC-101); absent = `"overdub"`
 pub const RECORD_MODES: &[&str] = &["overdub", "replace", "layers"];
-/// The message kinds of a mapping's source (lm-midimap, `Message::kind_name`)
+/// The message kinds of a mapping's source (lm-midimap, `Message::kind_name`), and `"osc"`: the source is an OSC
+/// address (in its `port`), read by the OSC server and skipped by the MIDI map
 pub const MIDI_MESSAGES: &[&str] =
-    &["cc", "cc14", "nrpn", "rpn", "note", "pitchBend", "channelPressure", "polyPressure", "programChange"];
+    &["cc", "cc14", "nrpn", "rpn", "note", "pitchBend", "channelPressure", "polyPressure", "programChange", "osc"];
 pub const MIDI_TARGET_KINDS: &[&str] = &["param", "field", "action"];
 /// A selection-following target (lm-midimap, `SelRole`); `"none"` = the fixed `node`
 pub const MIDI_FOLLOW: &[&str] = &["none", "track", "channel", "plugin", "trackBank", "channelBank"];

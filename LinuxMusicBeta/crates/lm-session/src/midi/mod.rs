@@ -191,6 +191,10 @@ impl MidiCore {
 fn read_mappings(list: Option<&Value>, bad: &mut usize) -> Vec<Mapping> {
     let mut out = Vec::new();
     for v in list.map(|l| l.items().cloned().collect::<Vec<_>>()).unwrap_or_default() {
+        // An OSC alias is the OSC server's, not an unreadable MIDI mapping
+        if lm_midimap::doc::osc_address(&v).is_some() {
+            continue;
+        }
         match Mapping::from_value(&v) {
             Ok(m) => out.push(m),
             Err(_) => *bad += 1,
@@ -200,7 +204,7 @@ fn read_mappings(list: Option<&Value>, bad: &mut usize) -> Vec<Mapping> {
 }
 
 /// The interface document's selection (I-3.8): `selection: { track, channel, plugin }`
-fn read_selection(ui: &Value) -> (Option<NodeId>, Option<NodeId>, Option<NodeId>) {
+pub(crate) fn read_selection(ui: &Value) -> (Option<NodeId>, Option<NodeId>, Option<NodeId>) {
     let s = ui.get("selection");
     let id = |k: &str| s.and_then(|s| s.get(k)).and_then(Value::as_text).and_then(|t| NodeId::parse(t).ok());
     (id("track"), id("channel"), id("plugin"))
@@ -213,7 +217,7 @@ pub(crate) fn doc_real(v: f32) -> f64 {
 }
 
 /// A normalized value of a document field (bool, choice, int, real by their schema ranges)
-fn field_norm(kind: &FieldKind, v: &Value) -> Option<f32> {
+pub(crate) fn field_norm(kind: &FieldKind, v: &Value) -> Option<f32> {
     Some(match kind {
         FieldKind::Bool => {
             if v.as_bool()? {
@@ -234,7 +238,7 @@ fn field_norm(kind: &FieldKind, v: &Value) -> Option<f32> {
 
 impl Session {
     /// The field kind at `path` in node `id` (following nested objects)
-    fn field_kind(&self, id: NodeId, path: &[PathStep]) -> Option<FieldKind> {
+    pub(crate) fn field_kind(&self, id: NodeId, path: &[PathStep]) -> Option<FieldKind> {
         let mut ty = if id == ROOT { lm_doc::PROJECT } else { self.document.type_of(id)? };
         let mut kind = None;
         for (i, step) in path.iter().enumerate() {
@@ -487,7 +491,7 @@ impl Session {
     }
 
     /// Where a parameter lives in the tree, if the tree keeps it (the monitor's level is only in its slot)
-    fn midi_doc_path(&self, node: NodeId, key: &str) -> Option<Vec<PathStep>> {
+    pub(crate) fn midi_doc_path(&self, node: NodeId, key: &str) -> Option<Vec<PathStep>> {
         let ty = self.document.type_of(node)?;
         let path = lm_doc::param_path(ty, key);
         let kept = self.document.find(node).is_some_and(|n| n.at_path(&path).is_some());
@@ -495,7 +499,7 @@ impl Session {
     }
 
     /// A value for the tree: the shortest decimal, inside the schema's range
-    fn midi_doc_value(&self, node: NodeId, key: &str, path: &[PathStep], value: f32) -> Option<Value> {
+    pub(crate) fn midi_doc_value(&self, node: NodeId, key: &str, path: &[PathStep], value: f32) -> Option<Value> {
         let mut x = doc_real(value);
         if let Some(FieldKind::Real { min, max }) = self.field_kind(node, path) {
             x = x.clamp(min, max);

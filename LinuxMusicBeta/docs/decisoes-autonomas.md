@@ -1997,3 +1997,26 @@ o comportamento é moderno e configurável.
    (rolar e pinça), arrastar um item sem modificador, soltar arquivos, o duplo clique que reinicia ou abre em lugares
    menores (marcadores, regiões, o botão de volume do cabeçalho, a faixa de transposição do transporte além da
    transposição), a tecla da barra de espaço segurada no navegador e as teclas de piano.
+
+### OSC (item 5, 26/11)
+
+- **Protocolo:** `crates/lm-osc`, OSC 1.0 em Rust puro e sem dependências: mensagens e pacotes (bundles) com os tipos `i`,
+  `f`, `s`, `b`, `T`, `F` e time tags; um pacote malformado vira uma chave `osc.*`, nunca um pânico (profundidade 8,
+  256 argumentos). Padrões de endereço (`?*[]{}`) não são expandidos. Time tags não agendam: a mensagem age ao chegar.
+- **Servidor** (`lm-session/src/osc/`): um soquete UDP não bloqueante lido no `pump` (no máximo 256 datagramas por volta;
+  um envio que esperaria é descartado). Desligado por padrão. Preferências `osc: {on, port, lan}` (porta 9000); liga em
+  `127.0.0.1`, e só com `lan` em `0.0.0.0`. Porta abaixo de 1024 vale como a padrão. Se não liga, aviso `osc.bind_failed`.
+- **Endereços** (`address.rs`): `/param/<nó>/<chave> f` (0 a 1 da faixa do parâmetro, como um controle MIDI),
+  `/field/<nó>/<caminho…> v` (interruptor T/F, escolha por nome ou índice, inteiro, real de 0 a 1, texto; `root` é a raiz),
+  `/action/<id> [json]`, `/transport/<nome>` (a ação `transport.<nome>`; 0 é soltar o botão e não age),
+  `/subscribe [porta]`, `/unsubscribe [porta]`. Erro volta ao remetente como `/error <endereço> <chave>`.
+- **Apelidos do usuário:** o mesmo nó de mapeamento do MIDI, com `source.message = "osc"` e o endereço em `source.port`
+  (`lm_midimap::OscMapping`; "osc" entrou em `MIDI_MESSAGES`; o mapa MIDI pula esses nós). Alvos de parâmetro, campo e ação
+  e a transformação (min, max, inverter, curva); alvos "selecionado" valem sem deslocamento nem banco.
+- **Retorno** (`outbox.rs`): as mudanças do documento (parâmetros e campos, e os apelidos que levam a eles) esperam por
+  endereço (a última vale) e saem a cada 20 ms, até 128 endereços por vez, em bundles de até 1200 bytes, para quem fez
+  `/subscribe` (até 16; some depois de 5 min mudo). O que um cliente acabou de escrever não volta a ele por 100 ms.
+  Parâmetros movidos só pelo renderizador (automação, modulação) não geram retorno: o retorno segue o documento.
+- **Segurança:** localhost por padrão; ligar para fora exige a preferência `lan` (linha "OSC de outras máquinas").
+  As ações são as do registro do núcleo, as mesmas do mapa MIDI.
+- **Configurações:** na página MIDI, três linhas curtas: OSC (liga), porta e "de outras máquinas".

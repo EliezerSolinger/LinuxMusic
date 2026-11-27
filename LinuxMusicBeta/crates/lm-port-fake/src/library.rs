@@ -390,6 +390,7 @@ pub fn preferences() -> Value {
             ]),
         ),
         ("midiMap", Value::empty_list()),
+        ("osc", o(vec![("on", Value::bool(false)), ("port", Value::int(9000)), ("lan", Value::bool(false))])),
         (
             "controllers",
             Value::list([

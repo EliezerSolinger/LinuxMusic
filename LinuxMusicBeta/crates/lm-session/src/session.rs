@@ -41,6 +41,10 @@ use crate::rack::RackProcessor;
 #[path = "midi/mod.rs"]
 pub(crate) mod midi;
 
+/// The OSC server (`decisoes-autonomas.md`, 26/11, item 5): a child module, so it works on the session's own fields
+#[path = "osc/mod.rs"]
+pub(crate) mod osc;
+
 /// Third-party plugins (I-9.6): the scan, the catalog growing, the helpers, their state and notices
 #[path = "external.rs"]
 pub(crate) mod external;
@@ -428,6 +432,8 @@ pub struct Session {
     safe_mode_on: bool,
     /// MIDI mapping, feedback, control surfaces, MIDI and automation recording (I-21)
     pub(crate) midi: midi::MidiCore,
+    /// The OSC server
+    pub(crate) osc: osc::OscCore,
     pub(crate) external: external::ExternalCore,
     /// What `edit.copy` copied (H13)
     pub(crate) clipboard: Option<Clipboard>,
@@ -715,6 +721,7 @@ impl Session {
             safe_mode_on: false,
             displays: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             midi: midi::MidiCore::new(),
+            osc: osc::OscCore::default(),
             external: external::ExternalCore::default(),
             imported: Vec::new(),
             finished: Vec::new(),
@@ -1083,6 +1090,7 @@ impl Session {
         changed |= self.read_telemetry();
         // 2b. MIDI (I-21): mapped fields and actions, gesture ends, learning, the map, feedback, the recordings
         changed |= self.midi_pump();
+        changed |= self.osc_pump();
         changed |= self.external_pump();
         self.poll_device();
         // 3. plugin requests (in the telemetry), and the takes
@@ -1103,6 +1111,7 @@ impl Session {
             changed = true;
             self.apply_params(&diff);
             self.midi_diff(&diff);
+            self.osc_diff(&diff);
             self.slicert_auto(&diff);
             if diff.structural {
                 self.needs_compile = true;

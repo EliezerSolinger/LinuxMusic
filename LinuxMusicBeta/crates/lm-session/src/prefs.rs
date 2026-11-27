@@ -39,6 +39,8 @@ pub fn defaults() -> Value {
         // The machine's MIDI mappings (I-21.2, the same nodes as `project.midiMap`) and the controller profiles in
         // use (`{profile, port, bank}`, I-21.3)
         ("midiMap", Value::empty_list()),
+        // The OSC server (off; localhost unless `lan`): the port it listens at, and whether other machines may reach it
+        ("osc", o(vec![("on", Value::bool(false)), ("port", Value::int(9000)), ("lan", Value::bool(false))])),
         ("controllers", Value::empty_list()),
         (
             "interface",

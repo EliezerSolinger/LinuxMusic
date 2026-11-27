@@ -1059,6 +1059,9 @@ impl Settings {
             self.get(cx, &["controllers"]).map(|l| l.items().cloned().collect()).unwrap_or_default();
         let aliases: Vec<String> = ports.iter().map(|p| text_of(p, "alias")).filter(|a| !a.is_empty()).collect();
         let quantize = self.get_bool(cx, &["recording", "quantizeMidi"], false);
+        let osc_on = self.get_bool(cx, &["osc", "on"], false);
+        let osc_port = self.get_int(cx, &["osc", "port"], 9000);
+        let osc_lan = self.get_bool(cx, &["osc", "lan"], false);
         let profile_lines = profiles.iter().enumerate().map(|(i, p)| {
             let profile = text_of(p, "profile");
             let bank = p.get("bank").and_then(Value::as_int).unwrap_or(0);
@@ -1119,6 +1122,15 @@ impl Settings {
             row("Quantize notes recorded in the Piano Roll", Apply::Now, switch("quantize", quantize, cx, |s, v, cx| {
                 s.set(cx, &["recording", "quantizeMidi"], b(v))
             })),
+            row("OSC", Apply::Now, switch("osc-on", osc_on, cx, |s, v, cx| s.set(cx, &["osc", "on"], b(v)))),
+            row(
+                "OSC port",
+                Apply::Now,
+                stepper("osc-port", format!("{osc_port}"), cx, move |s, d, cx| {
+                    s.set(cx, &["osc", "port"], Value::int((osc_port + d).clamp(1024, 65_535)))
+                }),
+            ),
+            row("OSC from other machines", Apply::Now, switch("osc-lan", osc_lan, cx, |s, v, cx| s.set(cx, &["osc", "lan"], b(v)))),
         ]
     }
 

@@ -158,6 +158,69 @@ impl DocSource {
     }
 }
 
+/// The source kind of a mapping that listens to an OSC address instead of a MIDI message (`message: "osc"`): the
+/// source's `port` holds the address (`decisoes-autonomas.md`, 26/11, item 5). The MIDI map skips these
+pub const OSC_MESSAGE: &str = "osc";
+
+/// The OSC address of a mapping node, when its source is one
+pub fn osc_address(v: &Value) -> Option<&str> {
+    let s = v.get("source")?;
+    if s.get("message")?.as_text()? != OSC_MESSAGE {
+        return None;
+    }
+    s.get("port")?.as_text().filter(|a| a.starts_with('/'))
+}
+
+/// What an OSC alias drives: its target and the transform of the value (the source's MIDI fields do not apply)
+#[derive(Clone, Debug, PartialEq)]
+pub struct OscMapping {
+    pub address: Arc<str>,
+    pub target: MapTarget,
+    pub transform: Transform,
+}
+
+/// A MIDI source in the place of an OSC one, to read the rest of the node with the MIDI reader
+fn midi_stand_in() -> Value {
+    Value::object([
+        ("port", Value::text("")),
+        ("channel", Value::int(-1)),
+        ("message", Value::text("cc")),
+        ("number", Value::int(0)),
+    ])
+}
+
+impl OscMapping {
+    /// Reads a mapping node whose source is an OSC address (the same node as a MIDI mapping: target and transform)
+    pub fn from_value(v: &Value) -> Result<OscMapping> {
+        let address = osc_address(v).ok_or_else(|| bad("source"))?;
+        let m = Mapping::from_value(&v.with("source", midi_stand_in()))?;
+        Ok(OscMapping { address: Arc::from(address), target: m.target, transform: m.transform })
+    }
+
+    /// The mapping node (without `id`) for the document: the source holds the address
+    pub fn to_value(&self) -> Value {
+        let m = Mapping {
+            id: None,
+            source: DocSource { port: self.address.clone(), channel: None, message: Message::Cc { number: 0 } },
+            touch: None,
+            target: self.target.clone(),
+            transform: self.transform,
+            feedback: true,
+            consume: false,
+            feedback_to: None,
+        };
+        m.to_value().with(
+            "source",
+            Value::object([
+                ("port", Value::text(self.address.clone())),
+                ("channel", Value::int(-1)),
+                ("message", Value::text(OSC_MESSAGE)),
+                ("number", Value::int(0)),
+            ]),
+        )
+    }
+}
+
 impl Mapping {
     pub fn from_value(v: &Value) -> Result<Mapping> {
         let id = match v.get("id").and_then(Value::as_text) {
@@ -332,5 +395,33 @@ mod tests {
             ..a
         };
         assert_eq!(Mapping::from_value(&f.to_value()).unwrap(), f);
+    }
+
+    #[test]
+    fn an_osc_alias_is_a_mapping_node_with_an_address_as_its_source() {
+        let o = OscMapping {
+            address: Arc::from("/mine/fader1"),
+            target: MapTarget::Param { node: NodeRef::Id(NodeId::parse("t:1").unwrap()), key: "volume".into() },
+            transform: Transform { min: 0.0, max: 0.5, ..Transform::default() },
+        };
+        let v = o.to_value();
+        assert_eq!(osc_address(&v), Some("/mine/fader1"));
+        assert_eq!(OscMapping::from_value(&v).unwrap(), o);
+        assert!(Mapping::from_value(&v).is_err(), "the MIDI reader does not take it");
+        let midi = Mapping {
+            id: None,
+            source: DocSource { port: Arc::from(""), channel: None, message: Message::Cc { number: 7 } },
+            touch: None,
+            target: MapTarget::Action {
+                id: Arc::from("transport.play"),
+                params: Value::empty_object(),
+                value_into: None,
+            },
+            transform: Transform::default(),
+            feedback: true,
+            consume: true,
+            feedback_to: None,
+        };
+        assert_eq!(osc_address(&midi.to_value()), None);
     }
 }

@@ -23,7 +23,7 @@ pub mod table;
 pub mod transform;
 
 #[cfg(feature = "doc")]
-pub use doc::{DocSource, MapScope, MapTarget, Mapping, NodeRef, SelRole};
+pub use doc::{DocSource, MapScope, MapTarget, Mapping, NodeRef, OscMapping, SelRole};
 pub use feedback::{Feedback, Limiter, Ring};
 pub use learn::{Detector, Learned};
 pub use message::{Message, Raw};
