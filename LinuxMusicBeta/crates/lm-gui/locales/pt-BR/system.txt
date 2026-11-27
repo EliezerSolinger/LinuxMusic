@@ -478,8 +478,10 @@ Translation = Tradução
 Notices and activities = Avisos e atividades
 session.device.lost = O dispositivo de áudio sumiu; o programa continua parado, e religa quando ele voltar
 session.node.silenced = Um plugin mandou NaN ou infinito e foi silenciado ({node})
+session.node.stuck = Um plugin travou e foi silenciado até ser trocado ({node})
 session.master.protection = Proteção dos ouvidos: um pico de {peak} no master cortou a saída
 session.plugin.panicked = Um plugin caiu: {message}
+session.record.failed = A gravação parou no quadro {sample}: um trecho não pôde ser registrado
 session.audio.panicked = O motor de áudio teve um erro interno: {message}
 Turn on = Ligar
 

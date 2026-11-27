@@ -125,6 +125,12 @@ pub enum Telemetry {
         generation: ProgramGen,
         node: NodeIndex,
     },
+    /// A worker did not give a node's job back within the deadline: the audio thread stopped waiting, and the node
+    /// is silent until it is replaced (R-8)
+    NodeStuck {
+        generation: ProgramGen,
+        node: NodeIndex,
+    },
     /// A streamed item (P-32) needed frames the disk had not loaded yet: they played as silence
     StreamUnderrun {
         generation: ProgramGen,
@@ -192,6 +198,13 @@ pub enum TransportEvent {
     /// silence, marked, so the take stays on the grid (C2)
     CaptureGap {
         sample: i64,
+        frames: u32,
+    },
+    /// A stretch of `frames` frames at this timeline sample could not be recorded (the block's span table was
+    /// full): recording stopped right there, and a `RecordStopped` follows. The take ends at `sample` (R-7)
+    RecordFailed {
+        sample: i64,
+        frame: u64,
         frames: u32,
     },
     /// The tempo map changed while playing and the playhead moved to keep the musical position (H9)

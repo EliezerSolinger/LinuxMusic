@@ -807,6 +807,55 @@ fn tail_hard_cap_is_the_same_for_any_block_size() {
     assert_eq!(peak(&a[0][cap + 480..]), 0.0);
 }
 
+/// A processor that hangs on a worker thread until `release` is set (it behaves on the audio thread)
+struct Hang {
+    release: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Processor for Hang {
+    fn process(&mut self, _cx: &mut ProcessContext<'_>) {
+        let on_worker = std::thread::current().name().is_some_and(|n| n.starts_with("lm-render-"));
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while on_worker && !self.release.load(Ordering::Acquire) && std::time::Instant::now() < end {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+/// R-8: a worker that never gives its node back does not freeze the callback: after the deadline the node is dead
+/// and reported, the rest keeps sounding, and the late job goes home when the worker finally returns it
+#[test]
+fn a_hung_worker_is_given_up_after_the_deadline() {
+    let (mut control, mut dummy) = make(1);
+    let mut b = ProgramBuilder::new(ProgramGen(1), spec(), &limits(1), tempo(120));
+    let m = master(&mut b);
+    b.node(NodeDesc::processor(n(1), 0, 2));
+    b.node(NodeDesc::processor(n(2), 0, 2));
+    b.feed(Feed::new(n(1), m, 2));
+    b.feed(Feed::new(n(2), m, 2));
+    let release = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut i = Install::new(b.build().expect("program"));
+    i.add(n(1), core(Hang { release: release.clone() }));
+    i.add(n(2), core(Sine::new(1000.0, 0.5)));
+    install(&mut control, i);
+    let started = std::time::Instant::now();
+    let out = render(&mut dummy, 512, 256);
+    assert!(started.elapsed() < std::time::Duration::from_secs(10), "the callback came back");
+    assert!(peak(&out[0]) > 0.4, "the other node still sounds");
+    let mut events = Vec::new();
+    control.events(|e| events.push(e));
+    assert!(events.iter().any(|e| matches!(e, Telemetry::NodeStuck { .. })), "{events:?}");
+    // The worker returns the job late: it goes home, the node stays silent, and the engine goes on
+    release.store(true, Ordering::Release);
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let out = render(&mut dummy, 1024, 256);
+    assert!(peak(&out[0]) > 0.4);
+}
+
 /// Locate is refused while recording (I-7.2)
 #[test]
 fn locate_refused_while_recording() {

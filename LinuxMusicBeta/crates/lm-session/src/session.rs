@@ -1749,6 +1749,15 @@ impl Session {
             if let TransportEvent::RecordStopped { .. } = t {
                 self.recording_tracks.clear();
             }
+            if let TransportEvent::RecordFailed { sample, .. } = t {
+                self.notices.push(
+                    "session.record.failed",
+                    vec![("sample", Value::int(sample))],
+                    Severity::Error,
+                    None,
+                    Vec::new(),
+                );
+            }
         }
         let mut panics = Vec::new();
         self.engine.panics(|p| panics.push(p));
@@ -1803,6 +1812,16 @@ impl Session {
                 let id = table.key_of(node).and_then(NodeKey::owner);
                 self.notices.push(
                     "session.node.silenced",
+                    vec![("node", Value::text(id.map(|i| i.to_string()).unwrap_or_default()))],
+                    Severity::Error,
+                    id.map(Target::Node),
+                    Vec::new(),
+                );
+            }
+            Telemetry::NodeStuck { node, .. } => {
+                let id = table.key_of(node).and_then(NodeKey::owner);
+                self.notices.push(
+                    "session.node.stuck",
                     vec![("node", Value::text(id.map(|i| i.to_string()).unwrap_or_default()))],
                     Severity::Error,
                     id.map(Target::Node),

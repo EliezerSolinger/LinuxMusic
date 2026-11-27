@@ -17,6 +17,7 @@ use std::thread::{JoinHandle, Thread};
 
 use lm_base::ring::{Consumer, Producer, PushError, ring};
 
+use crate::ids::ProgramGen;
 use crate::install::NodeCore;
 use crate::panic::{RenderThreadGuard, catching};
 use crate::processor::{Buffers, ProcessContext, TransportInfo};
@@ -143,6 +144,13 @@ struct Link {
     done: Consumer<Job>,
     thread: Thread,
     busy: bool,
+    /// The audio thread stopped waiting for this worker's job (R-8): the worker is not used again until the job
+    /// comes back, if it ever does
+    lost: bool,
+    /// The program node and the table slot of the job the worker holds, and the program it belongs to
+    node: u32,
+    slot: u32,
+    generation: ProgramGen,
 }
 
 /// The worker threads and the audio thread's ends of their rings
@@ -206,7 +214,16 @@ impl Workers {
                     });
                 })
                 .expect("spawning a render worker");
-            links.push(Link { jobs: jtx, done: drx, thread: handle.thread().clone(), busy: false });
+            links.push(Link {
+                jobs: jtx,
+                done: drx,
+                thread: handle.thread().clone(),
+                busy: false,
+                lost: false,
+                node: 0,
+                slot: 0,
+                generation: ProgramGen(0),
+            });
             handles.push(handle);
         }
         Self { links: links.into_boxed_slice(), stop, handles }
@@ -218,7 +235,7 @@ impl Workers {
 
     /// A worker with nothing to do, if any
     pub(crate) fn idle(&self) -> Option<usize> {
-        self.links.iter().position(|l| !l.busy)
+        self.links.iter().position(|l| !l.busy && !l.lost)
     }
 
     pub(crate) fn any_busy(&self) -> bool {
@@ -226,9 +243,10 @@ impl Workers {
     }
 
     /// Gives a job to an idle worker (the ring has room: the worker has none)
-    pub(crate) fn give(&mut self, worker: usize, job: Job) {
+    pub(crate) fn give(&mut self, worker: usize, job: Job, generation: ProgramGen) {
         let link = &mut self.links[worker];
-        debug_assert!(!link.busy);
+        debug_assert!(!link.busy && !link.lost);
+        (link.node, link.slot, link.generation) = (job.node, job.slot, generation);
         if let Err(PushError::Full(job)) = link.jobs.push(job) {
             // Impossible (an idle worker's ring is empty); never drop a processor on the audio thread
             std::mem::forget(job);
@@ -236,6 +254,29 @@ impl Workers {
         }
         link.busy = true;
         link.thread.unpark();
+    }
+
+    /// Stops waiting for every busy worker: each is marked lost and its job (node, slot, program) is reported
+    /// to `each`. The jobs themselves are in the workers' hands and come back through `take_late` if they ever do
+    pub(crate) fn abandon_busy(&mut self, mut each: impl FnMut(u32, u32, ProgramGen)) {
+        for link in self.links.iter_mut().filter(|l| l.busy) {
+            link.busy = false;
+            link.lost = true;
+            each(link.node, link.slot, link.generation);
+        }
+    }
+
+    /// A job that came back after its worker was abandoned, with the program it was given under
+    pub(crate) fn take_late(&mut self) -> Option<(Job, ProgramGen)> {
+        for link in self.links.iter_mut() {
+            if link.lost
+                && let Ok(job) = link.done.pop()
+            {
+                link.lost = false;
+                return Some((job, link.generation));
+            }
+        }
+        None
     }
 
     /// A finished job, if any worker has one

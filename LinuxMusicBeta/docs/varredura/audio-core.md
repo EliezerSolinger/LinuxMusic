@@ -136,7 +136,7 @@ Por crate: `lm-render` tem 0 CRÍTICO, 5 ALTO, 4 MÉDIO, 2 BAIXO. `lm-compile` t
 | R-4 hook silencia pânico fora do `catch_unwind` | Corrigido na rodada de desenho: `catching` nos pontos de captura, registro fixo de mensagens alimentado pelo gancho fora deles, `take_render_panics` na sessão (`session.audio.panicked`), `note_caught_panic` em `lm-io` (dummy e alsa). Teste `a_panic_outside_a_catch_site_is_logged_and_one_inside_is_not`. | COMMIT |
 | R-5 MPE nota presa no hardware | Confirmado e corrigido: `MpeOut::start` devolve a tecla da nota tomada e `send_mpe` envia o note-off antes; teste atualizado em `mpe.rs`. | ff81ef2f1 |
 | R-6 eventos descartados sem contagem | Confirmado e corrigido: falhas de `push` em `run_chains` somam em `dropped[1]`. | 1df90833d |
-| R-7 gravação perde trecho sem marcador | Confirmado e não corrigido: o relatório mesmo diz que os limites impedem o caso; falta decidir qual evento de falha emitir. | |
-| R-8 espera ocupada sem prazo | Confirmado e não corrigido: com `workers == 0` (padrão) não ocorre; marcar o nó morto enquanto o worker detém o núcleo exige desenho. | |
+| R-7 gravação perde trecho sem marcador | Corrigido na rodada de desenho: `TransportEvent::RecordFailed` e parada explícita da gravação (`push_span`). Teste `push_span_joins_contiguous_passes_and_reports_a_full_table`. | COMMIT |
+| R-8 espera ocupada sem prazo | Corrigido na rodada de desenho: prazo de 1 s, worker abandonado, nó morto e `Telemetry::NodeStuck`. Teste `a_hung_worker_is_given_up_after_the_deadline`. | COMMIT |
 | R-9 `expect` em `job` | Confirmado e corrigido: `job` devolve `Option` e o nó fica em silêncio. | 1df90833d |
 | C-6 `as i32` em graus do arquivo de afinação (`lm-doc::tuning`) | Verificado: a leitura do `.kbm` já recusa graus fora de 0..=1023 (`parse_kbm`); a razão de intervalo infinita foi corrigida junto (M-12). Os demais itens de MÉDIO e BAIXO desta tabela são de `lm-compile` e `lm-render` | rodada de desenho (31f5ae9ba) |

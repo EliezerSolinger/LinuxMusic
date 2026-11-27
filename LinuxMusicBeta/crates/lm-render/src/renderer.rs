@@ -67,6 +67,8 @@ const SILENT: f32 = 1e-6;
 const DISPATCH_MIN_NS: f32 = 3000.0;
 /// The cost a node is assumed to have before it was measured (so it is tried on a worker first)
 const UNMEASURED_NS: f32 = 1.0e6;
+/// How long the audio thread waits for a worker's job before it gives the node up (R-8)
+const WORKER_DEADLINE: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// The device's block, as the backend gives it to [`Renderer::render`]
 #[derive(Debug)]
@@ -395,6 +397,23 @@ pub(crate) fn span_capacity(spec: &ProcessSpec) -> usize {
     4 * (spec.max_block / min_loop + 2) + 8
 }
 
+/// Adds the `n` frames of a pass at block offset `off` (timeline `sample`) to the spans, joining the last span when
+/// they are contiguous. `false` when the table is full and the stretch could not be recorded
+pub(crate) fn push_span(spans: &mut Vec<RecordSpan>, off: usize, n: usize, sample: i64) -> bool {
+    if let Some(s) = spans.last_mut()
+        && s.offset + s.frames == off
+        && s.sample + s.frames as i64 == sample
+    {
+        s.frames += n;
+        return true;
+    }
+    if spans.len() >= spans.capacity() {
+        return false;
+    }
+    spans.push(RecordSpan { offset: off, frames: n, sample });
+    true
+}
+
 impl Renderer {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -546,13 +565,19 @@ impl Renderer {
             let n = self.next_pass_len(frames - off);
             self.update_recording();
             self.pass(off, n, first, inputs, &mut live_next);
-            if self.transport.recording && self.report.spans.len() < self.report.spans.capacity() {
+            if self.transport.recording {
                 let sample = self.transport.position;
-                match self.report.spans.last_mut() {
-                    Some(s) if s.offset + s.frames == off && s.sample + s.frames as i64 == sample => s.frames += n,
-                    _ => self.report.spans.push(RecordSpan { offset: off, frames: n, sample }),
+                if push_span(&mut self.report.spans, off, n, sample) {
+                    self.transport.take_frames += n as u64;
+                } else {
+                    // The span table is sized so this cannot happen; if it ever does, the stretch must not vanish
+                    // without a word (R-7): recording stops here, explicitly, and the recorder is told why
+                    let frame = self.frame;
+                    self.transport.recording = false;
+                    self.transport.armed = false;
+                    self.transport_event(TransportEvent::RecordFailed { sample, frame, frames: n as u32 });
+                    self.transport_event(TransportEvent::RecordStopped { sample, frame });
                 }
-                self.transport.take_frames += n as u64;
             }
             self.write_outputs(outputs, off, n);
             first = false;
@@ -2289,9 +2314,14 @@ impl Renderer {
     fn run_level(&mut self, level: usize, n: usize, info: &TransportInfo) {
         let count = self.program.levels[level].len();
         let mut next = 0usize;
+        let mut waiting: Option<std::time::Instant> = None;
+        let mut spins = 0u32;
         loop {
             while let Some(job) = self.workers.take_done() {
                 self.finish(job);
+            }
+            while let Some((job, generation)) = self.workers.take_late() {
+                self.finish_late(job, generation);
             }
             // Next node that needs a processor call
             while next < count {
@@ -2312,7 +2342,7 @@ impl Renderer {
                     continue;
                 };
                 match self.workers.idle() {
-                    Some(w) if worth => self.workers.give(w, job),
+                    Some(w) if worth => self.workers.give(w, job, self.program.generation),
                     _ => {
                         run_job(&mut job, &self.watch.current[0]);
                         self.finish(job);
@@ -2323,8 +2353,59 @@ impl Renderer {
             if !self.workers.any_busy() {
                 break;
             }
+            // A worker that never gives its job back must not freeze the device callback (R-8): past the deadline
+            // the audio thread stops waiting, the node it was running is dead (silence until replaced) and the
+            // session is told. The deadline is wall time on purpose: a hang is not something audio time can measure
+            let started = *waiting.get_or_insert_with(std::time::Instant::now);
+            spins += 1;
+            if spins % 256 == 0 && started.elapsed() >= WORKER_DEADLINE {
+                self.abandon_workers();
+                break;
+            }
             std::hint::spin_loop();
         }
+    }
+
+    /// The deadline for a worker to return a node's job (R-8). A healthy node takes a fraction of a block; this
+    /// is only the valve for a processor that hangs
+    fn abandon_workers(&mut self) {
+        let mut stuck = [(0u32, 0u32, ProgramGen(0)); 16];
+        let mut count = 0;
+        self.workers.abandon_busy(|node, slot, generation| {
+            if count < stuck.len() {
+                stuck[count] = (node, slot, generation);
+                count += 1;
+            }
+        });
+        for &(_node, slot, generation) in &stuck[..count] {
+            if generation != self.program.generation {
+                continue;
+            }
+            let s = &mut self.slots[slot as usize];
+            s.dead = true;
+            let node = NodeIndex::new(slot, s.generation);
+            self.telemetry(Telemetry::NodeStuck { generation, node });
+        }
+    }
+
+    /// A job the audio thread had stopped waiting for came back. If its node is still where it was (same program,
+    /// nothing installed over it) the processor and buffers go home, and the node stays dead; otherwise it is
+    /// leaked rather than freed on the audio thread (the main thread cannot reach it any more)
+    fn finish_late(&mut self, mut job: Job, generation: ProgramGen) {
+        let slot = job.slot as usize;
+        let home = generation == self.program.generation
+            && self.slots.get(slot).is_some_and(|s| s.core.is_none())
+            && self.program.nodes.get(job.node as usize).is_some_and(|n| n.io.is_none());
+        if !home {
+            std::mem::forget(job);
+            return;
+        }
+        if let Some(payload) = job.panic.take() {
+            let node = self.program.nodes[job.node as usize].desc.node;
+            self.report_panic(Some(node), None, payload);
+        }
+        self.slots[slot].core = Some(job.core);
+        self.program.nodes[job.node as usize].io = Some(job.io);
     }
 
     fn runnable(&self, i: u32) -> bool {
@@ -3195,5 +3276,33 @@ mod live_sort_tests {
             .collect();
         sort_live(&mut live);
         assert!(live.windows(2).all(|w| (w[0].offset, w[0].seq) < (w[1].offset, w[1].seq)));
+    }
+}
+
+#[cfg(test)]
+mod span_tests {
+    use super::*;
+
+    /// R-7: contiguous passes join one span; a full table says so instead of dropping the stretch silently
+    #[test]
+    fn push_span_joins_contiguous_passes_and_reports_a_full_table() {
+        let mut spans: Vec<RecordSpan> = Vec::with_capacity(2);
+        let cap = spans.capacity();
+        assert!(push_span(&mut spans, 0, 64, 1000));
+        assert!(push_span(&mut spans, 64, 64, 1064), "contiguous: joined");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].frames, 128);
+        // Separate spans (a loop wrap) until the table is full
+        let mut sample = 5000;
+        let mut off = 200;
+        while spans.len() < cap {
+            assert!(push_span(&mut spans, off, 10, sample));
+            sample += 100;
+            off += 20;
+        }
+        assert!(!push_span(&mut spans, off, 10, sample), "full: the caller must stop the recording");
+        // The span in progress can still grow when contiguous
+        let last = *spans.last().expect("a span");
+        assert!(push_span(&mut spans, last.offset + last.frames, 5, last.sample + last.frames as i64));
     }
 }

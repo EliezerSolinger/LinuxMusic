@@ -2101,6 +2101,17 @@ dá a mesma saída.
   `lm_render::note_caught_panic`, que só registra se o gancho não registrou aquele pânico (pânico no código do
   dispositivo fora de `render`). CoreAudio e JACK pegam o pânico na camada `lm-sys-*`, que não carrega a mensagem: valem
   o registro do gancho dentro de `render`.
+- **R-7, a gravação podia perder um trecho sem marcar.** Se a tabela de trechos do bloco estivesse cheia, o trecho gravado
+  sumia sem evento. Decidido: `push_span` diz quando não coube, e o renderer então para a gravação ali mesmo (a
+  tomada termina em `sample`) e emite o evento sem perda `TransportEvent::RecordFailed { sample, frame, frames }` seguido
+  de `RecordStopped`. A sessão o mostra como o aviso `session.record.failed`. O limite de `span_capacity` continua a
+  tornar o caso impossível na prática; agora, se acontecer, é explícito.
+- **R-8, espera ocupada sem prazo com workers.** A thread de áudio girava até o worker devolver o trabalho. Decidido: prazo
+  de 1 s de parede (`WORKER_DEADLINE`; o único relógio de parede do renderer, porque um travamento não se mede em tempo de
+  áudio). Vencido, a thread de áudio larga o worker (`abandon_busy`), o nó fica morto (silêncio até ser trocado) e sai
+  `Telemetry::NodeStuck`, que a sessão mostra como `session.node.stuck`. O worker largado não recebe mais trabalho; se
+  devolver o trabalho depois, o processador e os buffers voltam para casa quando o nó ainda é o mesmo, senão são
+  vazados (`mem::forget`), nunca liberados na thread de áudio. Plugins nativos precisam ter tempo limitado.
 
 ## Rodada de desenho (27/11): parâmetros e base
 
