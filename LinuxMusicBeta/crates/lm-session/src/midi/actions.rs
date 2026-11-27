@@ -36,6 +36,28 @@ fn writable(s: &Session) -> bool {
 
 pub static ACTIONS: &[ActionSpec] = &[
     ActionSpec {
+        id: "item.audition",
+        label: "action.item.audition",
+        // {item, from?, to?, loop?}: `from` and `to` in ticks inside the item (the item's loop part by default)
+        run: |s, p| {
+            let item = id(p, "item")?;
+            let from = p.get("from").and_then(Value::as_int);
+            let to = p.get("to").and_then(Value::as_int);
+            let repeat = p.get("loop").and_then(Value::as_bool).unwrap_or(false);
+            s.audition_start(item, from, to, repeat)
+        },
+        enabled: always,
+    },
+    ActionSpec {
+        id: "item.audition_stop",
+        label: "action.item.audition_stop",
+        run: |s, _| {
+            s.audition_stop();
+            Ok(())
+        },
+        enabled: always,
+    },
+    ActionSpec {
         id: "midi.bank",
         label: "action.midi.bank",
         // {role: "track"|"channel", delta}

@@ -8,6 +8,7 @@
 //! the feedback leaves through [`Session::take_midi_feedback`] and [`Session::take_midi_sysex`].
 
 pub(crate) mod actions;
+pub(crate) mod audition;
 pub(crate) mod automation;
 pub(crate) mod devices;
 pub(crate) mod mcu;
@@ -115,6 +116,10 @@ pub(crate) struct MidiCore {
     programs_sent: HashMap<NodeId, (Vec<PortIndex>, u8, u8)>,
     /// "Test the control": the actions a control would run are listed instead of run
     dry_run: Option<Vec<Arc<str>>>,
+    /// An editor playing one item alone (F-NOT-017, see `audition.rs`)
+    pub(crate) audition: Option<lm_compile::Audition>,
+    /// The sample the transport starts from once the program of the audition is installed
+    pub(crate) audition_start: Option<i64>,
 }
 
 impl std::fmt::Debug for MidiCore {
@@ -127,6 +132,8 @@ impl MidiCore {
     pub(crate) fn new() -> MidiCore {
         let (out, consumer) = ring(FEEDBACK_RING);
         MidiCore {
+            audition: None,
+            audition_start: None,
             mappings: Vec::new(),
             project_count: 0,
             resolved: Vec::new(),

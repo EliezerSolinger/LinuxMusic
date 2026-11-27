@@ -36,6 +36,6 @@ pub use crate::rack::{InsertPoint, RackParam, Stage, rack_params};
 pub use crate::read::id_number;
 pub use crate::thread::{CompileActivity, Compiler};
 pub use crate::types::{
-    Build, BuildRequest, Compiled, Environment, InstalledProcessor, InstalledTable, InstalledTail, MetronomeWhen,
+    Audition, Build, BuildRequest, Compiled, Environment, InstalledProcessor, InstalledTable, InstalledTail, MetronomeWhen,
     NodeInfo, NodeKey, Route, Ticket,
 };

@@ -1221,6 +1221,7 @@ impl Session {
                 self.preferences.text(&["metronome", "when"]).unwrap_or(""),
             ),
             metronome_output: self.metronome_output(),
+            audition: self.midi.audition,
             ..Environment::default()
         }
     }
@@ -1282,6 +1283,7 @@ impl Session {
             return;
         }
         self.table = table;
+        self.audition_installed();
         // The map's parameter slots are this install's
         self.midi.mark_dirty();
         if let Ok(mut t) = self.watchdog.shared.table.lock() {
@@ -2490,6 +2492,10 @@ impl Session {
     // ---- transport (I-7.2) ----
 
     pub fn play(&mut self) {
+        // the song's transport plays the song, not an item an editor was playing alone
+        if self.midi.audition_start.is_none() {
+            self.audition_clear();
+        }
         if !self.telemetry.position.playing {
             self.play_origin = Some(self.telemetry.position.samples);
         }
@@ -2499,6 +2505,7 @@ impl Session {
     /// Stops; the cursor then goes back to where playing began ("origin", the default), to the start of the song
     /// ("start") or stays ("stay"), by the preference `interface.stopBehavior` (F-REG-004)
     pub fn stop(&mut self) {
+        self.audition_clear();
         let was_playing = self.telemetry.position.playing || self.record_start.is_some();
         let _ = self.engine.commands().send(Command::Stop);
         let origin = self.play_origin.take();

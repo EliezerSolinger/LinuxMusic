@@ -1426,8 +1426,11 @@ impl CompilerCore {
             };
             // A bypassed instrument is not built nor run (safe mode, U21): the track plays its audio items only
             let instrument = t.get("instrument").filter(|i| !i.is_null() && !flag(i, "bypass", false));
-            let audio_items: Vec<&Value> =
-                items(t, "items").filter(|i| text(i, "kind", "midi") == "audio" && !flag(i, "mute", false)).collect();
+            // An item played alone by an editor (`env.audition`) silences every other one
+            let audible = |i: &Value| env.audition.is_none_or(|a| id_of(i) == Some(a.item));
+            let audio_items: Vec<&Value> = items(t, "items")
+                .filter(|i| text(i, "kind", "midi") == "audio" && !flag(i, "mute", false) && audible(i))
+                .collect();
 
             // The source and the gain node, and the port layout of the gain node
             let mut port_layout: Option<PluginShape> = None;
@@ -1457,8 +1460,8 @@ impl CompilerCore {
                     // The keys, base key, base velocity and microtuner (F-IJN-017/019/021)
                     let keys = crate::keys::track_keys(t, resources, transpose);
                     let mut list = Vec::new();
-                    for item in
-                        items(t, "items").filter(|i| text(i, "kind", "midi") == "midi" && !flag(i, "mute", false))
+                    for item in items(t, "items")
+                        .filter(|i| text(i, "kind", "midi") == "midi" && !flag(i, "mute", false) && audible(i))
                     {
                         if let Some(iid) = id_of(item) {
                             list.push(self.caches.midi(iid, item, &keys, &tempo)?);
@@ -1966,6 +1969,12 @@ impl CompilerCore {
         let min_loop = i64::from((s.sample_rate / 20).max(1));
         plan.transport.loop_range = range("loop").filter(|(a, b)| b - a >= min_loop);
         plan.transport.punch = range("punch").filter(|(a, b)| b > a);
+        if let Some(a) = env.audition {
+            // the item's own loop in place of the project's; no punch while an editor plays an item
+            plan.transport.loop_range =
+                a.repeat.then(|| (tempo.sample_at(a.from), tempo.sample_at(a.to))).filter(|(x, y)| y - x >= min_loop);
+            plan.transport.punch = None;
+        }
         let bars = transport.get("metronome").map_or(0, |m| int(m, "countIn", 0)).clamp(0, 64) as u32;
         plan.transport.count_in = (bars > 0).then_some(CountIn { bars, on_play: env.count_in_on_play });
         plan.transport.pre_roll_bars = transport.get("preRoll").map_or(0, |p| int(p, "bars", 0)).clamp(0, 16) as u32;

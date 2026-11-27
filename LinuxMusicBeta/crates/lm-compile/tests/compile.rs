@@ -70,6 +70,28 @@ fn a_note_plays_at_its_exact_samples() {
 }
 
 #[test]
+fn an_audition_plays_one_item_alone_in_its_own_loop() {
+    let plugins = plugins();
+    let mut doc = new_doc(&plugins);
+    let t = add_track(&mut doc, Some(dc()));
+    let a = add_item(&mut doc, t, "midi", 0, 3840);
+    let b = add_item(&mut doc, t, "midi", 3840, 3840);
+    edit(&mut doc, |e| e.add_note(a, note(60, 0, 960, 0.5)).map(|_| ()));
+    edit(&mut doc, |e| e.add_note(b, note(60, 0, 960, 0.25)).map(|_| ()));
+    let mut h = Harness::new(&plugins);
+    // 25 samples per tick: the second item starts at sample 96_000
+    h.env.audition = Some(lm_compile::Audition { item: b, from: 3840, to: 3840 + 1920, repeat: true });
+    h.settle(doc.root());
+    h.play();
+    let out = h.render(48_000 * 3 / BLOCK + 2);
+    let first_item = out.iter().filter(|(pos, ..)| *pos < 96_000).any(|(_, l, _)| *l != 0.0);
+    assert!(!first_item, "the other item is silent");
+    // the loop (1920 ticks = 48_000 samples) starts the transport again at its start: the note is heard in the second turn
+    assert!(out.iter().any(|(_, l, _)| *l == 0.25), "the audition's item plays");
+    assert!(out.iter().all(|(_, l, _)| *l != 0.5), "never the other item");
+}
+
+#[test]
 fn unchanged_nodes_keep_their_index_processor_and_slots() {
     let plugins = plugins();
     let mut doc = new_doc(&plugins);

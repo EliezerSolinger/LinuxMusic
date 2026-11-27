@@ -299,6 +299,10 @@ pub struct PianoRoll {
     pressed: BTreeSet<u8>,
     marked: BTreeSet<u8>,
     play: ItemPlay,
+    /// The core is playing the open item alone (`item.audition`), in a loop when the item's loop is on
+    item_audio: bool,
+    /// The transport was seen running since the audition started (it starts when the core's program is installed)
+    audio_ran: bool,
     grid_bounds: Rc<Cell<Bounds<Pixels>>>,
     lane_bounds: Rc<Cell<Bounds<Pixels>>>,
     keys_bounds: Rc<Cell<Bounds<Pixels>>>,
@@ -373,6 +377,8 @@ impl PianoRoll {
             pressed: BTreeSet::new(),
             marked: BTreeSet::new(),
             play: ItemPlay { cursor: 0, loop_on: false, loop_a: 0, loop_b: BAR, since: None, ticks_per_sec: tps },
+            item_audio: false,
+            audio_ran: false,
             grid_bounds: Rc::new(Cell::new(Bounds::default())),
             lane_bounds: Rc::new(Cell::new(Bounds::default())),
             keys_bounds: Rc::new(Cell::new(Bounds::default())),
@@ -384,6 +390,11 @@ impl PianoRoll {
         let core = pr.scx.core.clone();
         let release = cx.on_release(move |pr, cx| {
             pr.live.release_all(&core, cx);
+            if pr.item_audio {
+                core.update(cx, |c, _| {
+                    c.report(|pt| pt.run_action("item.audition_stop".into(), Value::NULL));
+                });
+            }
             if pr.rec == Rec::Step {
                 core.update(cx, |c, _| {
                     c.report(|pt| pt.run_action("notes.step_stop".into(), Value::NULL));
@@ -625,23 +636,58 @@ impl PianoRoll {
         (Some(t), pos.playing)
     }
 
+    /// Space: the core plays the open item alone from the item's cursor, in a loop when the item's loop is on
+    /// (`item.audition`); a port that cannot play it (none of the core's) gets the editor's own cursor
     fn toggle_play_item(&mut self, cx: &mut Context<Self>) {
         let now = HostTime::now();
+        if self.item_audio {
+            self.item_audio = false;
+            self.scx.core.update(cx, |core, _| {
+                core.report(|pt| pt.run_action("item.audition_stop".into(), Value::NULL));
+            });
+            self.release_all(cx);
+            cx.notify();
+            return;
+        }
         if self.play.since.is_some() {
             self.play.cursor = self.play.at(now);
             self.play.since = None;
             self.release_all(cx);
-        } else {
-            let outside = self.play.cursor < self.play.loop_a || self.play.cursor >= self.play.loop_b;
-            let from = if self.play.loop_on && outside { self.play.loop_a } else { self.play.cursor };
-            self.play.since = Some((now, from));
+            cx.notify();
+            return;
         }
+        let outside = self.play.cursor < self.play.loop_a || self.play.cursor >= self.play.loop_b;
+        let from = if self.play.loop_on && outside { self.play.loop_a } else { self.play.cursor };
+        if let Some(item) = self.clip {
+            let mut fields = vec![("item", Value::text(item.to_string())), ("from", Value::int(from))];
+            if self.play.loop_on {
+                fields.push(("to", Value::int(self.play.loop_b)));
+                fields.push(("loop", Value::bool(true)));
+            }
+            let params = Value::object(fields);
+            let played = self
+                .scx
+                .core
+                .update(cx, |core, _| core.report(|pt| pt.run_action("item.audition".into(), params)).is_some());
+            if played {
+                self.item_audio = true;
+                cx.notify();
+                return;
+            }
+        }
+        self.play.since = Some((now, from));
         cx.notify();
     }
 
     fn stop(&mut self, cx: &mut Context<Self>) {
         self.play.since = None;
         self.play.cursor = 0;
+        self.audio_ran = false;
+        if std::mem::take(&mut self.item_audio) {
+            self.scx.core.update(cx, |core, _| {
+                core.report(|pt| pt.run_action("item.audition_stop".into(), Value::NULL));
+            });
+        }
         if self.rec == Rec::Accompany {
             self.scx.core.update(cx, |core, _| {
                 core.report(|pt| pt.run_action("transport.stop".into(), Value::NULL));
@@ -1974,6 +2020,19 @@ impl Render for PianoRoll {
             self.fit(h, cx);
         }
         let (play, moving) = self.play_tick(cx, now);
+        if self.item_audio {
+            let playing = self.scx.core.read(cx).port().telemetry().position.playing;
+            if playing {
+                self.audio_ran = true;
+                if play.is_none() {
+                    // an item that does not loop played to its end
+                    self.stop(cx);
+                }
+            } else if self.audio_ran {
+                self.item_audio = false;
+                self.audio_ran = false;
+            }
+        }
         if moving {
             window.request_animation_frame();
         }
@@ -2098,7 +2157,7 @@ impl PianoRoll {
                 .tooltip(tip(help))
                 .on_mouse_down(MouseButton::Left, cx.listener(Self::open_menu(m)))
         };
-        let playing = self.play.since.is_some();
+        let playing = self.play.since.is_some() || self.item_audio;
         let tools_icon = match self.tool {
             Tool::Knife => "edit_knife",
             Tool::Strum => "arp_free",

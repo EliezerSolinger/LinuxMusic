@@ -168,6 +168,16 @@ impl MetronomeWhen {
     }
 }
 
+/// The editor's play of one MIDI or audio item (F-NOT-017): the song plays only that item, in a loop of its own when
+/// `repeat`. Ticks of the song; never in the project and never in an export
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Audition {
+    pub item: NodeId,
+    pub from: i64,
+    pub to: i64,
+    pub repeat: bool,
+}
+
 /// What the machine adds to the tree for one compilation (preferences and devices, never in the project)
 #[derive(Clone, Debug, Default)]
 pub struct Environment {
@@ -197,6 +207,8 @@ pub struct Environment {
     /// The monitoring of the speakers (`preferences().monitor`: `level` dB, `dim`, `cut`, `mono`, `side`), run by
     /// the master's last segment; never in an export (whose Environment has none)
     pub monitor: Option<Value>,
+    /// An editor playing one item alone: the other items are silent and the loop is the item's (see [`Audition`])
+    pub audition: Option<Audition>,
 }
 
 /// A processor in the renderer's table, as the compiler knows it
