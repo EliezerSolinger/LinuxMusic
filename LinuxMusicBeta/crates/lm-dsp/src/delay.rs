@@ -80,7 +80,7 @@ impl Lfo {
 
     /// Ignored below 0 and above Nyquist
     pub fn set_frequency(&mut self, frequency: f64) {
-        if frequency < 0.0 || frequency > f64::from(self.sample_rate) / 2.0 || frequency == self.frequency {
+        if !frequency.is_finite() || frequency < 0.0 || frequency > f64::from(self.sample_rate) / 2.0 || frequency == self.frequency {
             return;
         }
         self.frequency = frequency;
@@ -177,5 +177,19 @@ mod tests {
         assert_eq!(frames[100], [1.0, 1.0]);
         assert_eq!(frames[200], [0.5, 0.5]);
         assert_eq!(frames[300], [0.25, 0.25]);
+    }
+}
+
+#[cfg(test)]
+mod lfo_finite_tests {
+    use super::*;
+
+    #[test]
+    fn a_nan_frequency_does_not_poison_the_phase() {
+        let mut lfo = Lfo::new(48000.0);
+        lfo.set_frequency(1.0);
+        lfo.set_frequency(f64::NAN);
+        assert_eq!(lfo.frequency, 1.0);
+        assert!(lfo.phase.is_finite());
     }
 }

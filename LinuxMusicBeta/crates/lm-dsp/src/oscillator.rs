@@ -190,7 +190,7 @@ pub fn user_wave_sample(wave: &[f32], sample: f32) -> f32 {
 /// has harmonics above Nyquist, and kept within the tables
 pub fn wave_table_band_from_freq(freq: f32) -> usize {
     let semitones = (12.0 * crate::math::log2f(freq / 440.0)).ceil() as i32;
-    let band = (69 + semitones) / SEMITONES_PER_TABLE;
+    let band = 69i32.saturating_add(semitones) / SEMITONES_PER_TABLE;
     band.clamp(1, WAVE_TABLES_PER_WAVEFORM as i32 - 1) as usize
 }
 
@@ -713,5 +713,18 @@ mod tests {
         for a in ModulationAlgo::ALL {
             assert_eq!(ModulationAlgo::from_key(a.key()), Some(a));
         }
+    }
+}
+
+#[cfg(test)]
+mod band_limit_tests {
+    use super::*;
+
+    #[test]
+    fn an_infinite_frequency_picks_the_last_band_without_overflow() {
+        let last = WAVE_TABLES_PER_WAVEFORM - 1;
+        assert_eq!(wave_table_band_from_freq(f32::INFINITY), last);
+        assert!(wave_table_band_from_freq(f32::NAN) >= 1);
+        assert_eq!(wave_table_band_from_freq(0.0), 1);
     }
 }

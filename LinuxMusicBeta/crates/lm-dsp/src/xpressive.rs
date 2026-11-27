@@ -165,6 +165,7 @@ pub fn smooth(raw: &[f32], smoothness: f32) -> Vec<f32> {
     if !(smoothness > 0.0) || raw.is_empty() {
         return out;
     }
+    let smoothness = smoothness.min(SMOOTH_MAX);
     let size = ((smoothness * 5.0) as i32 | 1) as usize;
     let center = size / 2;
     let delta = smoothness;
@@ -804,5 +805,17 @@ mod tests {
         }
         assert_eq!(wave.symbols.function("w1"), None);
         assert_eq!(out.symbols.var_count(), OUTPUT_VARS);
+    }
+}
+
+#[cfg(test)]
+mod smooth_limit_tests {
+    use super::*;
+
+    #[test]
+    fn a_huge_smoothness_is_bounded() {
+        let raw = vec![0.5f32; 64];
+        let out = smooth(&raw, 1.0e9);
+        assert_eq!(out.len(), raw.len());
     }
 }

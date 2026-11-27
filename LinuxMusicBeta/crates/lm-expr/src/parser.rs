@@ -243,6 +243,10 @@ impl Parser<'_> {
         }
         loop {
             args.push(self.expression(0)?);
+            // The compiler counts arguments in a byte
+            if args.len() > 255 {
+                return Err(CompileError::new(self.pos(), key::ARITY));
+            }
             match self.tok() {
                 Tok::Comma => self.advance(),
                 Tok::RParen => {
@@ -325,6 +329,13 @@ mod tests {
 
     fn err(src: &str) -> CompileError {
         parse(src, &table()).unwrap_err()
+    }
+
+    #[test]
+    fn more_than_255_arguments_are_refused() {
+        let many = |n: usize| format!("max({})", vec!["t"; n].join(","));
+        assert!(parse(&many(255), &table()).is_ok());
+        assert!(parse(&many(256), &table()).is_err());
     }
 
     #[test]

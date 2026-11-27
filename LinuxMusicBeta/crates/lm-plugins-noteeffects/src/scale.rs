@@ -105,6 +105,9 @@ impl NoteEffect for ScaleFx {
                 let mapped = self.map(key);
                 if self.sent.len() < self.sent.capacity() {
                     self.sent.push((note, mapped));
+                } else {
+                    // Not recorded, its note-off could not find the mapped key: the note is dropped instead
+                    return;
                 }
                 if let Some(key) = mapped {
                     out.push(at, EventKind::NoteOn { note, channel, key, velocity });
