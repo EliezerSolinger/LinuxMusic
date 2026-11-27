@@ -240,8 +240,8 @@ fn exercise(o: &mut Opened<'_>) {
             // asks for a file with the system's dialog: not driven here
             continue;
         }
-        if let Kind::Readout(_) = &c.kind {
-            // a text, nothing to move
+        if let Kind::Readout(_) | Kind::List(_) = &c.kind {
+            // a text, or a list the core fills: nothing to move here
             continue;
         }
         if let Kind::Button(b) = &c.kind
@@ -485,7 +485,7 @@ fn exercise(o: &mut Opened<'_>) {
                     assert_eq!(undone, reads, "{id}: one undo step");
                 }
             }
-            Kind::Readout(_) => {}
+            Kind::Readout(_) | Kind::List(_) => {}
             Kind::TextEdit(t) => {
                 // click it, type: the field of the selected view changes a key at a time, Backspace takes it back
                 let field = t.fields[0];
@@ -804,14 +804,8 @@ fn slewdistortion(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn audiofileprocessor(cx: &mut TestAppContext) {
-    let mut o = open(cx, &[(&lm_plugins_instruments::audio_file_processor::DESCRIPTOR, true)], "audiofileprocessor");
-    exercise(&mut o);
-}
-
-#[gpui::test]
-fn patman(cx: &mut TestAppContext) {
-    let mut o = open(cx, &[(&lm_plugins_instruments::patman::DESCRIPTOR, true)], "patman");
+fn sampler(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_sampler::DESCRIPTOR, true)], "sampler");
     exercise(&mut o);
 }
 

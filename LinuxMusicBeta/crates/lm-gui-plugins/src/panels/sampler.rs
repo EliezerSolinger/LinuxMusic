@@ -404,7 +404,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
         ("gain", "Gain", "dB", 0.1),
         ("pan", "Pan", "", 0.01),
         ("tune", "Tune", "cents", 1.0),
-        ("bendRange", "Bend", "st", 1.0),
+        ("bendRange", "Bend", "semitones", 1.0),
         ("polyphony", "Voices", "", 1.0),
         ("glide", "Glide", "ms", 1.0),
     ];

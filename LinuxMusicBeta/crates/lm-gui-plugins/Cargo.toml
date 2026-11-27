@@ -22,6 +22,7 @@ lm-port-fake.workspace = true
 lm-plugin.workspace = true
 lm-plugins-tripleoscillator.workspace = true
 lm-plugins-instruments.workspace = true
+lm-plugins-sampler.workspace = true
 lm-plugins-sid.workspace = true
 lm-plugins-freeboy.workspace = true
 lm-plugins-opulenz.workspace = true
