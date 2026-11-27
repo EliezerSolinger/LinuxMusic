@@ -14,8 +14,9 @@
 //! # Rendering
 //!
 //! [`Engine::render`] mixes `frames` frames into the output buses, one stereo pair per output group, replacing what
-//! they held. A voice runs in sub-blocks of [`SUB`] frames: its pitch, its filter and its pan are set at the start
-//! of each, its envelopes step every frame.
+//! they held. A voice's pitch, filter, pan and gain are worked out on a grid of [`SUB`] frames of the engine's own
+//! absolute frame count (and once when the voice begins or a legato note moves it), and its envelopes step every
+//! frame: the grid never depends on where a call starts, so the host's block size cannot change the samples.
 
 use std::sync::Arc;
 
@@ -45,7 +46,7 @@ pub struct EnvOverride {
     pub amount: f32,
 }
 
-/// What the plugin's parameters set; every change is applied on the next sub-block
+/// What the plugin's parameters set; every change is applied at the next grid boundary
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Params {
     pub gain_db: f32,
@@ -181,6 +182,14 @@ struct Voice {
     output: u8,
     stutter: bool,
     release_time: f32,
+    /// What the last update (at a grid boundary, or when the voice started) worked out and the frames until the
+    /// next one use: the pitch step, the pan gains and the total gain
+    step: f64,
+    gl: f32,
+    gr: f32,
+    k_gain: f32,
+    /// Work the values out at the next frame even if it is not a grid boundary (a voice that just began or moved)
+    fresh: bool,
 }
 
 impl Voice {
@@ -220,6 +229,11 @@ impl Voice {
             output: 0,
             stutter: false,
             release_time: 0.0,
+            step: 0.0,
+            gl: 1.0,
+            gr: 1.0,
+            k_gain: 1.0,
+            fresh: true,
         }
     }
 }
@@ -471,6 +485,7 @@ impl Engine {
             let to = (f32::from(key) - f32::from(z.root_key)) * z.key_track;
             v.key = key;
             v.id = id;
+            v.fresh = true;
             v.cents = to + z.tune;
             if time > 0.0 {
                 v.glide += from - to;
@@ -644,6 +659,11 @@ impl Engine {
             output: z.output,
             stutter,
             release_time: amp.release,
+            step: 0.0,
+            gl: 1.0,
+            gr: 1.0,
+            k_gain: 1.0,
+            fresh: true,
         };
         v.amp.start(&amp, self.rate);
         if let Some(f) = &z.filter {
@@ -827,6 +847,7 @@ impl Engine {
         }
         let master = db_to_lin(self.params.gain_db) * self.volume * self.expression;
         let inst = Arc::clone(&self.instrument);
+        let first_frame = self.frame;
         let Self { voices, bus, table, cfg, params, bend, rate, groups, stutter_at, .. } = self;
         for v in voices.iter_mut().filter(|v| v.active) {
             let zone = &inst.zones[v.zone as usize];
@@ -837,7 +858,12 @@ impl Engine {
             let right = &mut hi[..n];
             let mut at = 0;
             while at < n && v.active {
-                let m = (n - at).min(SUB);
+                // The grid is the engine's absolute frame, never the call's start: the host may cut the stream
+                // anywhere and the same notes still give the same samples
+                let abs = first_frame + at as u64;
+                let to_boundary = SUB - (abs % SUB as u64) as usize;
+                let m = (n - at).min(to_boundary);
+                let update = if v.fresh || to_boundary == SUB { Some(to_boundary) } else { None };
                 render_sub(
                     v,
                     zone,
@@ -848,6 +874,7 @@ impl Engine {
                     *rate,
                     master,
                     mono_out,
+                    update,
                     &mut left[at..at + m],
                     &mut right[at..at + m],
                 );
@@ -861,28 +888,17 @@ impl Engine {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn render_sub(
-    v: &mut Voice,
-    zone: &Zone,
-    quality: Quality,
-    table: &SincTable,
-    params: &Params,
-    bend: f32,
-    rate: f32,
-    master: f32,
-    mono_out: bool,
-    left: &mut [f32],
-    right: &mut [f32],
-) {
+/// The per-voice values that change on the grid (see `render_sub`): pitch, filter, pan and gain, and the glide's
+/// advance over the `until_next` frames they will serve
+fn update_voice(v: &mut Voice, zone: &Zone, params: &Params, bend: f32, rate: f32, master: f32, until_next: usize) {
     let cents = v.cents + v.glide + v.detune + params.tune + bend * params.bend_range * 100.0;
     if v.glide != 0.0 {
-        let step = v.glide_rate * left.len() as f32 / rate;
+        let step = v.glide_rate * until_next as f32 / rate;
         v.glide = if v.glide > 0.0 { (v.glide - step).max(0.0) } else { (v.glide + step).min(0.0) };
     }
     // (a note expression or a host value may be anything: ten octaves either way is more than any pitch needs)
     let cents = if cents.is_finite() { cents.clamp(-12_000.0, 12_000.0) } else { 0.0 };
-    let step = v.ratio * f64::from(libm::exp2f(cents / 1200.0));
+    v.step = v.ratio * f64::from(libm::exp2f(cents / 1200.0));
     if let Some(f) = &zone.filter {
         let mut c = 1200.0 * libm::log2f((f.cutoff / 440.0).max(1.0e-3)) + 6900.0;
         c += f.key_track * (f32::from(v.key) - 60.0);
@@ -894,13 +910,37 @@ fn render_sub(
     }
     // The pan: constant power for a mono sample, a balance for a stereo one
     let pan = (v.pan + params.pan).clamp(-1.0, 1.0);
-    let (gl, gr) = if zone.sample.is_stereo() {
+    (v.gl, v.gr) = if zone.sample.is_stereo() {
         ((1.0 - pan).min(1.0), (1.0 + pan).min(1.0))
     } else {
         let a = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
         (libm::cosf(a), libm::sinf(a))
     };
-    let gain = v.gain * master * (1.0 + v.pressure);
+    v.k_gain = v.gain * master * (1.0 + v.pressure);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_sub(
+    v: &mut Voice,
+    zone: &Zone,
+    quality: Quality,
+    table: &SincTable,
+    params: &Params,
+    bend: f32,
+    rate: f32,
+    master: f32,
+    mono_out: bool,
+    update: Option<usize>,
+    left: &mut [f32],
+    right: &mut [f32],
+) {
+    // The pitch, the filter, the pan and the gain are worked out once per grid cell (and when a voice begins) for the
+    // frames up to the next boundary: the same frames whatever the host's block
+    if let Some(until_next) = update {
+        v.fresh = false;
+        update_voice(v, zone, params, bend, rate, master, until_next);
+    }
+    let (step, gl, gr, gain) = (v.step, v.gl, v.gr, v.k_gain);
     let loop_active = |v: &Voice| match v.looping {
         LoopMode::Forward | LoopMode::PingPong => true,
         LoopMode::UntilRelease => !v.released,

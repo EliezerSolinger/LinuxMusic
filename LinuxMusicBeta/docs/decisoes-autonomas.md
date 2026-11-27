@@ -2112,6 +2112,15 @@ dá a mesma saída.
   `Telemetry::NodeStuck`, que a sessão mostra como `session.node.stuck`. O worker largado não recebe mais trabalho; se
   devolver o trabalho depois, o processador e os buffers voltam para casa quando o nó ainda é o mesmo, senão são
   vazados (`mem::forget`), nunca liberados na thread de áudio. Plugins nativos precisam ter tempo limitado.
+- **M1, a saída do Sampler dependia do bloco do host.** O motor recomeçava os sub-blocos de 32 quadros a cada `render`,
+  então pitch, glide, filtro, pan e ganho eram atualizados em quadros que mudavam com o fatiamento. Decidido: a grade de
+  atualização é o quadro absoluto do próprio motor (`frame % SUB`); cada voz calcula esses valores uma vez por célula da
+  grade e uma vez ao nascer ou ao ser movida por legato, guarda o resultado na voz (`step`, `gl`, `gr`, `k_gain`) e usa o
+  guardado nos trechos entre bordas; o avanço do glide cobre os quadros até a próxima borda. Envelopes e posição já
+  andavam por quadro. Efeito sonoro: a primeira célula de cada voz passa a ser parcial (até a próxima borda) em vez de 32
+  quadros cheios, e mudanças de parâmetro, bend e expressão entram na próxima borda; são diferenças de poucos
+  milissegundos em relação ao som anterior, e é a correção. Teste
+  `the_output_does_not_depend_on_the_host_block_size` (mesmo roteiro de notas em quatro fatiamentos, saída idêntica bit a bit).
 
 ## Rodada de desenho (27/11): parâmetros e base
 

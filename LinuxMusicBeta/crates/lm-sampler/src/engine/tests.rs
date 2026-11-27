@@ -357,3 +357,77 @@ fn poly_with_no_glide_is_what_it_was() {
     peak(&mut e, 480);
     assert_eq!(e.active_voices(), 2);
 }
+
+/// One scripted run: events at absolute frames, the stream cut into the given block lengths (repeating)
+fn scripted(cuts: &[usize], total: usize) -> Vec<f32> {
+    let mut saw: Vec<f32> = (0..4000).map(|i| ((i % 100) as f32 / 50.0) - 1.0).collect();
+    saw.extend((0..4000).map(|i| ((i % 37) as f32 / 18.0) - 1.0));
+    let mut a = zone(Arc::new(Pcm::mono(RATE, saw.clone())));
+    a.loop_mode = LoopMode::Forward;
+    a.loop_start = 500;
+    a.loop_end = 7000;
+    a.pan = -0.4;
+    a.filter = Some(crate::model::Filter {
+        cutoff: 2000.0,
+        resonance: 6.0,
+        key_track: 50.0,
+        env: Ahdsr { attack: 0.01, decay: 0.2, sustain: 0.3, ..Ahdsr::default() },
+        env_depth: 2400.0,
+        ..crate::model::Filter::default()
+    });
+    let mut b = zone(Arc::new(Pcm::stereo(RATE, saw.clone(), saw.iter().rev().copied().collect())));
+    b.keys = (64, 127);
+    b.loop_mode = LoopMode::Forward;
+    b.loop_start = 100;
+    b.loop_end = 7900;
+    let mut e = engine_for(vec![a, b], false, Vec::new());
+    e.set_params(Params { glide: 0.05, mono: false, pan: 0.2, ..Params::default() });
+    // (frame, action)
+    let script: [(usize, u8); 6] = [(7, 0), (45, 1), (300, 2), (1000, 3), (1500, 4), (2501, 5)];
+    let mut out = Vec::with_capacity(total);
+    let (mut at, mut c) = (0usize, 0usize);
+    while at < total {
+        // Cut also at the events (a host renders up to each event), then at the host's own cuts
+        let mut n = cuts[c % cuts.len()].min(total - at);
+        c += 1;
+        let mut done = 0;
+        while done < n {
+            let abs = at + done;
+            for (f, act) in script {
+                if f == abs {
+                    match act {
+                        0 => e.note_on(1, 60, 0.8),
+                        1 => e.note_on(2, 67, 1.0),
+                        2 => e.pitch_bend(0.5),
+                        3 => e.note_off(1),
+                        4 => e.note_on(3, 72, 0.5),
+                        _ => e.note_off(2),
+                    }
+                }
+            }
+            let next_event = script.iter().map(|(f, _)| *f).filter(|f| *f > abs).min().unwrap_or(usize::MAX);
+            let m = (n - done).min(next_event - abs);
+            e.render(m);
+            let (l, r) = e.bus(0);
+            out.extend(l.iter().zip(r).flat_map(|(l, r)| [*l, *r]));
+            done += m;
+        }
+        n = done;
+        at += n;
+    }
+    out
+}
+
+/// M1: the output is the same for any way the host cuts the stream (the grid of per-voice updates is the engine's
+/// absolute frame, not the start of each call)
+#[test]
+fn the_output_does_not_depend_on_the_host_block_size() {
+    let a = scripted(&[64], 4096);
+    let b = scripted(&[33, 31], 4096);
+    let c = scripted(&[1], 4096);
+    let d = scripted(&[256, 7, 100, 3], 4096);
+    assert!(a.iter().any(|x| x.abs() > 0.01), "it sounds");
+    assert_eq!(a, b);
+    assert_eq!(a, c);
+    assert_eq!(a, d);
+}
