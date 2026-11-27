@@ -32,6 +32,8 @@ enum Message {
     Returned { generation: ProgramGen, freed: Vec<NodeIndex> },
     Ready { ticket: Ticket, core: Box<NodeCore> },
     TailEnded(NodeIndex),
+    /// The audio clock passed a tail's safety deadline: look again (carries nothing, the clock is in `Shared`)
+    ClockDue,
     Latency(NodeKey, u32),
     Rebuild(Box<InstalledTable>),
     Renew(NodeKey),
@@ -61,6 +63,10 @@ struct Shared {
     /// Submissions made, and the newest one whose result is in `results`: a submission is pending until then
     submitted: AtomicU64,
     answered: AtomicU64,
+    /// The engine's audio clock as last reported, and the clock value the compiler wants to be woken at
+    /// (`u64::MAX`: none)
+    frames: AtomicU64,
+    wake_at: AtomicU64,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -98,6 +104,8 @@ impl Compiler {
             activity: Mutex::new(None),
             submitted: AtomicU64::new(0),
             answered: AtomicU64::new(0),
+            frames: AtomicU64::new(0),
+            wake_at: AtomicU64::new(u64::MAX),
         });
         let s = Arc::clone(&shared);
         let thread = std::thread::Builder::new()
@@ -147,6 +155,20 @@ impl Compiler {
     /// A processor the session built for a request (T6); it goes into the next install
     pub fn ready(&mut self, ticket: Ticket, core: Box<NodeCore>) {
         self.send(Message::Ready { ticket, core });
+    }
+
+    /// The engine's audio clock (`TelemetryFrame::frames`). A tail whose end was never reported is dropped when the
+    /// clock passes its safety deadline; wall time plays no part, so a slow or fast machine compiles the same
+    pub fn observe_frames(&mut self, frames: u64) {
+        self.shared.frames.fetch_max(frames, Ordering::AcqRel);
+        if frames >= self.shared.wake_at.load(Ordering::Acquire) {
+            let mut inbox = lock(&self.shared.inbox);
+            if !matches!(inbox.messages.last(), Some(Message::ClockDue)) {
+                inbox.messages.push(Message::ClockDue);
+            }
+            drop(inbox);
+            self.shared.wake.notify_one();
+        }
     }
 
     /// `Telemetry::TailEnded`
@@ -206,6 +228,7 @@ fn run(mut core: CompilerCore, shared: &Shared) {
     // The last result was refused for want of indices or slots still on their way back
     let mut retry = false;
     loop {
+        shared.wake_at.store(core.next_tail_deadline().unwrap_or(u64::MAX), Ordering::Release);
         let (job, messages) = {
             let mut inbox = lock(&shared.inbox);
             loop {
@@ -215,20 +238,11 @@ fn run(mut core: CompilerCore, shared: &Shared) {
                 if inbox.job.is_some() || !inbox.messages.is_empty() {
                     break;
                 }
-                // Wake for a tail's end even without news
-                match core.next_tail_deadline() {
-                    Some(at) if last.is_some() => {
-                        let now = Instant::now();
-                        if at <= now {
-                            break;
-                        }
-                        inbox = shared.wake.wait_timeout(inbox, at - now).unwrap_or_else(PoisonError::into_inner).0;
-                    }
-                    _ => inbox = shared.wake.wait(inbox).unwrap_or_else(PoisonError::into_inner),
-                }
+                inbox = shared.wake.wait(inbox).unwrap_or_else(PoisonError::into_inner);
             }
             (inbox.job.take(), std::mem::take(&mut inbox.messages))
         };
+        core.observe_frames(shared.frames.load(Ordering::Acquire));
         let mut news = false;
         for m in messages {
             match m {
@@ -239,6 +253,7 @@ fn run(mut core: CompilerCore, shared: &Shared) {
                 }
                 Message::Ready { ticket, core: c } => news |= core.ready(ticket, c),
                 Message::TailEnded(n) => news |= core.tail_ended(n),
+                Message::ClockDue => {}
                 Message::Latency(k, l) => news |= core.latency_changed(k, l),
                 Message::Renew(k) => news |= core.renew(k),
                 Message::Catalog(plugins, schemas) => {
@@ -248,11 +263,13 @@ fn run(mut core: CompilerCore, shared: &Shared) {
                 }
                 Message::Rebuild(table) => {
                     core = CompilerCore::from_table(config.clone(), &table);
+                    core.observe_frames(shared.frames.load(Ordering::Acquire));
                     good = *table;
                     news = true;
                 }
             }
         }
+        shared.wake_at.store(core.next_tail_deadline().unwrap_or(u64::MAX), Ordering::Release);
         let job = match job {
             Some(j) => j,
             None => {

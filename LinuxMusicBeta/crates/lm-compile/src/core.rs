@@ -42,7 +42,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use lm_base::{Error, Result};
 use lm_doc::schemas::{KIND_CHANNEL, KIND_PLUGIN, MASTER};
@@ -67,8 +67,13 @@ use crate::types::{
     Route, Ticket,
 };
 
-/// A tail lives at most this long (U32; the renderer silences it at the same age)
-pub const TAIL_LIFETIME: Duration = Duration::from_secs(2);
+/// A tail restored from a table, not yet stamped with the audio clock
+const UNSTAMPED: u64 = u64::MAX;
+
+/// The renderer ends every tail by itself within `lm_render::TAIL_SECONDS` of audio and says so
+/// (`Telemetry::TailEnded`). If that event is lost (its ring was full) the compiler drops the tail anyway after this
+/// many audio seconds (frames rendered, never wall time: C-3 of the render predictability round)
+pub const TAIL_NET_SECONDS: u64 = lm_render::TAIL_SECONDS + 2;
 
 /// What the compiler is made with
 #[derive(Clone)]
@@ -128,7 +133,8 @@ struct Tail {
     in_place: bool,
     latency: u32,
     index: Option<NodeIndex>,
-    created: Instant,
+    /// The audio clock (`CompilerCore::frames`) when the tail was made
+    created: u64,
     ended: bool,
 }
 
@@ -390,6 +396,8 @@ pub struct CompilerCore {
     curves: HashMap<(NodeId, Arc<str>), Curve>,
     /// The ranges of the parameters of the last install (I-21.2)
     ranges: BTreeMap<(NodeId, Arc<str>), ParamRange>,
+    /// Frames the engine has rendered, as the session last reported them (`observe_frames`)
+    frames: u64,
 }
 
 impl std::fmt::Debug for CompilerCore {
@@ -423,6 +431,7 @@ impl CompilerCore {
             caches: Caches::default(),
             curves: HashMap::new(),
             ranges: BTreeMap::new(),
+            frames: 0,
         }
     }
 
@@ -441,7 +450,8 @@ impl CompilerCore {
         for p in &table.processors {
             c.procs.insert(p.node, Proc { installed: Some(p.clone()), requested: None, ready: None, renew: false });
         }
-        let now = Instant::now();
+        // Restored tails have no known birth on the audio clock: the first observation stamps them
+        let now = UNSTAMPED;
         c.tails = table
             .tails
             .iter()
@@ -546,17 +556,31 @@ impl CompilerCore {
         }
     }
 
-    /// When the oldest live tail expires (the compile thread wakes then to remove it)
-    pub fn next_tail_deadline(&self) -> Option<Instant> {
-        self.tails.iter().filter(|t| !t.ended).map(|t| t.created + TAIL_LIFETIME).min()
+    /// The engine's audio clock moved (`TelemetryFrame::frames`). Only the audio clock ages a tail
+    pub fn observe_frames(&mut self, frames: u64) {
+        self.frames = self.frames.max(frames);
+        for t in self.tails.iter_mut().filter(|t| t.created == UNSTAMPED) {
+            t.created = self.frames;
+        }
+    }
+
+    fn tail_net_frames(&self) -> u64 {
+        TAIL_NET_SECONDS * u64::from(self.config.spec.sample_rate)
+    }
+
+    /// The audio clock value at which the oldest live tail is dropped even without `TailEnded` (the session wakes
+    /// the compiler when the clock reaches it)
+    pub fn next_tail_deadline(&self) -> Option<u64> {
+        let net = self.tail_net_frames();
+        self.tails.iter().filter(|t| !t.ended).map(|t| t.created.saturating_add(net)).min()
     }
 
     /// Whether a compilation would change something without a new root: a processor arrived, a tail ended or
     /// expired
     pub fn has_pending_work(&self) -> bool {
-        let now = Instant::now();
+        let net = self.tail_net_frames();
         self.procs.values().any(|p| p.ready.is_some())
-            || self.tails.iter().any(|t| t.ended || now >= t.created + TAIL_LIFETIME)
+            || self.tails.iter().any(|t| t.ended || self.frames >= t.created.saturating_add(net))
     }
 
     /// How much of the engine `root` needs, counted exactly as the compilation does
@@ -881,7 +905,7 @@ impl CompilerCore {
         let mut cancelled = Vec::new();
         let mut waiting = Vec::new();
         let mut replacing = Vec::new();
-        let now = Instant::now();
+        let now = self.frames;
         let planned: HashSet<NodeKey> = plan.procs.iter().map(|p| p.key).collect();
         // Processors whose node is gone
         let gone: Vec<NodeKey> = self.procs.keys().filter(|k| !planned.contains(k)).copied().collect();
@@ -1899,10 +1923,11 @@ impl CompilerCore {
         }
 
         // Tails (U32): the kept ones and the ones this install makes, fed where their owner feeds
+        let net = self.tail_net_frames();
         let live: Vec<(u64, NodeKey, PluginShape, bool, u32)> = self
             .tails
             .iter()
-            .filter(|t| !t.ended && t.created.elapsed() < TAIL_LIFETIME)
+            .filter(|t| !t.ended && self.frames < t.created.saturating_add(net))
             .map(|t| (t.serial, t.owner, t.shape.clone(), t.in_place, t.latency))
             .chain(plan.new_tails.iter().cloned())
             .collect();

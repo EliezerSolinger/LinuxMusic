@@ -2068,3 +2068,18 @@ Escrito sem rodar testes (regra do dia): só `cargo check`; os testes existem e 
   ou o laço fica inteiro em memória). O gancho de hoje: `Instrument::sample_frames()` diz quantos quadros o instrumento
   tem, e a escolha por preset já limita o que se decodifica; o limite de memória que faria o importador escolher
   `Streamed` ainda não existe.
+
+## Rodada de desenho (27/11): previsibilidade do render
+
+Princípio: o mesmo documento renderizado com tamanhos de bloco diferentes, ou em máquinas de velocidades diferentes,
+dá a mesma saída.
+
+- **C-3, cauda decidida pelo relógio de parede.** O compilador removia caudas por `Instant` (2 s de parede), então a saída
+  da compilação dependia da velocidade da máquina. Decidido: a cauda acaba só por `Telemetry::TailEnded` (o renderer a
+  encerra sozinho, por quadros, em `TAIL_SECONDS`); a rede de segurança contra o evento perdido (anel cheio) agora conta
+  quadros renderizados: `TelemetryFrame::frames` (o relógio de áudio) alimenta `Compiler::observe_frames`, e a cauda cai
+  quando o relógio passa `TAIL_NET_SECONDS` (4 s de áudio) do seu nascimento. O thread de compilação acorda por mensagem
+  (`ClockDue`), não por temporizador de parede; `TAIL_LIFETIME` e o `wait_timeout` deixaram de existir. Além disso, o
+  corte duro de 2 s do renderer passou a cair no quadro exato (antes, no fim do bloco que o cruzava), então o trecho
+  audível da cauda não depende do bloco. Caudas restauradas de uma tabela (`from_table`) nascem "sem carimbo" e levam o
+  relógio da primeira observação.

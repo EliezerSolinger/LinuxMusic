@@ -1693,6 +1693,7 @@ impl Session {
     fn read_telemetry(&mut self) -> bool {
         let table = self.table.clone();
         let frame = self.engine.frame().clone();
+        self.compiler.observe_frames(frame.frames);
         let mut meters = std::collections::HashMap::new();
         if frame.generation == table.generation {
             for (key, index) in &table.nodes {

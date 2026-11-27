@@ -59,7 +59,7 @@ pub use program::{
     ItemEventKind, LiveKeys, Metronome, MidiItem, MidiOutRoute, MidiTiming, NodeDesc, NodeKind, OutputRoute, ParamInfo,
     PortRoute, Program, ProgramBuilder, Rate, Strip, TransportSettings,
 };
-pub use renderer::{BlockReport, DeviceBlock, PROTECTION_THRESHOLD, RecordSpan, Renderer};
+pub use renderer::{BlockReport, DeviceBlock, PROTECTION_THRESHOLD, RecordSpan, Renderer, TAIL_SECONDS};
 pub use rng::Rng;
 pub use sample::SampleData;
 pub use spec::{Limits, ProcessSpec, RenderThreads, ThreadHook, ThreadKind, flushing_denormals};

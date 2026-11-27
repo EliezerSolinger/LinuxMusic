@@ -27,7 +27,7 @@ mod thread;
 mod types;
 
 pub use crate::catalog::{NoResources, PluginCatalog, PluginShape, ResourceState, Resources};
-pub use crate::core::{CompilerConfig, CompilerCore, TAIL_LIFETIME, Usage};
+pub use crate::core::{CompilerConfig, CompilerCore, TAIL_NET_SECONDS, Usage};
 pub use crate::items::{Made, STREAM_SECONDS, StreamRegistration, WaitingItem};
 pub use crate::map::{
     CompiledMap, MapInput, PortAlias, Resolved, Selection, compile_map, find, mapping_id, resolve_node,

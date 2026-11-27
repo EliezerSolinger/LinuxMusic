@@ -43,6 +43,9 @@ pub struct TelemetryFrame {
     pub recording: bool,
     /// Blocks rendered since the engine started (the watchdog's heartbeat as well)
     pub periods: u64,
+    /// Frames rendered since the engine started: the audio clock (tails and other deadlines count in it, never in
+    /// wall time, so a faster or slower machine renders the same)
+    pub frames: u64,
     /// Device blocks that arrived late (xruns) since the engine started
     pub xruns: u64,
     /// Render time over block time, of the slowest block since the previous frame (0 to 1 and beyond)
@@ -71,6 +74,7 @@ impl TelemetryFrame {
             playing: false,
             recording: false,
             periods: 0,
+            frames: 0,
             xruns: 0,
             load: 0.0,
             flushing_denormals: false,

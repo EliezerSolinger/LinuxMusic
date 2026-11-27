@@ -58,7 +58,7 @@ const PROTECTION_FADE: usize = 32;
 /// +24 dBFS (U20)
 pub const PROTECTION_THRESHOLD: f32 = 15.848_932;
 /// A tail node lives at most this long (U32)
-const TAIL_SECONDS: u64 = 2;
+pub const TAIL_SECONDS: u64 = 2;
 /// Below this peak a tail or a preset preview counts as silent (−120 dBFS)
 const SILENT: f32 = 1e-6;
 /// A node goes to a worker only if its calls take longer than this (moving it costs a few hundred nanoseconds and,
@@ -2433,6 +2433,19 @@ impl Renderer {
                 }
             }
         }
+        // The hard cap falls on an exact frame, not on the end of the block that crosses it, so the audible tail
+        // is the same whatever the block size
+        if tail && !slot.tail_done {
+            let since = slot.tail_since.unwrap_or(self.frame);
+            let cap = since + TAIL_SECONDS * u64::from(self.spec.sample_rate);
+            if self.frame + n as u64 > cap {
+                let from = usize::try_from(cap.saturating_sub(self.frame)).unwrap_or(n).min(n);
+                for ch in 0..outputs {
+                    let o = layout.output_offset(ch);
+                    io.buffer[o + from..o + n].fill(0.0);
+                }
+            }
+        }
         if slot.dead || slot.tail_done {
             for ch in 0..outputs {
                 let o = layout.output_offset(ch);
@@ -2950,6 +2963,7 @@ impl Renderer {
         f.playing = self.transport.playing;
         f.recording = self.transport.recording;
         f.periods = self.watch.periods.load(Ordering::Relaxed);
+        f.frames = self.frame;
         f.xruns = self.xruns;
         f.load = self.load;
         f.flushing_denormals = crate::spec::flushing_denormals();

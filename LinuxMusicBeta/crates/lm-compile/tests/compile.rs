@@ -435,6 +435,43 @@ fn a_kit_routes_each_port_and_keeps_playing_while_it_changes() {
     assert!(c.table.pending_nodes.contains(&tail) || h.returns > 0);
 }
 
+/// C-3: a tail whose `TailEnded` was lost is dropped by the audio clock, never by the wall clock, and the same
+/// way however the clock is stepped
+#[test]
+fn a_tail_without_its_end_event_leaves_by_the_audio_clock() {
+    let run = |steps: &[u64]| {
+        let plugins = plugins();
+        let mut doc = new_doc(&plugins);
+        let t = add_track(&mut doc, Some(plugin("kit", Value::object([("kit", text("small"))]))));
+        let mut h = Harness::new(&plugins);
+        h.settle(doc.root());
+        let p = NodeId::parse(doc.find(t).unwrap().get("instrument").unwrap().get("id").unwrap().as_text().unwrap())
+            .unwrap();
+        edit(&mut doc, |e| e.set(p, &[k("state"), k("kit")], text("big")));
+        let c = h.compile(doc.root());
+        h.pump();
+        let b = c.builds[0].clone();
+        assert!(h.core.ready(b.ticket, build(&plugins, &b)));
+        let c = h.compile(doc.root());
+        h.pump();
+        assert_eq!(c.table.tails.len(), 1);
+        let net = lm_compile::TAIL_NET_SECONDS * u64::from(RATE);
+        let mut at = 0;
+        for s in steps {
+            at += s;
+            h.core.observe_frames(at);
+        }
+        assert_eq!(at, net + 1);
+        assert!(h.core.has_pending_work());
+        let c = h.compile(doc.root());
+        h.pump();
+        c.table.tails.len()
+    };
+    let net = lm_compile::TAIL_NET_SECONDS * u64::from(RATE);
+    assert_eq!(run(&[net + 1]), 0);
+    assert_eq!(run(&[1, 480, 777, net - 1257]), 0);
+}
+
 #[test]
 fn replacing_a_note_effect_installs_it_without_a_tail() {
     let plugins = plugins();

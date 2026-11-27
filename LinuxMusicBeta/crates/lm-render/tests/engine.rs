@@ -770,6 +770,43 @@ fn replace_without_adopt_goes_to_the_tail() {
     assert!(events.contains(&Telemetry::TailEnded { generation: ProgramGen(2), node: n(2) }));
 }
 
+/// C-3: the hard end of a tail falls on an exact frame (2 s after it began), so a loud tail sounds the same
+/// whatever the block size the device gives
+#[test]
+fn tail_hard_cap_is_the_same_for_any_block_size() {
+    let run = |size: usize| {
+        let (mut control, mut dummy) = make(0);
+        let program = |generation, tail: bool| {
+            let mut b = ProgramBuilder::new(ProgramGen(generation), spec(), &limits(0), tempo(120));
+            let m = master(&mut b);
+            b.node(NodeDesc::processor(n(1), 0, 2));
+            b.feed(Feed::new(n(1), m, 2));
+            if tail {
+                b.node(NodeDesc::processor(n(2), 0, 2).tail());
+                b.feed(Feed::new(n(2), m, 2));
+            }
+            b.build().expect("program")
+        };
+        let mut i = Install::new(program(1, false));
+        i.add(n(1), core(Sine::new(440.0, 0.5)));
+        install(&mut control, i);
+        render(&mut dummy, 4800, 480);
+        let mut i = Install::new(program(2, true));
+        i.replace(n(1), core(Sine::new(0.0, 0.0)), Some(n(2)));
+        install(&mut control, i);
+        render(&mut dummy, 3 * RATE as usize, size)
+    };
+    let a = run(480);
+    let b = run(777);
+    let c = run(1024);
+    assert_eq!(a, b);
+    assert_eq!(a, c);
+    // The tail is audible until its cap and silent after it
+    let cap = 2 * RATE as usize;
+    assert!(peak(&a[0][cap - 480..cap]) > 0.1);
+    assert_eq!(peak(&a[0][cap + 480..]), 0.0);
+}
+
 /// Locate is refused while recording (I-7.2)
 #[test]
 fn locate_refused_while_recording() {
