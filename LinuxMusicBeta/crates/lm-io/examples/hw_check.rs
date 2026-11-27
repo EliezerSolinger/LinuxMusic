@@ -167,7 +167,7 @@ mod linux {
             format!("period {} linked {}", info.period, info.linked),
         );
         let (mut engine, renderer) = engine_with(info.spec(), limits(), threads);
-        dev.start(renderer).map_err(|(e, _)| e)?;
+        dev.start(renderer).map_err(lm_io::StartError::into_error)?;
         let stall = Arc::new(std::sync::atomic::AtomicU64::new(0));
         engine.install(tone_program(info.spec(), info.outputs, stall.clone(), level))?;
         Ok(Session { bus, device: dev, engine, report, info, stall })

@@ -29,6 +29,20 @@ pub const STOP_TIMEOUT: Duration = Duration::from_secs(2);
 /// Devices abandoned with a stuck callback since the program started
 static ABANDONED: AtomicU64 = AtomicU64::new(0);
 
+/// Abandoned devices whose callback has not returned yet: each one still holds a thread, a renderer and, for a
+/// hardware backend, the card
+static STUCK: AtomicU64 = AtomicU64::new(0);
+
+/// A hardware device is refused while this many abandoned callbacks are still stuck (A7): every one holds the
+/// card or a stream, so opening more only piles up threads and renderers. The Dummy is never refused, so the
+/// session can always fall back to it. A stuck callback that returns frees its slot
+pub const MAX_STUCK_DEVICES: u64 = 3;
+
+/// How many abandoned devices are still stuck right now
+pub fn stuck_devices() -> u64 {
+    STUCK.load(Ordering::Relaxed)
+}
+
 /// How many devices were abandoned with a stuck callback in this process (D11)
 pub fn abandoned_devices() -> u64 {
     ABANDONED.load(Ordering::Relaxed)
@@ -44,6 +58,38 @@ pub struct StopTimedOut {
 impl StopTimedOut {
     pub fn to_error(&self) -> Error {
         Error::new("io.device.stop_timed_out").arg("seconds", STOP_TIMEOUT.as_secs_f64())
+    }
+}
+
+/// `Device::start` failed. The renderer comes back whenever it can be given back
+#[derive(Debug)]
+pub enum StartError {
+    /// Refused before the callback was handed over, or the backend returned it: the renderer is free
+    Refused { error: Error, renderer: Box<Renderer> },
+    /// The backend failed to start and kept the callback, so the renderer is with it. The device was abandoned
+    /// (D11), like a stuck stop; the error is `io.device.start_lost`, with the cause's key
+    Lost { error: Error },
+}
+
+impl StartError {
+    pub fn error(&self) -> &Error {
+        match self {
+            Self::Refused { error, .. } | Self::Lost { error } => error,
+        }
+    }
+
+    pub fn into_error(self) -> Error {
+        match self {
+            Self::Refused { error, .. } | Self::Lost { error } => error,
+        }
+    }
+
+    /// The error and, when it exists, the renderer
+    pub fn into_parts(self) -> (Error, Option<Renderer>) {
+        match self {
+            Self::Refused { error, renderer } => (error, Some(*renderer)),
+            Self::Lost { error } => (error, None),
+        }
     }
 }
 
@@ -183,6 +229,7 @@ impl Device {
             return Err(Error::new("io.device.running"));
         }
         let backend = self.backend.as_mut().ok_or_else(|| Error::new("io.device.abandoned"))?;
+        check_stuck(stuck_devices(), backend.kind())?;
         let info = backend.open(config)?;
         self.info = Some(info.clone());
         self.config = Some(config.clone());
@@ -207,21 +254,20 @@ impl Device {
         &self.guard
     }
 
-    /// Starts the device thread with `renderer`. The renderer's `max_block` must be at least the device's (C7). On an
-    /// error the renderer comes back with it
-    // The renderer comes back by value with the error: a failed start is rare and on the main thread, and boxing
-    // it would allocate on every call
-    #[allow(clippy::result_large_err)]
-    pub fn start(&mut self, renderer: Renderer) -> std::result::Result<(), (Error, Renderer)> {
+    /// Starts the device thread with `renderer`. The renderer's `max_block` must be at least the device's (C7). On a
+    /// refusal the renderer comes back with the error; if the backend kept the callback, nothing can (see
+    /// [`StartError`])
+    pub fn start(&mut self, renderer: Renderer) -> std::result::Result<(), StartError> {
+        let refuse = |error: Error, renderer: Renderer| StartError::Refused { error, renderer: Box::new(renderer) };
         if self.is_running() {
-            return Err((Error::new("io.device.running"), renderer));
+            return Err(refuse(Error::new("io.device.running"), renderer));
         }
         let Some(info) = self.info.clone() else {
-            return Err((Error::new("io.device.not_open"), renderer));
+            return Err(refuse(Error::new("io.device.not_open"), renderer));
         };
         let spec = renderer.spec();
         if spec.max_block < info.max_block || spec.sample_rate != info.rate {
-            return Err((
+            return Err(refuse(
                 Error::new("io.device.spec_mismatch")
                     .arg("engine_block", spec.max_block as i64)
                     .arg("device_block", info.max_block as i64)
@@ -231,7 +277,7 @@ impl Device {
             ));
         }
         let Some(backend) = self.backend.as_mut() else {
-            return Err((Error::new("io.device.abandoned"), renderer));
+            return Err(refuse(Error::new("io.device.abandoned"), renderer));
         };
         let (control, control_rx) = ring(DRIVER_RING);
         let (back_tx, back) = ring(DRIVER_RING);
@@ -251,14 +297,15 @@ impl Device {
             CallbackHandle::new(Box::new(driver), self.guard.clone(), returned_tx, self.threads.clone());
         if let Err(e) = backend.start(handle) {
             // The handle was dropped by the backend: the driver is already back
-            let renderer = match returned.recv_timeout(STOP_TIMEOUT) {
-                Ok(cb) => take_driver(cb).renderer,
+            return Err(match returned.recv_timeout(STOP_TIMEOUT) {
+                Ok(cb) => refuse(e, take_driver(cb).renderer),
                 Err(_) => {
-                    // A backend that failed to start yet kept the callback is a bug; nothing to give back
-                    panic!("lm-io: a backend kept the callback after failing to start");
+                    // A backend that failed to start yet kept the callback: it is abandoned like a stuck stop,
+                    // and its watcher frees it if the callback ever comes back
+                    self.abandon(returned);
+                    StartError::Lost { error: Error::new("io.device.start_lost").arg("cause", e.key()) }
                 }
-            };
-            return Err((e, renderer));
+            });
         }
         self.events = Some(events);
         self.state = State::Running { returned, control, back };
@@ -420,6 +467,7 @@ impl Device {
     /// comes back. Nothing is killed
     fn abandon(&mut self, returned: Receiver<Box<dyn DeviceCallback>>) {
         ABANDONED.fetch_add(1, Ordering::Relaxed);
+        STUCK.fetch_add(1, Ordering::Relaxed);
         self.events = None;
         self.info = None;
         if let Some(backend) = self.backend.take() {
@@ -428,7 +476,10 @@ impl Device {
             let shared = Arc::new(Mutex::new(Some(backend)));
             let held = shared.clone();
             let watcher = std::thread::Builder::new().name("lm-abandoned-device".to_owned()).spawn(move || {
-                if let Ok(callback) = returned.recv() {
+                let callback = returned.recv();
+                // Back (or the thread is gone): the slot is free
+                STUCK.fetch_sub(1, Ordering::Relaxed);
+                if let Ok(callback) = callback {
                     let backend = held.lock().ok().and_then(|mut b| b.take());
                     if let Some(mut backend) = backend {
                         backend.join();
@@ -470,6 +521,27 @@ impl Drop for Device {
     }
 }
 
+/// The A7 policy: a hardware backend is refused while `stuck` abandoned callbacks still hold their resources
+fn check_stuck(stuck: u64, kind: &str) -> Result<()> {
+    if stuck >= MAX_STUCK_DEVICES && kind != "dummy" {
+        return Err(Error::new("io.device.too_many_abandoned").arg("stuck", stuck as i64).arg("max", MAX_STUCK_DEVICES as i64));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hardware_is_refused_over_the_stuck_cap_but_the_dummy_never() {
+        assert!(check_stuck(MAX_STUCK_DEVICES - 1, "alsa").is_ok());
+        let e = check_stuck(MAX_STUCK_DEVICES, "alsa").expect_err("refused");
+        assert_eq!(e.key(), "io.device.too_many_abandoned");
+        assert!(check_stuck(MAX_STUCK_DEVICES + 5, "dummy").is_ok());
+    }
+}
+
 fn take_driver(callback: Box<dyn DeviceCallback>) -> Driver {
     match callback.into_any().downcast::<Driver>() {
         Ok(d) => *d,
@@ -480,7 +552,6 @@ fn take_driver(callback: Box<dyn DeviceCallback>) -> Driver {
 /// Switches to another device (I-10.3), inside an `Operation` on the target `Device`: the barrier, open the new
 /// one, and start it with the same renderer. A different negotiated block or rate than the engine's is refused
 /// (`io.device.spec_mismatch`): the session then makes a new engine
-#[allow(clippy::result_large_err)]
 pub fn switch_device(
     mut old: Device,
     backend: Box<dyn Backend>,
@@ -503,7 +574,8 @@ pub fn switch_device(
             new.returned_senders = senders;
             Ok(new)
         }
-        Err((error, renderer)) => Err(SwitchFailed::Open { error, renderer: Box::new(renderer), senders }),
+        Err(StartError::Refused { error, renderer }) => Err(SwitchFailed::Open { error, renderer, senders }),
+        Err(StartError::Lost { error }) => Err(SwitchFailed::Lost { error }),
     }
 }
 
@@ -514,4 +586,6 @@ pub enum SwitchFailed {
     Stuck(StopTimedOut),
     /// The new device did not open or start; the renderer is free for the Dummy
     Open { error: Error, renderer: Box<Renderer>, senders: Vec<RecordSender> },
+    /// The new device failed to start and kept the renderer: it was abandoned, and the session builds a new engine
+    Lost { error: Error },
 }

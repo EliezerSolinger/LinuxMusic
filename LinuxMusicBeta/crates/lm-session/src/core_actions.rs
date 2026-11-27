@@ -1023,8 +1023,9 @@ impl Session {
                     } else {
                         match device.start(renderer.take().expect("the renderer")) {
                             Ok(()) => Ok(device),
-                            Err((e, back)) => {
-                                renderer = Some(back);
+                            Err(failed) => {
+                                let (e, back) = failed.into_parts();
+                                renderer = back;
                                 Err(e)
                             }
                         }
@@ -1072,8 +1073,8 @@ impl Session {
         };
         let spec = info.spec();
         let (engine, renderer) = lm_render::engine_with(spec, self.limits, crate::crashnote::render_threads());
-        if let Err((e, _)) = device.start(renderer) {
-            self.notices.error(&e, Some(Target::Device), None);
+        if let Err(failed) = device.start(renderer) {
+            self.notices.error(failed.error(), Some(Target::Device), None);
             return;
         }
         self.engine = engine;
@@ -1100,6 +1101,14 @@ impl Session {
             Some(Target::Device),
             vec![(ActionId::from("device.reopen"), Value::NULL)],
         );
+        // A7: at the cap, hardware devices are refused until a stuck callback returns; say so up front
+        let stuck = lm_io::stuck_devices();
+        if stuck >= lm_io::MAX_STUCK_DEVICES {
+            self.notices.warn(
+                "session.device.abandoned_limit",
+                vec![("stuck", Value::int(stuck as i64)), ("max", Value::int(lm_io::MAX_STUCK_DEVICES as i64))],
+            );
+        }
     }
 
     /// `device.calibrate` (I-10.4, H19): the round trip of the device measured with bursts, in an operation; the
@@ -1145,8 +1154,9 @@ impl Session {
                 let restarted =
                     device.open(&config).and_then(|_| match device.start(renderer.take().expect("the renderer")) {
                         Ok(()) => Ok(()),
-                        Err((e, back)) => {
-                            renderer = Some(back);
+                        Err(failed) => {
+                            let (e, back) = failed.into_parts();
+                            renderer = back;
                             Err(e)
                         }
                     });
@@ -1391,7 +1401,7 @@ impl Session {
                     "device.reopen" | "device.calibrate" => Some((ActionId::from(kind), Value::NULL)),
                     _ => None,
                 };
-                let stuck = e.key() == "io.device.stop_timed_out" && retry.is_some();
+                let stuck = matches!(e.key(), "io.device.stop_timed_out" | "io.device.start_lost") && retry.is_some();
                 self.notices.error(&e, Some(target.clone()), retry);
                 self.activity.fail(target, e);
                 if stuck {

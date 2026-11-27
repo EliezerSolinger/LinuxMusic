@@ -613,7 +613,7 @@ impl Session {
         let spec = info.spec();
         let (engine, renderer) = lm_render::engine_with(spec, config.limits, crate::crashnote::render_threads());
         let mut device = device;
-        device.start(renderer).map_err(|(e, _)| e)?;
+        device.start(renderer).map_err(lm_io::StartError::into_error)?;
         let compiler = Compiler::new(CompilerConfig {
             spec,
             limits: config.limits,
@@ -1846,7 +1846,7 @@ impl Session {
                 ) {
                     Ok((mut dummy, _)) => match dummy.start(renderer) {
                         Ok(()) => self.device = Some(dummy),
-                        Err((e, _)) => self.notices.error(&e, Some(Target::Device), None),
+                        Err(failed) => self.notices.error(failed.error(), Some(Target::Device), None),
                     },
                     Err(e) => self.notices.error(&e, Some(Target::Device), None),
                 }
@@ -2178,7 +2178,7 @@ impl Session {
             })?;
         let spec = info.spec();
         let (engine, renderer) = lm_render::engine_with(spec, self.limits, crate::crashnote::render_threads());
-        device.start(renderer).map_err(|(e, _)| e)?;
+        device.start(renderer).map_err(lm_io::StartError::into_error)?;
         self.engine = engine;
         self.compiler = Compiler::new(CompilerConfig {
             spec,

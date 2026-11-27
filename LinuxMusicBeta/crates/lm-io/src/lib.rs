@@ -36,7 +36,10 @@ pub use choice::{ChoiceCaps, DeviceChoice};
 pub use coreaudio::{
     CoreAudioBackend, device_present as coreaudio_device_present, list_devices as coreaudio_list_devices,
 };
-pub use device::{Device, STOP_TIMEOUT, StopTimedOut, SwitchFailed, abandoned_devices, switch_device};
+pub use device::{
+    Device, MAX_STUCK_DEVICES, STOP_TIMEOUT, StartError, StopTimedOut, SwitchFailed, abandoned_devices, stuck_devices,
+    switch_device,
+};
 pub use disk::{
     DiskEvent, DiskFaults, DiskWriter, LIVE_PEAK_CHANNELS, LivePeak, RESERVE_SECONDS, SYNC_SECONDS, ring_frames,
 };

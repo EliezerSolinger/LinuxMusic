@@ -150,6 +150,6 @@ pub fn dummy_device_with(
     let mut device = Device::new(Box::new(backend), RenderThreads::default());
     let info = device.open(config).expect("open");
     let (engine, renderer) = engine(info.spec(), limits());
-    device.start(renderer).map_err(|(e, _)| e).expect("start");
+    device.start(renderer).map_err(lm_io::StartError::into_error).expect("start");
     (device, engine, control, info)
 }

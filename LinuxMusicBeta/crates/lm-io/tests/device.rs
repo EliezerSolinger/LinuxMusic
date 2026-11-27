@@ -27,7 +27,7 @@ fn stop_gives_the_renderer_back() {
     assert_eq!(device.guard().calls(), calls, "no callback after the barrier");
     // Again, with the same renderer
     device.open(&config(48_000, 256)).expect("reopen");
-    device.start(renderer).map_err(|(e, _)| e).expect("restart");
+    device.start(renderer).map_err(lm_io::StartError::into_error).expect("restart");
     wait_for(5, "periods again", || control.periods() > 20);
     engine.commands().send(Command::Play).expect("play");
     wait_for(5, "playing", || engine.frame().playing);
@@ -109,7 +109,7 @@ fn removed_card_falls_back_to_the_dummy() {
     assert!(t0.elapsed() < Duration::from_millis(500));
     let mut fallback = Device::new(Box::new(DummyBackend::new(DummyOptions::default())), RenderThreads::default());
     fallback.open(&config(48_000, 256)).expect("dummy");
-    fallback.start(renderer).map_err(|(e, _)| e).expect("start on the dummy");
+    fallback.start(renderer).map_err(lm_io::StartError::into_error).expect("start on the dummy");
     let p = engine.frame().position;
     wait_for(5, "the playhead moves on the dummy", || engine.frame().position > p + 4800);
 }
@@ -161,7 +161,7 @@ fn spec_mismatch_is_refused() {
     let mut device = Device::new(Box::new(DummyBackend::new(DummyOptions::default())), RenderThreads::default());
     let info = device.open(&config(48_000, 512)).expect("open");
     let (_engine, renderer) = engine(ProcessSpec { sample_rate: 48_000, max_block: 256 }, limits());
-    let (err, _renderer) = device.start(renderer).expect_err("too small");
+    let err = device.start(renderer).expect_err("too small").into_error();
     assert_eq!(err.key(), "io.device.spec_mismatch");
     assert_eq!(info.max_block, 512);
 }
