@@ -1022,9 +1022,15 @@ struct Upgrader<'a> {
     next_id: u64,
 }
 
+/// Deeper than the reader accepts (`lm_state::MAX_DEPTH`): a tree this deep is not a project
+const MAX_UPGRADE_DEPTH: usize = 256;
+
 impl Upgrader<'_> {
     fn value(&mut self, ctx: &Ctx, kind: &FieldKind, v: Value, depth: usize) -> Result<Value> {
-        if v.is_null() || depth > 256 || !(self.outdated || ctx.is_deep(kind)) {
+        if depth > MAX_UPGRADE_DEPTH {
+            return Err(Error::new("state.json.too_deep"));
+        }
+        if v.is_null() || !(self.outdated || ctx.is_deep(kind)) {
             return Ok(v);
         }
         match kind {

@@ -137,11 +137,10 @@ impl<T> OperationHandle<T> {
     /// The phase now. After the result has been taken by `poll`, it stays at what the result was
     pub fn phase(&self) -> Phase {
         if self.shared.finished.load(Ordering::Acquire) {
-            match self.shared.result.lock().ok().as_deref() {
-                Some(Some(Ok(_))) | Some(None) => Phase::Done,
-                Some(Some(Err(e))) if e.is_cancelled() => Phase::Cancelled,
-                Some(Some(Err(e))) => Phase::Failed(e.clone()),
-                None => Phase::Failed(Error::new("error.operation.poisoned")),
+            match lock_recovering(&self.shared.result).as_ref() {
+                Some(Ok(_)) | None => Phase::Done,
+                Some(Err(e)) if e.is_cancelled() => Phase::Cancelled,
+                Some(Err(e)) => Phase::Failed(e.clone()),
             }
         } else if self.shared.started.load(Ordering::Acquire) {
             Phase::Running { progress: self.progress.fraction(), stage: self.progress.current_stage() }
@@ -155,7 +154,7 @@ impl<T> OperationHandle<T> {
         if self.taken || !self.shared.finished.load(Ordering::Acquire) {
             return None;
         }
-        let result = self.shared.result.lock().ok()?.take();
+        let result = lock_recovering(&self.shared.result).take();
         if result.is_some() {
             self.taken = true;
         }
@@ -175,7 +174,15 @@ impl<T> Drop for OperationHandle<T> {
     }
 }
 
-type Job = Box<dyn FnOnce() + Send + 'static>;
+/// Locks a mutex whose data stays consistent even if a holder panicked (a plain queue or a result slot, never
+/// left half-written): a poisoned lock is taken over instead of losing the job or the result (M-8)
+fn lock_recovering<T>(mutex: &Mutex<T>) -> crate::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// A queued job. Called with `true` it does not run the work: it finishes the handle as cancelled (the pool is going
+/// away, M-9)
+type Job = Box<dyn FnOnce(bool) + Send + 'static>;
 
 #[derive(Default)]
 struct Queue {
@@ -184,15 +191,22 @@ struct Queue {
     closing: std::sync::atomic::AtomicBool,
 }
 
+impl Queue {
+    fn lock(&self) -> std::sync::MutexGuard<'_, VecDeque<Job>> {
+        self.jobs.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
 impl fmt::Debug for Queue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let queued = self.jobs.lock().map(|jobs| jobs.len()).unwrap_or(0);
+        let queued = self.lock().len();
         f.debug_struct("Queue").field("queued", &queued).finish()
     }
 }
 
-/// A fixed pool of worker threads that runs long operations (interfaces.md, I-2). Its `Drop` cancels nothing by
-/// itself (the handles do) but closes the queue and joins every thread, so no work outlives the pool (T18)
+/// A fixed pool of worker threads that runs long operations (interfaces.md, I-2). Its `Drop` finishes every job
+/// still queued as cancelled (without running it), then joins the threads, so the work already running ends on its
+/// own and no work outlives the pool (T18)
 #[derive(Debug)]
 pub struct Workers {
     queue: std::sync::Arc<Queue>,
@@ -204,8 +218,10 @@ impl Workers {
     /// A pool of `count` threads, named `<name>-<n>`, with the given role
     pub fn new(name: &'static str, count: usize, role: Role) -> Self {
         let queue = std::sync::Arc::new(Queue::default());
+        // A thread the system refuses is skipped: a pool with none fails its operations (see `start`) instead of
+        // taking the main thread down (B-5)
         let threads = (0..count.max(1))
-            .map(|n| {
+            .filter_map(|n| {
                 let queue = queue.clone();
                 std::thread::Builder::new()
                     .name(format!("{name}-{n}"))
@@ -213,7 +229,7 @@ impl Workers {
                         set_role(role);
                         worker_loop(&queue);
                     })
-                    .expect("the system refused to make a worker thread")
+                    .ok()
             })
             .collect();
         Self { queue, threads, name }
@@ -236,9 +252,9 @@ impl Workers {
         let job_cancel = cancel.clone();
         let job_progress = progress.clone();
         let job_shared = shared.clone();
-        let job: Job = Box::new(move || {
+        let job: Job = Box::new(move |skip| {
             job_shared.started.store(true, Ordering::Release);
-            let result = if job_cancel.is_cancelled() {
+            let result = if skip || job_cancel.is_cancelled() {
                 Err(Error::cancelled())
             } else {
                 // A panic in an operation is a bug: it becomes a failure, never a dead worker (H14)
@@ -247,15 +263,17 @@ impl Workers {
                     Err(_) => Err(Error::new("error.operation.panicked")),
                 }
             };
-            if let Ok(mut slot) = job_shared.result.lock() {
-                *slot = Some(result);
-            }
+            *lock_recovering(&job_shared.result) = Some(result);
             job_shared.finished.store(true, Ordering::Release);
         });
-        if let Ok(mut jobs) = self.queue.jobs.lock() {
-            jobs.push_back(job);
+        if self.threads.is_empty() {
+            drop(job);
+            *lock_recovering(&shared.result) = Some(Err(Error::new("error.operation.no_worker")));
+            shared.finished.store(true, Ordering::Release);
+        } else {
+            self.queue.lock().push_back(job);
+            self.queue.ready.notify_one();
         }
-        self.queue.ready.notify_one();
         OperationHandle { id: OperationId::next(), cancel, progress, shared, taken: false }
     }
 
@@ -271,22 +289,20 @@ impl Workers {
 fn worker_loop(queue: &Queue) {
     loop {
         let job = {
-            let Ok(mut jobs) = queue.jobs.lock() else { return };
+            let mut jobs = queue.lock();
             loop {
-                if let Some(job) = jobs.pop_front() {
-                    break Some(job);
-                }
+                // Closing wins over the queue: what is still queued is finished as cancelled by `Drop`
                 if queue.closing.load(std::sync::atomic::Ordering::Acquire) {
                     break None;
                 }
-                jobs = match queue.ready.wait(jobs) {
-                    Ok(jobs) => jobs,
-                    Err(_) => return,
-                };
+                if let Some(job) = jobs.pop_front() {
+                    break Some(job);
+                }
+                jobs = queue.ready.wait(jobs).unwrap_or_else(|poisoned| poisoned.into_inner());
             }
         };
         match job {
-            Some(job) => job(),
+            Some(job) => job(false),
             None => return,
         }
     }
@@ -294,8 +310,16 @@ fn worker_loop(queue: &Queue) {
 
 impl Drop for Workers {
     fn drop(&mut self) {
-        self.queue.closing.store(true, std::sync::atomic::Ordering::Release);
+        // Closing and draining under the lock, so no worker takes a job after the flag is set
+        let pending: Vec<Job> = {
+            let mut jobs = self.queue.lock();
+            self.queue.closing.store(true, std::sync::atomic::Ordering::Release);
+            jobs.drain(..).collect()
+        };
         self.queue.ready.notify_all();
+        for job in pending {
+            job(true);
+        }
         for thread in self.threads.drain(..) {
             let _ = thread.join();
         }
@@ -376,6 +400,32 @@ mod tests {
         drop(op);
         drop(workers); // joins: the work saw the cancel and returned
         assert!(seen.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn dropping_the_pool_cancels_the_queued_jobs() {
+        let workers = Workers::new("test", 1, Role::Worker);
+        let gate = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let gate_in_work = gate.clone();
+        let _busy = workers.start(move |_, _| {
+            while !gate_in_work.load(std::sync::atomic::Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Ok(())
+        });
+        let ran = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let ran_in_work = ran.clone();
+        let mut queued = workers.start(move |_, _| {
+            ran_in_work.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        });
+        gate.store(true, std::sync::atomic::Ordering::SeqCst);
+        drop(workers);
+        let result = queued.poll().expect("finished by the drop");
+        // Either it started before the drop or it was cancelled; it is never left queued
+        if result.is_err() {
+            assert!(!ran.load(std::sync::atomic::Ordering::SeqCst));
+        }
     }
 
     #[test]

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use lm_base::{Error, Result};
 
-use super::{MAX_SAFE_INT, resource_shape};
+use super::{MAX_DEPTH, MAX_SAFE_INT, resource_shape};
 use crate::value::{Kind, PathStep, Value, path_text};
 
 /// The stable, indented form (2 spaces, one entry per line, a final newline): what the project file holds
@@ -68,6 +68,10 @@ impl Writer {
     }
 
     fn value(&mut self, value: &Value, depth: usize) -> Result<(), Failure> {
+        // The same nesting the reader accepts, so what is saved always opens again (and this recursion is bounded)
+        if matches!(value.kind(), Kind::List | Kind::Object) && depth + 1 > MAX_DEPTH {
+            return Err(Failure::new(Error::new("state.json.too_deep")));
+        }
         match value.kind() {
             Kind::Null => self.out.push_str("null"),
             Kind::Bool => self.out.push_str(if value.as_bool() == Some(true) { "true" } else { "false" }),
@@ -252,6 +256,21 @@ mod tests {
         assert_eq!(from_json("9007199254740991").unwrap(), Value::int(MAX_SAFE_INT));
         // The same digits with a fraction are a real
         assert_eq!(from_json("9007199254740992.0").unwrap(), real(9007199254740992.0));
+    }
+
+    #[test]
+    fn nesting_beyond_what_the_reader_accepts_is_refused_on_write() {
+        let nest = |levels: usize| {
+            let mut value = Value::int(1);
+            for _ in 0..levels {
+                value = Value::list([value]);
+            }
+            value
+        };
+        let ok = to_json_compact(&nest(MAX_DEPTH)).expect("at the limit");
+        assert!(from_json(&ok).is_ok(), "what is written reads back");
+        let err = to_json_compact(&nest(MAX_DEPTH + 1)).expect_err("one too deep");
+        assert_eq!(err.key(), "state.json.too_deep");
     }
 
     #[test]

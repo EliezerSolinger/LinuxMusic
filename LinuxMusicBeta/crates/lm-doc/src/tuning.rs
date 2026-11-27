@@ -35,7 +35,8 @@ pub fn interval_cents(text: &str) -> Option<f64> {
     }
     let (a, b) = t.split_once('/').unwrap_or((t, "1"));
     let (a, b) = (a.parse::<f64>().ok()?, b.parse::<f64>().ok()?);
-    (a > 0.0 && b > 0.0).then(|| 1200.0 * (a / b).log2())
+    // `inf/1`, `1e400/1` (parsed as inf) and ratios that over- or underflow give no finite interval
+    (a > 0.0 && b > 0.0).then(|| 1200.0 * (a / b).log2()).filter(|c| c.is_finite())
 }
 
 /// The intervals of a scale in cents, or the number (1-based) of the first one that is not an interval
@@ -123,6 +124,10 @@ mod tests {
         assert!((interval_cents("3/2").unwrap() - 701.955).abs() < 0.001);
         assert_eq!(interval_cents("2"), Some(1200.0));
         assert_eq!(interval_cents("0/2"), None);
+        assert_eq!(interval_cents("inf/1"), None);
+        assert_eq!(interval_cents("1e400/1"), None);
+        assert_eq!(interval_cents("inf/inf"), None);
+        assert_eq!(interval_cents("1e-300/1e300"), None);
         assert_eq!(parse_intervals(["100.0", "abc"]), Err(2));
     }
 
