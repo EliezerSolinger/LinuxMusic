@@ -148,6 +148,14 @@ impl Sid {
         self.rate = other.rate;
     }
 
+    /// A new chip in the same state (allocates: build time only). Key `resid.cannot_make` if memory ran out (the
+    /// rates were accepted for `self`, so they are not the cause)
+    pub fn try_clone(&self) -> Result<Self> {
+        let mut copy = Self::new(self.clock, self.rate)?;
+        copy.copy_from(self);
+        Ok(copy)
+    }
+
     /// reSID's version text
     pub fn version() -> &'static str {
         // SAFETY: a pointer to a static NUL-terminated string of the library
@@ -156,12 +164,10 @@ impl Sid {
 }
 
 impl Clone for Sid {
-    /// A new chip (allocates: build time only) in the same state
+    /// A new chip (allocates: build time only) in the same state. [`Sid::try_clone`] reports a failure; this one
+    /// aborts as every Rust allocation does when memory runs out (a panic here could only be caught by luck)
     fn clone(&self) -> Self {
-        // The rates were accepted for `self`, so they are for a copy; only memory can run out, which is fatal anyway
-        let mut copy = Self::new(self.clock, self.rate).unwrap_or_else(|e| panic!("reSID: cannot copy a chip: {e}"));
-        copy.copy_from(self);
-        copy
+        self.try_clone().unwrap_or_else(|_| std::alloc::handle_alloc_error(std::alloc::Layout::new::<Self>()))
     }
 
     /// In place, without allocating (audio thread)

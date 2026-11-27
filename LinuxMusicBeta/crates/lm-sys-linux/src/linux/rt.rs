@@ -202,16 +202,37 @@ impl RealtimeGuard {
     }
 }
 
-impl Drop for RealtimeGuard {
-    fn drop(&mut self) {
+impl RealtimeGuard {
+    /// Puts the thread back to the policy it had; `Err(errno)` if the kernel refused (the thread stays real-time)
+    fn leave(&self) -> std::result::Result<(), i32> {
         // An unprivileged thread may leave real time but may not clear SCHED_RESET_ON_FORK (set by us and by rtkit):
         // asking for the old policy without the flag fails with EPERM and leaves the thread in real time. So the flag
         // stays (it is harmless on SCHED_OTHER: a child still starts with the normal policy)
         // SAFETY: plain calls on the calling thread (pid 0)
         let keep = unsafe { libc::sched_getscheduler(0) } & libc::SCHED_RESET_ON_FORK;
         // SAFETY: the calling thread back to its previous policy, with a valid param
-        let r = unsafe { libc::sched_setscheduler(0, self.previous_policy | keep, &self.previous_param) };
-        debug_assert_eq!(r, 0, "leaving real time failed: errno {}", errno());
+        if unsafe { libc::sched_setscheduler(0, self.previous_policy | keep, &self.previous_param) } == 0 {
+            Ok(())
+        } else {
+            Err(errno())
+        }
+    }
+
+    /// Leaves real time now, and says if it did not (`linux.realtime.not_left`, with the errno). Dropping the guard
+    /// does the same but can only write the failure to stderr
+    pub fn release(self) -> Result<()> {
+        let r = self.leave();
+        std::mem::forget(self); // nothing to free; the drop would try (and report) a second time
+        r.map_err(|e| Error::new("linux.realtime.not_left").arg("errno", i64::from(e)))
+    }
+}
+
+impl Drop for RealtimeGuard {
+    #[allow(clippy::print_stderr)] // the only channel a destructor has; the crate has no logger
+    fn drop(&mut self) {
+        if let Err(e) = self.leave() {
+            eprintln!("lm-sys-linux: leaving real time failed (errno {e}); the thread stays real-time");
+        }
     }
 }
 
@@ -254,9 +275,12 @@ pub fn make_current_thread_realtime(
         None => "not asked".to_owned(),
         Some(bus) => match bus.make_thread_realtime(current_thread_id(), priority).wait(timeout) {
             Ok(granted) => {
+                let applied = guard(RtMethod::Rtkit, granted);
                 if matches!(current_policy(), SchedPolicy::Fifo(_) | SchedPolicy::RoundRobin(_)) {
-                    return Ok(guard(RtMethod::Rtkit, granted));
+                    return Ok(applied);
                 }
+                // rtkit may have changed the thread in some other way: back to what it was (the guard's drop)
+                drop(applied);
                 "linux.rtkit.not_applied".to_owned()
             }
             Err(e) => e.to_string(),

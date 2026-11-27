@@ -131,7 +131,10 @@ impl PcmPoll {
     /// Waits until a PCM is ready or in error, the waker is woken, or the timeout passes (`None`: no timeout).
     /// `pcms` must be the same PCMs, in the same order, as given to [`new`](PcmPoll::new). Real-time safe
     pub fn wait(&mut self, pcms: &[&Pcm], timeout: Option<Duration>) -> Result<PollOutcome, PcmIoError> {
-        debug_assert_eq!(pcms.len(), self.spans.len(), "the PCMs of PcmPoll::new");
+        // A different set would poll the descriptors of other PCMs: refused in release too (EINVAL), without allocating
+        if pcms.len() != self.spans.len() {
+            return Err(PcmIoError::Other(libc::EINVAL));
+        }
         for fd in &mut self.fds {
             fd.revents = 0;
         }

@@ -62,13 +62,19 @@ pub(crate) fn scan(x: &[f32]) -> (f32, bool) {
 /// What a watchdog reads (U21): the node each render thread is in (slot + 1, 0 for none), and the blocks rendered
 #[derive(Debug)]
 pub struct Watch {
-    pub(crate) current: Box<[AtomicU32]>,
+    pub(crate) current: Arc<[AtomicU32]>,
     pub(crate) periods: AtomicU64,
 }
 
 impl Watch {
     pub(crate) fn new(threads: usize) -> Self {
         Self { current: (0..threads).map(|_| AtomicU32::new(0)).collect(), periods: AtomicU64::new(0) }
+    }
+
+    /// The raw table (slot + 1, 0 for none; audio thread first): shared with the native-crash handler, which reads
+    /// it inside a signal handler
+    pub fn table(&self) -> Arc<[AtomicU32]> {
+        self.current.clone()
     }
 
     /// The table slot each render thread (audio first, then the workers) is processing right now

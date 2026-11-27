@@ -382,7 +382,7 @@ pub fn build(unit: &str, state: &Value, cx: &BuildContext<'_>) -> Result<Box<dyn
         for _ in 0..count {
             let mut instance = Instance::new(plan.unit.index)?;
             apply(plan, &mut instance, &params, &choices, &reals);
-            instance.start(UNIT_RATE, plan.fixed.unwrap_or(MAX_BLOCK as u32));
+            instance.start(UNIT_RATE, plan.fixed.unwrap_or(MAX_BLOCK as u32))?;
             instances.push(instance);
         }
         if instances.is_empty() {

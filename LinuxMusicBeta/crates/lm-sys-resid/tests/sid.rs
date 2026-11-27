@@ -96,3 +96,11 @@ fn a_copy_plays_on_as_its_original() {
     let mut twin = twin;
     assert_eq!(render(&mut a, 3000), render(&mut twin, 3000));
 }
+
+#[test]
+fn try_clone_plays_on_as_its_original() {
+    let mut a = Sid::new(f64::from(PAL_CLOCK), RATE).unwrap();
+    play(&mut a, 440.0, 0x11);
+    let mut twin = a.try_clone().unwrap();
+    assert_eq!(render(&mut a, 2000), render(&mut twin, 2000));
+}

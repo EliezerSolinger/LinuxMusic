@@ -3,8 +3,9 @@
  *
  * This file is part of LinuxMusic - GPL-2.0-or-later (the crate it builds is GPL-3.0-or-later: see Cargo.toml).
  *
- * Every function is a thin call of a unit's PluginDef. C++ exceptions never cross: nothing here throws (the units'
- * code does not use exceptions; a std::bad_alloc while starting would end the process, as in the legacy program).
+ * Every function is a thin call of a unit's PluginDef. C++ exceptions never cross: the functions that may allocate
+ * (make, register, start, update) catch everything and report it (null or -1); the audio and delete calls do not
+ * allocate. (An exception out of an extern "C" function would end the process.)
  */
 
 #include <cstddef>
@@ -103,10 +104,18 @@ int lmgx_unit_has_update(int unit)
 	return lmms::guitarix::units()[static_cast<std::size_t>(unit)].update != nullptr;
 }
 
+//! Null if the unit cannot be made (an exception, as std::bad_alloc)
 PluginDef* lmgx_make(int unit)
 {
-	plannerThreadSafe();
-	return lmms::guitarix::units()[static_cast<std::size_t>(unit)].make();
+	try
+	{
+		plannerThreadSafe();
+		return lmms::guitarix::units()[static_cast<std::size_t>(unit)].make();
+	}
+	catch (...)
+	{
+		return nullptr;
+	}
 }
 
 void lmgx_describe(PluginDef* def, const char** name, const char** category, int* stereo)
@@ -116,9 +125,10 @@ void lmgx_describe(PluginDef* def, const char** name, const char** category, int
 	*stereo = def->stereo_audio != nullptr;
 }
 
-void lmgx_register(PluginDef* def, void* context, LmgxRegisterFn fn)
+//! 0 when done, -1 when the unit threw while registering
+int lmgx_register(PluginDef* def, void* context, LmgxRegisterFn fn)
 {
-	if (!def->register_params) { return; }
+	if (!def->register_params) { return 0; }
 	t_register = fn;
 	t_context = context;
 	auto reg = ParamReg{};
@@ -126,26 +136,47 @@ void lmgx_register(PluginDef* def, void* context, LmgxRegisterFn fn)
 	reg.registerFloatVar = &registerFloat;
 	reg.registerIntVar = &registerInt;
 	reg.registerBoolVar = &registerBool;
-	def->register_params(reg);
+	auto status = 0;
+	try { def->register_params(reg); }
+	catch (...) { status = -1; }
 	t_register = nullptr;
 	t_context = nullptr;
+	return status;
 }
 
 //! As GuitarixEffect::initialize: the rate (which clears the state), then the activation, in blocks of @p block
-void lmgx_start(PluginDef* def, unsigned int rate, unsigned int block)
+//! 0 when started, -1 when the unit threw (std::bad_alloc while planning its FFTs or buffers)
+int lmgx_start(PluginDef* def, unsigned int rate, unsigned int block)
 {
-	lmms::guitarix::setBlockFrames(block);
-	if (def->set_samplerate) { def->set_samplerate(rate, def); }
-	if (def->activate_plugin) { def->activate_plugin(true, def); }
+	try
+	{
+		lmms::guitarix::setBlockFrames(block);
+		if (def->set_samplerate) { def->set_samplerate(rate, def); }
+		if (def->activate_plugin) { def->activate_plugin(true, def); }
+		return 0;
+	}
+	catch (...)
+	{
+		return -1;
+	}
 }
 
 //! The unit's update (a new impulse response, a new latency setting), in blocks of @p block
-void lmgx_update(int unit, PluginDef* def, unsigned int block)
+//! 0 when done, -1 when the unit threw
+int lmgx_update(int unit, PluginDef* def, unsigned int block)
 {
-	const auto update = lmms::guitarix::units()[static_cast<std::size_t>(unit)].update;
-	if (!update) { return; }
-	lmms::guitarix::setBlockFrames(block);
-	update(def);
+	try
+	{
+		const auto update = lmms::guitarix::units()[static_cast<std::size_t>(unit)].update;
+		if (!update) { return 0; }
+		lmms::guitarix::setBlockFrames(block);
+		update(def);
+		return 0;
+	}
+	catch (...)
+	{
+		return -1;
+	}
 }
 
 void lmgx_mono(PluginDef* def, int count, float* input, float* output)

@@ -7,7 +7,7 @@ use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr::NonNull;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use lm_base::{Error, Result};
 
@@ -27,15 +27,22 @@ pub enum Direction {
     Output,
 }
 
-/// One of the client's own ports: its index in registration order
+/// One of the client's own ports: its index in registration order, and the client that made it (a port of another
+/// client is refused instead of indexing this one's list)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Port(usize);
+pub struct Port {
+    owner: u64,
+    index: usize,
+}
 
 impl Port {
     pub fn index(self) -> usize {
-        self.0
+        self.index
     }
 }
+
+/// Gives each `Client` of the process its own id
+static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
 
 /// The two latencies JACK keeps for a port: from the capture (the converter to here) or to the playback
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -113,6 +120,7 @@ pub struct Client {
     raw: NonNull<ffi::jack_client_t>,
     name: String,
     ports: Vec<PortEntry>,
+    owner: u64,
 }
 
 // SAFETY: a jack_client_t may be used from any thread for the non-real-time API (JACK serialises its server requests);
@@ -183,7 +191,7 @@ impl Client {
         };
         // SAFETY: the client is valid; the name it returns lives as long as the client and is copied now
         let name = unsafe { copy_str(ffi::jack_get_client_name(raw.as_ptr())) };
-        Ok(Client { raw, name, ports: Vec::new() })
+        Ok(Client { raw, name, ports: Vec::new(), owner: NEXT_OWNER.fetch_add(1, Ordering::Relaxed) })
     }
 
     /// The client's name as the server knows it
@@ -233,12 +241,20 @@ impl Client {
         let raw = NonNull::new(raw)
             .ok_or_else(|| Error::new("jack.port_register_failed").arg("port", short_name.to_owned()))?;
         self.ports.push(PortEntry { raw, kind, direction });
-        Ok(Port(self.ports.len() - 1))
+        Ok(Port { owner: self.owner, index: self.ports.len() - 1 })
     }
 
-    /// The full name (`client:port`) of one of the client's ports
+    /// The entry of one of this client's ports; `None` for a port another client made
+    fn entry(&self, port: Port) -> Option<PortEntry> {
+        if port.owner != self.owner {
+            return None;
+        }
+        self.ports.get(port.index).copied()
+    }
+
+    /// The full name (`client:port`) of one of the client's ports (empty for a port of another client)
     pub fn port_name(&self, port: Port) -> String {
-        let entry = self.ports[port.0];
+        let Some(entry) = self.entry(port) else { return String::new() };
         // SAFETY: the port is the client's and valid while it is open
         unsafe { copy_str(ffi::jack_port_name(entry.raw.as_ptr())) }
     }
@@ -319,9 +335,9 @@ impl Client {
     }
 
     /// The total latency JACK computed for one of the client's ports: for an input, from the capture to here; for an
-    /// output, from here to the playback
+    /// output, from here to the playback (zero for a port of another client)
     pub fn latency(&self, port: Port, mode: LatencyMode) -> LatencyRange {
-        let entry = self.ports[port.0];
+        let Some(entry) = self.entry(port) else { return LatencyRange::default() };
         latency_of(entry.raw.as_ptr(), mode)
     }
 
@@ -343,6 +359,7 @@ impl Client {
             process: UnsafeCell::new(process),
             notify,
             ports: self.ports.clone(),
+            owner: self.owner,
             client: self.raw,
             panicked: AtomicBool::new(false),
         });
@@ -426,6 +443,7 @@ struct State {
     process: UnsafeCell<Box<dyn Process>>,
     notify: Arc<dyn Notify>,
     ports: Vec<PortEntry>,
+    owner: u64,
     client: NonNull<ffi::jack_client_t>,
     panicked: AtomicBool,
 }
@@ -492,6 +510,7 @@ impl Drop for ActiveClient {
 pub struct Cycle<'a> {
     frames: u32,
     ports: &'a [PortEntry],
+    owner: u64,
     client: NonNull<ffi::jack_client_t>,
 }
 
@@ -507,7 +526,10 @@ impl Cycle<'_> {
     }
 
     fn buffer(&self, port: Port, kind: PortKind, direction: Direction) -> Option<*mut c_void> {
-        let entry = self.ports.get(port.0)?;
+        if port.owner != self.owner {
+            return None;
+        }
+        let entry = self.ports.get(port.index)?;
         if entry.kind != kind || entry.direction != direction {
             return None;
         }
@@ -584,7 +606,7 @@ impl Cycle<'_> {
             if entry.direction != Direction::Output {
                 continue;
             }
-            let Some(p) = self.buffer(Port(i), entry.kind, Direction::Output) else { continue };
+            let Some(p) = self.buffer(Port { owner: self.owner, index: i }, entry.kind, Direction::Output) else { continue };
             match entry.kind {
                 // SAFETY: an audio output's buffer of `frames` floats
                 PortKind::Audio => unsafe { std::ptr::write_bytes(p.cast::<f32>(), 0, self.frames as usize) },
@@ -604,7 +626,7 @@ pub fn jack_time() -> u64 {
 unsafe extern "C" fn process_trampoline(frames: ffi::jack_nframes_t, arg: *mut c_void) -> c_int {
     // SAFETY: arg is the State, alive while the client is active (Client::activate)
     let state = unsafe { &*(arg as *const State) };
-    let mut cycle = Cycle { frames, ports: &state.ports, client: state.client };
+    let mut cycle = Cycle { frames, ports: &state.ports, owner: state.owner, client: state.client };
     cycle.clear_outputs();
     if state.panicked.load(Ordering::Relaxed) {
         return 0;

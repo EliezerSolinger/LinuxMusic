@@ -244,3 +244,18 @@ fn no_server_is_a_clear_error() {
     let e = Client::open("lm-alone", Some("lm-no-such-server")).unwrap_err();
     assert_eq!(e.key(), "jack.server_not_running");
 }
+
+#[test]
+fn a_port_of_another_client_is_refused_not_indexed() {
+    let Some(server) = Server::start("foreign") else { return };
+    let mut a = Client::open("lm-a", Some(&server.name)).unwrap();
+    let mut b = Client::open("lm-b", Some(&server.name)).unwrap();
+    let _a_out = a.register("out", PortKind::Audio, Direction::Output).unwrap();
+    let b_out = b.register("out", PortKind::Audio, Direction::Output).unwrap();
+    let b_second = b.register("second", PortKind::Audio, Direction::Output).unwrap();
+    // `b_second` is index 1, which `a` does not have
+    assert_eq!(a.port_name(b_second), "");
+    assert_eq!(a.latency(b_second, LatencyMode::Capture).max, 0);
+    // The same index in both clients is still not the same port
+    assert_eq!(a.port_name(b_out), "");
+}

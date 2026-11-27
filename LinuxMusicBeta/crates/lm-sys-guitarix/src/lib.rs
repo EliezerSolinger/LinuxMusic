@@ -68,9 +68,9 @@ mod ffi {
             category: *mut *const c_char,
             stereo: *mut c_int,
         );
-        pub fn lmgx_register(def: *mut PluginDef, context: *mut c_void, f: RegisterFn);
-        pub fn lmgx_start(def: *mut PluginDef, rate: u32, block: u32);
-        pub fn lmgx_update(unit: c_int, def: *mut PluginDef, block: u32);
+        pub fn lmgx_register(def: *mut PluginDef, context: *mut c_void, f: RegisterFn) -> c_int;
+        pub fn lmgx_start(def: *mut PluginDef, rate: u32, block: u32) -> c_int;
+        pub fn lmgx_update(unit: c_int, def: *mut PluginDef, block: u32) -> c_int;
         pub fn lmgx_mono(def: *mut PluginDef, count: c_int, input: *mut f32, output: *mut f32);
         pub fn lmgx_stereo(
             def: *mut PluginDef,
@@ -175,11 +175,23 @@ pub fn units() -> &'static [UnitDesc] {
     UNITS.get_or_init(|| {
         (0..ffi::lmgx_unit_count().max(0) as usize)
             .map(|index| {
-                let probe = Instance::make(index);
                 // SAFETY: `index` is below the count; the id is a static C string of the units list
                 let id = unsafe { text(ffi::lmgx_unit_id(index as c_int)) };
                 // SAFETY: as above
                 let has_update = unsafe { ffi::lmgx_unit_has_update(index as c_int) } != 0;
+                // A unit that cannot be made (out of memory) stays in the list, without parameters, so the indices
+                // hold; `Instance::new` reports it as `guitarix.unit.cannot_make`
+                let Ok(probe) = Instance::make(index) else {
+                    return UnitDesc {
+                        index,
+                        name: id.clone(),
+                        id,
+                        category: String::new(),
+                        stereo: false,
+                        has_update,
+                        params: Vec::new(),
+                    };
+                };
                 let (mut name, mut category, mut stereo) = (std::ptr::null(), std::ptr::null(), 0);
                 // SAFETY: the instance is alive; the pointers written are the unit's static strings
                 unsafe { ffi::lmgx_describe(probe.def.as_ptr(), &mut name, &mut category, &mut stereo) };
@@ -300,13 +312,19 @@ impl fmt::Debug for Instance {
 }
 
 impl Instance {
-    fn make(unit: usize) -> Self {
-        // SAFETY: the caller checked the index (below lmgx_unit_count); the factory returns a new object
+    fn make(unit: usize) -> Result<Self> {
+        let cannot = || Error::new("guitarix.unit.cannot_make").arg("unit", unit as i64);
+        // SAFETY: the caller checked the index (below lmgx_unit_count); the factory returns a new object, or null
         let def = unsafe { ffi::lmgx_make(unit as c_int) };
-        let def = NonNull::new(def).unwrap_or_else(|| panic!("Guitarix's unit {unit} could not be made"));
+        let def = NonNull::new(def).ok_or_else(cannot)?;
         let mut reg = Registering { registered: Vec::new() };
         // SAFETY: the instance is alive; the callback only records into `reg`, which outlives the call
-        unsafe { ffi::lmgx_register(def.as_ptr(), (&raw mut reg).cast(), register_param) };
+        let status = unsafe { ffi::lmgx_register(def.as_ptr(), (&raw mut reg).cast(), register_param) };
+        if status != 0 {
+            // SAFETY: made above, owned here only, never used again
+            unsafe { ffi::lmgx_delete(def.as_ptr()) };
+            return Err(cannot());
+        }
         let (mut name, mut category, mut stereo) = (std::ptr::null(), std::ptr::null(), 0);
         // SAFETY: the instance is alive
         unsafe { ffi::lmgx_describe(def.as_ptr(), &mut name, &mut category, &mut stereo) };
@@ -321,13 +339,13 @@ impl Instance {
                 }
             }
         }
-        Self { def, unit, registered: reg.registered, vars, stereo: stereo != 0, block: 0 }
+        Ok(Self { def, unit, registered: reg.registered, vars, stereo: stereo != 0, block: 0 })
     }
 
     /// A new instance of the unit at `unit` (its place in [`units`]); its parameters at their defaults. Allocates
     pub fn new(unit: usize) -> Result<Self> {
         let desc = units().get(unit).ok_or_else(|| Error::new("guitarix.unit.unknown").arg("unit", unit as i64))?;
-        let made = Self::make(unit);
+        let made = Self::make(unit)?;
         if made.vars.len() != desc.params.len() {
             return Err(Error::new("guitarix.unit.parameters").arg("unit", desc.id.as_str()));
         }
@@ -346,18 +364,30 @@ impl Instance {
 
     /// Starts it at `rate`, to process `block` frames at a time (what Guitarix's JACK period was; a convolving unit
     /// needs a power of two of at least [`MIN_CONVOLVER_BLOCK`], the Detune exactly that many each call): its
-    /// rate (which clears its state), then its activation, with the parameters as they are set. Allocates
-    pub fn start(&mut self, rate: u32, block: u32) {
+    /// rate (which clears its state), then its activation, with the parameters as they are set. Allocates. Key
+    /// `guitarix.unit.cannot_start` if the unit threw (out of memory); the unit is then not to be processed
+    pub fn start(&mut self, rate: u32, block: u32) -> Result<()> {
         self.block = block.clamp(1, MAX_BLOCK as u32);
         // SAFETY: the instance is alive and used by this thread only
-        unsafe { ffi::lmgx_start(self.def.as_ptr(), rate, self.block) };
+        let status = unsafe { ffi::lmgx_start(self.def.as_ptr(), rate, self.block) };
+        if status != 0 {
+            self.block = 0; // the processors refuse a block until a start succeeds
+            return Err(Error::new("guitarix.unit.cannot_start").arg("unit", self.unit as i64));
+        }
+        Ok(())
     }
 
     /// The unit's work after a change of the parameters it reads at the start (a convolver's impulse response, the
-    /// Detune's latency setting): what the legacy program did on its main thread. Allocates
-    pub fn update(&mut self) {
+    /// Detune's latency setting): what the legacy program did on its main thread. Allocates. Key
+    /// `guitarix.unit.cannot_start` if the unit threw
+    pub fn update(&mut self) -> Result<()> {
         // SAFETY: the instance is alive and used by this thread only
-        unsafe { ffi::lmgx_update(self.unit as c_int, self.def.as_ptr(), self.block) };
+        let status = unsafe { ffi::lmgx_update(self.unit as c_int, self.def.as_ptr(), self.block) };
+        if status != 0 {
+            self.block = 0;
+            return Err(Error::new("guitarix.unit.cannot_start").arg("unit", self.unit as i64));
+        }
+        Ok(())
     }
 
     /// Sets parameter `param` (its place in [`UnitDesc::params`]) to `value`, in each of its variables: a float as

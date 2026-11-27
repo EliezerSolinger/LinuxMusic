@@ -80,10 +80,8 @@ impl CrashNote {
                     _ => None,
                 })
                 .collect();
-            let watch = watch.clone();
-            // Atomics only: this runs inside the signal handler
-            let probe = Box::new(move |index: usize| watch.current_nodes().nth(index).flatten());
-            file.set_notes(lm_sys_linux::crash::CrashNotes::new(probe, notes));
+            // The handler reads the table's atomics directly
+            file.set_notes(lm_sys_linux::crash::CrashNotes::new(watch.table(), notes));
         }
         #[cfg(not(unix))]
         let _ = (table, watch);

@@ -45,12 +45,15 @@ struct Connection {
     delete: Atom,
 }
 
-// SAFETY: used from the main thread only (the module's contract); the statics only need to hold it
+// SAFETY: the statics only need to hold it; it is used from the thread that made it alone (`connection` refuses
+// any other thread)
 unsafe impl Send for Connection {}
-// SAFETY: as above, nothing is called concurrently
+// SAFETY: as above: a `&Connection` is handed out to the owner thread alone, so nothing is called concurrently
 unsafe impl Sync for Connection {}
 
 static CONNECTION: OnceLock<std::result::Result<Connection, &'static str>> = OnceLock::new();
+/// The thread that made the connection (the first to ask: the main thread, by the module's contract)
+static OWNER: OnceLock<std::thread::ThreadId> = OnceLock::new();
 /// The windows the user asked to close since they were last asked about
 static CLOSED: Mutex<Vec<Window>> = Mutex::new(Vec::new());
 
@@ -102,7 +105,13 @@ fn load() -> std::result::Result<Connection, &'static str> {
     Ok(Connection { x, display, delete })
 }
 
+/// The connection, only on the thread that made it: Xlib is not thread safe (`gui.wrong_thread` elsewhere)
 fn connection() -> Result<&'static Connection> {
+    let me = std::thread::current().id();
+    let owner = *OWNER.get_or_init(|| me);
+    if owner != me {
+        return Err(Error::new("gui.wrong_thread"));
+    }
     CONNECTION.get_or_init(load).as_ref().map_err(|k| Error::new(k))
 }
 
@@ -222,5 +231,18 @@ impl Drop for Native {
                 (c.x.flush)(c.display);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn another_thread_is_refused_the_connection() {
+        // Whether or not libX11 is there, the first thread to ask owns the connection
+        let _ = init();
+        let other = std::thread::spawn(|| init().err().map(|e| e.key().to_owned())).join().unwrap();
+        assert_eq!(other.as_deref(), Some("gui.wrong_thread"));
     }
 }

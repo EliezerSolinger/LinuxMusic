@@ -6,6 +6,7 @@
 
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicU32;
 
 use lm_sys_linux::crash::{CrashNotes, RenderThreadMark, arm, dereference_null};
 
@@ -14,9 +15,9 @@ const DIR: &str = "LM_SYS_LINUX_CRASH_DIR";
 
 fn child(how: &'static str, dir: PathBuf) {
     let file = arm(&dir, "suspeito.json").expect("arm");
-    // Render thread 1 is in slot 7 (the probe of the session reads lm_render::Watch the same way)
+    // Render thread 1 is in slot 7 (the table is lm_render::Watch's: slot + 1)
     file.set_notes(CrashNotes::new(
-        Box::new(|index| (index == 1).then_some(7)),
+        std::sync::Arc::new([AtomicU32::new(0), AtomicU32::new(8)]),
         vec![(3, b"three".to_vec()), (7, b"{\"node\":\"seven\"}".to_vec())],
     ));
     let render = how != "main-thread";

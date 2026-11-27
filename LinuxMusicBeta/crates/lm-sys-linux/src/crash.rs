@@ -16,17 +16,18 @@
 use std::ffi::{CString, c_int, c_void};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use lm_base::{Error, Result};
 
 /// The signals a native crash arrives as
 pub const SIGNALS: [c_int; 4] = [libc::SIGSEGV, libc::SIGBUS, libc::SIGILL, libc::SIGABRT];
 
-/// What a render thread is processing right now, by its index (0 the device's thread, 1.. the workers): the table
-/// slot, or `None` between nodes. Reads atomics only: it runs inside the signal handler
-pub type Probe = Box<dyn Fn(usize) -> Option<u32> + Send + Sync>;
+/// What each render thread is processing right now, by its index (0 the device's thread, 1.. the workers): the
+/// table slot plus one, or 0 between nodes. A plain table of atomics, so what the signal handler does with it is
+/// two loads, whatever the caller does (a closure here could do anything inside the handler)
+pub type Probe = Arc<[AtomicU32]>;
 
 /// The notes the handler may write, formatted in advance: one per table slot that holds a plugin
 pub struct CrashNotes {
@@ -270,7 +271,8 @@ fn note_the_suspect() {
     // SAFETY: as above, for the notes
     let notes = unsafe { &*notes };
     let Some(index) = render_index_of_this_thread() else { return };
-    let Some(note) = (notes.probe)(index).and_then(|slot| notes.note(slot)) else { return };
+    let Some(slot) = notes.probe.get(index).and_then(|a| a.load(Ordering::Relaxed).checked_sub(1)) else { return };
+    let Some(note) = notes.note(slot) else { return };
     if write_all(armed.fd, note) {
         // SAFETY: fsync and rename are async-signal-safe; the descriptor and the C strings are alive
         unsafe {

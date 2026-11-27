@@ -36,7 +36,7 @@ fn every_unit_plays_at_every_rate_and_starts_no_thread() {
         for rate in [44_100u32, 48_000, 96_000, 192_000] {
             let block = if unit.id == "smbPitchShift" { 256 } else { MIN_CONVOLVER_BLOCK as usize };
             let mut i = Instance::new(unit.index).unwrap();
-            i.start(rate, block as u32);
+            i.start(rate, block as u32).unwrap();
             let mut input = [vec![0.0f32; block], vec![0.0f32; block]];
             let mut output = [vec![0.0f32; block], vec![0.0f32; block]];
             let mut n = 0u64;
@@ -75,7 +75,7 @@ fn parameters_reach_the_unit() {
     let level = |db: f32| {
         let mut i = Instance::new(unit.index).unwrap();
         i.set(p, db);
-        i.start(48_000, 256);
+        i.start(48_000, 256).unwrap();
         let mut input = vec![0.5f32; 256];
         let mut output = vec![0.0f32; 256];
         for _ in 0..200 {
@@ -94,8 +94,13 @@ fn a_block_larger_than_the_started_one_is_refused() {
     // The units size their buffers at start: more frames than that would write past them
     let unit = units().iter().find(|u| u.id == "gain").unwrap();
     let mut i = Instance::new(unit.index).unwrap();
-    i.start(48_000, 64);
+    i.start(48_000, 64).unwrap();
     let mut input = vec![0.0f32; 128];
     let mut output = vec![0.0f32; 128];
     i.process_mono(&mut input, &mut output);
+}
+
+#[test]
+fn an_unknown_unit_is_an_error_not_a_panic() {
+    assert!(Instance::new(usize::MAX).is_err());
 }

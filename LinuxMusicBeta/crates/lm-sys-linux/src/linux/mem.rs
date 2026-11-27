@@ -169,7 +169,8 @@ impl<T: Zeroable> Drop for LockedBuffer<T> {
 }
 
 /// Touches `bytes` of the calling thread's stack below the current frame, so those pages are mapped before the
-/// real-time loop needs them. Keep `bytes` well inside the thread's stack size
+/// real-time loop needs them. `bytes` is clamped to half of the thread's stack (a quarter of a megabyte when the
+/// bounds are unknown), so a large request cannot overflow it
 pub fn prefault_stack(bytes: usize) {
     #[inline(never)]
     fn touch(pages: usize) {
@@ -180,7 +181,8 @@ pub fn prefault_stack(bytes: usize) {
         }
         std::hint::black_box(&page);
     }
-    touch(bytes.div_ceil(4096));
+    let cap = stack_bounds().map_or(256 * 1024, |(_, size)| size / 2);
+    touch(bytes.min(cap).div_ceil(4096));
 }
 
 /// The calling thread's stack bounds (lowest address, size)

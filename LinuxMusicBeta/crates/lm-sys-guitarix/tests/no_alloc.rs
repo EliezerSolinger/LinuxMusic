@@ -20,7 +20,7 @@ fn main() {
         let count = if unit.stereo { 1 } else { 2 };
         let mut instances: Vec<Instance> = (0..count).map(|_| Instance::new(unit.index).unwrap()).collect();
         for i in &mut instances {
-            i.start(48_000, block as u32);
+            i.start(48_000, block as u32).unwrap();
         }
         let mut input = [vec![0.0f32; block], vec![0.0f32; block]];
         let mut output = [vec![0.0f32; block], vec![0.0f32; block]];
