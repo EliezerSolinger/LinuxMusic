@@ -6,6 +6,8 @@
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use lm_base::{Cancel, Error, Progress, Result};
@@ -63,8 +65,24 @@ pub struct ScanReport {
     pub skipped: Vec<String>,
 }
 
+/// How many messages one helper run may send before it is stopped
+const MAX_MESSAGES: usize = 100_000;
+/// How many parameters of one plugin are taken (each key is interned for good)
+const MAX_PARAMS: usize = 2048;
+/// The longest parameter key taken; a longer one is skipped
+const MAX_KEY: usize = 160;
+/// The largest magnitude taken for a parameter's range or default
+const MAX_RANGE: f64 = 1.0e9;
+/// The longest name, id or path taken as text from a helper
+const MAX_TEXT: usize = 1024;
+
 fn get_f(v: &Value, k: &str, d: f64) -> f64 {
-    v.get(k).and_then(|x| x.as_real().or_else(|| x.as_int().map(|i| i as f64))).unwrap_or(d)
+    let x = v.get(k).and_then(|x| x.as_real().or_else(|| x.as_int().map(|i| i as f64))).unwrap_or(d);
+    if x.is_finite() { x.clamp(-MAX_RANGE, MAX_RANGE) } else { d }
+}
+
+fn limited(t: &str) -> String {
+    t.chars().take(MAX_TEXT).collect()
 }
 
 fn get_b(v: &Value, k: &str) -> bool {
@@ -72,7 +90,7 @@ fn get_b(v: &Value, k: &str) -> bool {
 }
 
 fn get_t(v: &Value, k: &str) -> String {
-    v.get(k).and_then(Value::as_text).unwrap_or("").to_owned()
+    limited(v.get(k).and_then(Value::as_text).unwrap_or(""))
 }
 
 impl Scanned {
@@ -111,8 +129,9 @@ impl Scanned {
 /// A plugin from the helper's listing
 pub fn scanned_from(v: &Value) -> Option<Scanned> {
     Some(Scanned {
-        format: v.get("format")?.as_text()?.to_owned(),
-        uri: v.get("uri")?.as_text()?.to_owned(),
+        // The id is the format and the uri as they are: one that is too long is not a plugin of ours
+        format: v.get("format")?.as_text().filter(|t| t.len() <= MAX_TEXT)?.to_owned(),
+        uri: v.get("uri")?.as_text().filter(|t| t.len() <= MAX_TEXT)?.to_owned(),
         name: get_t(v, "name"),
         instrument: get_b(v, "instrument"),
         inputs: v.get("inputs").and_then(Value::as_int).unwrap_or(0).clamp(0, 64) as usize,
@@ -122,9 +141,14 @@ pub fn scanned_from(v: &Value) -> Option<Scanned> {
             .get("params")
             .into_iter()
             .flat_map(Value::items)
+            .take(MAX_PARAMS)
             .filter_map(|p| {
+                let key = p.get("key")?.as_text()?;
+                if key.len() > MAX_KEY {
+                    return None;
+                }
                 Some(ScannedParam {
-                    key: p.get("key")?.as_text()?.to_owned(),
+                    key: key.to_owned(),
                     name: get_t(p, "name"),
                     min: get_f(p, "min", 0.0),
                     max: get_f(p, "max", 1.0),
@@ -137,7 +161,7 @@ pub fn scanned_from(v: &Value) -> Option<Scanned> {
             .collect(),
         latency: get_b(v, "latency"),
         has_window: get_b(v, "has_window"),
-        file: v.get("file").and_then(Value::as_text).map(str::to_owned),
+        file: v.get("file").and_then(Value::as_text).map(limited),
     })
 }
 
@@ -152,18 +176,40 @@ fn run_helper(config: &HostConfig, args: &[String], timeout: Duration, cancel: &
         .spawn()
         .map_err(|e| Error::new("plugin_host.spawn").arg("error", e.to_string()))?;
     let out = child.stdout.take().ok_or_else(|| Error::new("plugin_host.spawn"))?;
-    let reader = std::thread::spawn(move || {
-        let mut r = BufReader::new(out);
-        let mut v = Vec::new();
-        while let Ok(Some(m)) = read_message(&mut r) {
-            v.push(m);
-        }
-        v
-    });
+    // A helper that talks without end is stopped: the reader keeps no more than `MAX_MESSAGES` and says so
+    let flooded = Arc::new(AtomicBool::new(false));
+    let reader = {
+        let flooded = Arc::clone(&flooded);
+        std::thread::spawn(move || {
+            let mut r = BufReader::new(out);
+            let mut v = Vec::new();
+            while let Ok(Some(m)) = read_message(&mut r) {
+                if v.len() >= MAX_MESSAGES {
+                    flooded.store(true, Ordering::Release);
+                    break;
+                }
+                v.push(m);
+            }
+            v
+        })
+    };
     let until = Instant::now() + timeout;
     let status = loop {
-        if let Some(s) = child.try_wait().map_err(|e| Error::new("plugin_host.spawn").arg("error", e.to_string()))? {
-            break s;
+        match child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) => {}
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = reader.join();
+                return Err(Error::new("plugin_host.spawn").arg("error", e.to_string()));
+            }
+        }
+        if flooded.load(Ordering::Acquire) {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = reader.join();
+            return Err(Error::new("plugin_host.flood"));
         }
         if Instant::now() >= until || cancel.is_cancelled() {
             let _ = child.kill();
@@ -278,4 +324,37 @@ pub fn scan(
     }
     progress.set(1.0);
     Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plugin(params: Vec<Value>) -> Value {
+        Value::object([
+            ("format", Value::text("test")),
+            ("uri", Value::text("x")),
+            ("inputs", Value::int(1_000_000)),
+            ("params", Value::list(params)),
+        ])
+    }
+
+    #[test]
+    fn what_the_helper_lists_is_limited() {
+        let long = "k".repeat(MAX_KEY + 1);
+        let many = (0..MAX_PARAMS + 10).map(|i| Value::object([("key", Value::text(format!("p{i}")))]));
+        let mut params: Vec<Value> = vec![Value::object([("key", Value::text(long))])];
+        params.extend(many);
+        let s = scanned_from(&plugin(params)).unwrap();
+        // The long key is skipped, and no more than the cap are taken
+        assert!(s.params.len() < MAX_PARAMS + 10 && s.params.iter().all(|p| p.key.len() <= MAX_KEY));
+        assert_eq!(s.inputs, 64);
+        // A range beyond the cap is brought back into it
+        let p = Value::object([("key", Value::text("a")), ("min", Value::int(i64::MIN / 2)), ("max", Value::int(i64::MAX / 2))]);
+        let s = scanned_from(&plugin(vec![p])).unwrap();
+        assert!(s.params[0].min >= -MAX_RANGE && s.params[0].max <= MAX_RANGE);
+        // An id too long to be one is not a plugin
+        let v = Value::object([("format", Value::text("test")), ("uri", Value::text("u".repeat(MAX_TEXT + 1)))]);
+        assert!(scanned_from(&v).is_none());
+    }
 }

@@ -11,6 +11,13 @@ use lm_state::Value;
 /// The control protocol's version
 pub const PROTOCOL: i64 = 1;
 
+/// The message as a line (with its newline), ready to be written in one piece
+pub fn encode_message(v: &Value) -> Result<Vec<u8>> {
+    let mut line = lm_state::to_json_compact(v)?.into_bytes();
+    line.push(b'\n');
+    Ok(line)
+}
+
 pub fn write_message(w: &mut impl Write, v: &Value) -> Result<()> {
     let line = lm_state::to_json_compact(v)?;
     let io = |e: std::io::Error| Error::new("plugin_host.pipe").arg("error", e.to_string());
@@ -76,12 +83,16 @@ pub fn error_to(e: &Error) -> Value {
     Value::object([("key", Value::text(e.key())), ("args", Value::list(args))])
 }
 
+/// The longest argument text taken from a helper's error
+const MAX_ARG: usize = 1024;
+
 pub fn error_from(v: &Value) -> Error {
     let key = v.get("key").and_then(Value::as_text).unwrap_or("plugin_host.failed");
     let mut e = Error::new(intern(key));
     for a in v.get("args").into_iter().flat_map(Value::items) {
         if let (Some(k), Some(t)) = (a.at(0).and_then(Value::as_text), a.at(1).and_then(Value::as_text)) {
-            e = e.arg(intern(k), t);
+            // The text is the helper's: a line of 16 MB must not become an error's argument
+            e = e.arg(intern(k), t.chars().take(MAX_ARG).collect::<String>());
         }
     }
     e
@@ -121,5 +132,18 @@ mod tests {
         assert!(unhex("abc").is_err() && unhex("zz").is_err());
         let e = Error::new("lilv.missing_feature").arg("feature", "x");
         assert_eq!(error_from(&error_to(&e)), e);
+    }
+
+    #[test]
+    fn a_helpers_error_text_is_limited_and_a_message_is_one_line() {
+        let big = "x".repeat(100_000);
+        let v = Value::object([
+            ("key", Value::text("a.b")),
+            ("args", Value::list([Value::list([Value::text("k"), Value::text(big)])])),
+        ]);
+        let e = error_from(&v);
+        assert!(e.label.args.iter().all(|(_, a)| matches!(a, lm_base::Arg::Text(t) if t.chars().count() <= MAX_ARG)));
+        let line = encode_message(&Value::object([("t", Value::text("x"))])).unwrap();
+        assert!(line.ends_with(b"\n") && line.iter().filter(|b| **b == b'\n').count() == 1);
     }
 }

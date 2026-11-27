@@ -56,6 +56,15 @@ pub mod w {
 }
 
 pub const STATUS_READY: u32 = 1;
+
+/// The most latency (frames) the core accepts from a plugin: the latency becomes a delay line in the render program,
+/// so a number a third-party plugin made up must not decide an allocation (about 5 s at 48 kHz)
+pub const MAX_LATENCY: u32 = 1 << 18;
+
+/// A latency a helper reported, limited to [`MAX_LATENCY`]
+pub fn clamp_latency(frames: u32) -> u32 {
+    frames.min(MAX_LATENCY)
+}
 pub const EVENT_WORDS: usize = 6;
 pub const OUT_WORDS: usize = 2;
 /// An out event's index word with this bit: the window began a gesture on that parameter (its value word is unused)
@@ -210,6 +219,15 @@ pub fn put(words: &[AtomicU32], at: usize, data: &[f32]) {
     }
 }
 
+/// Replaces what is not a finite number by silence: one NaN from a plugin would live on in any feedback after it
+pub fn scrub(data: &mut [f32]) {
+    for x in data {
+        if !x.is_finite() {
+            *x = 0.0;
+        }
+    }
+}
+
 /// Words into `f32`s
 pub fn get(words: &[AtomicU32], at: usize, out: &mut [f32]) {
     let n = out.len();
@@ -242,5 +260,14 @@ mod tests {
         }
         let l = Layout::new(256, 2, 2, 2);
         assert!(l.words() > l.out_events() && l.input(1) == w::HEADER + 256);
+    }
+
+    #[test]
+    fn a_made_up_latency_is_limited_and_non_finite_audio_is_scrubbed() {
+        assert_eq!(clamp_latency(u32::MAX), MAX_LATENCY);
+        assert_eq!(clamp_latency(480), 480);
+        let mut a = [1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -0.5];
+        scrub(&mut a);
+        assert_eq!(a, [1.0, 0.0, 0.0, 0.0, -0.5]);
     }
 }

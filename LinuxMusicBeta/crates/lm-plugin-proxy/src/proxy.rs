@@ -13,10 +13,16 @@ use std::time::{Duration, Instant};
 use lm_render::{Adopted, PluginErrorKey, PluginRequest, ProcessContext, Processor};
 use lm_sys_ipc::SharedMemory;
 
-use crate::layout::{EVENT_WORDS, Layout, OUT_BEGIN, OUT_END, OUT_INDEX, OUT_WORDS, encode, get, put, w};
+use crate::layout::{
+    EVENT_WORDS, Layout, OUT_BEGIN, OUT_END, OUT_INDEX, OUT_WORDS, clamp_latency, encode, get, put, scrub, w,
+};
 
 /// Blocks missed in a row after which the plugin counts as hung
 pub const HANG_BLOCKS: u32 = 16;
+
+/// The longest a block may take when there is no deadline (export): a helper alive but stuck is then counted as a
+/// missed block, so the plugin is declared hung after [`HANG_BLOCKS`] of them and the export goes on without it
+pub const WAIT_LIMIT: Duration = Duration::from_secs(10);
 
 /// How long a block may take
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -76,6 +82,7 @@ impl Proxy {
         latency: u32,
         owner: Arc<dyn Any + Send + Sync>,
     ) -> Proxy {
+        let latency = clamp_latency(latency);
         let seq = shm.words()[w::DONE].load(Ordering::Acquire);
         Proxy { shm, layout, state, deadline, rate, seq, latency, reported: false, _owner: owner }
     }
@@ -181,7 +188,11 @@ impl Processor for Proxy {
         // Wait for it, bounded by the deadline
         let start = Instant::now();
         let budget = match self.deadline {
-            Deadline::Live(f) => Some(Duration::from_secs_f64(frames as f64 / f64::from(self.rate.max(1)) * f)),
+            Deadline::Live(f) => {
+                // `from_secs_f64` panics on a negative or non-finite number
+                let secs = frames as f64 / f64::from(self.rate.max(1)) * f;
+                Some(Duration::from_secs_f64(if secs.is_finite() { secs.clamp(0.0, 10.0) } else { 0.0 }))
+            }
             Deadline::Wait => None,
         };
         let mut spins = 0u32;
@@ -209,21 +220,29 @@ impl Processor for Proxy {
                     }
                     lm_sys_ipc::wait(&words[w::DONE], done, Some(b - spent));
                 }
-                None => lm_sys_ipc::wait(&words[w::DONE], done, Some(Duration::from_millis(20))),
+                None => {
+                    if start.elapsed() >= WAIT_LIMIT {
+                        self.miss(cx);
+                        return;
+                    }
+                    lm_sys_ipc::wait(&words[w::DONE], done, Some(Duration::from_millis(20)));
+                }
             }
         }
         self.state.misses.store(0, Ordering::Relaxed);
         {
             let (_, mut outs, _) = cx.buffers.split();
             for ch in 0..l.outputs.min(outs.len()) {
-                get(words, l.output(ch), &mut outs.get_mut(ch)[..frames]);
+                let out = &mut outs.get_mut(ch)[..frames];
+                get(words, l.output(ch), out);
+                scrub(out);
             }
             for ch in l.outputs..outs.len() {
                 outs.get_mut(ch)[..frames].fill(0.0);
             }
         }
         // What the plugin says back: its latency, its own parameter changes (its window, a preset)
-        let latency = words[w::LATENCY].load(Ordering::Acquire);
+        let latency = clamp_latency(words[w::LATENCY].load(Ordering::Acquire));
         if latency != self.latency {
             self.latency = latency;
             cx.host.request(PluginRequest::LatencyChanged);
@@ -240,8 +259,11 @@ impl Processor for Proxy {
                     PluginRequest::GestureBegin { index: index & OUT_INDEX }
                 } else if index & OUT_END != 0 {
                     PluginRequest::GestureEnd { index: index & OUT_INDEX }
-                } else {
+                } else if value.is_finite() {
                     PluginRequest::ParamChanged { index, value }
+                } else {
+                    // A value that is not a number would fail the session's whole batch of parameters
+                    continue;
                 };
                 let is_edge = !matches!(request, PluginRequest::ParamChanged { .. });
                 if is_edge == edges {

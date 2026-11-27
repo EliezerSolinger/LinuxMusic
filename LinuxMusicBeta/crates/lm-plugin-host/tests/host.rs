@@ -42,6 +42,13 @@ fn request(uri: &str, inputs: usize, params: &[(&str, f32)]) -> LoadRequest {
 }
 
 #[test]
+fn a_made_up_latency_is_limited_before_it_reaches_the_renderer() {
+    // The test plugin reports whatever its parameter says: four billion frames would be a delay line of gigabytes
+    let (proxy, _hosted) = start(&config(), &request("gain", 2, &[("latency", 4.0e9)])).unwrap();
+    assert_eq!(proxy.latency(), lm_plugin_proxy::layout::MAX_LATENCY);
+}
+
+#[test]
 fn an_effect_plays_through_the_helper_without_allocating() {
     // Exact, so without a deadline (the export's mode): the test machine runs the other tests meanwhile
     let mut cfg = config();

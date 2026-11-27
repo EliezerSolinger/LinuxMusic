@@ -68,7 +68,7 @@ pub fn external_in(
         let chunk = state.get("chunk").and_then(Value::as_text).and_then(|h| unhex(h).ok());
         let params = state
             .get(PARAMS_KEY)
-            .map(|p| p.entries().filter_map(|(k, v)| Some((k.to_owned(), v.as_real()? as f32))).collect())
+            .map(|p| p.entries().filter_map(|(k, v)| Some((k.to_owned(), Some(v.as_real()? as f32).filter(|x| x.is_finite())?))).collect())
             .unwrap_or_default();
         let (inputs, outputs) = layout_channels(&s, cx.channels);
         let req = LoadRequest {

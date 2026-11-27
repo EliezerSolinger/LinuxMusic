@@ -7,12 +7,12 @@
 //! so an idle helper costs no CPU.
 
 use std::collections::BTreeMap;
-use std::io::BufReader;
+use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::AtomicI64;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -21,8 +21,8 @@ use lm_base::{Error, Result};
 use lm_state::Value;
 use lm_sys_ipc::SharedMemory;
 
-use crate::layout::{Layout, w};
-use crate::protocol::{PROTOCOL, error_from, hex, read_message, unhex, write_message};
+use crate::layout::{Layout, clamp_latency, w};
+use crate::protocol::{PROTOCOL, encode_message, error_from, hex, read_message, unhex};
 use crate::proxy::{Deadline, Proxy, ProxyState};
 
 /// Where the helper program is and how the instances run
@@ -134,6 +134,12 @@ impl std::fmt::Debug for Hosted {
     }
 }
 
+/// A value from the helper as an `f32`: `None` when it does not fit (a double above the `f32` range becomes infinity)
+fn finite_f32(x: f64) -> Option<f32> {
+    let v = x as f32;
+    v.is_finite().then_some(v)
+}
+
 fn io(key: &'static str, e: &std::io::Error) -> Error {
     Error::new(key).arg("error", e.to_string())
 }
@@ -157,8 +163,18 @@ fn wait_reply(rx: &Receiver<Value>, until: Instant, want: &[&str]) -> Result<Val
     }
 }
 
+/// Messages of one instance waiting to be read: an instance that never reads them (the helper chatters) loses the
+/// newest ones instead of growing the core's memory
+const REPLY_QUEUE: usize = 256;
+/// Messages waiting to be written to the helper's standard input
+const OUTBOX: usize = 64;
+/// The largest window size the core takes from a helper (a made up size must not reach the window system)
+const MAX_WINDOW: u32 = 16_384;
+/// The longest reason text taken from a helper
+const MAX_REASON: usize = 160;
+
 /// Where a helper's answers go: by the instance they are about (`-1`: the helper's own `hello`)
-type Routes = Arc<Mutex<BTreeMap<i64, (Sender<Value>, Arc<AtomicBool>)>>>;
+type Routes = Arc<Mutex<BTreeMap<i64, (SyncSender<Value>, Arc<AtomicBool>)>>>;
 
 impl std::fmt::Debug for Process {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -169,8 +185,10 @@ impl std::fmt::Debug for Process {
 /// A helper process: one instance alone (the default) or a group of instances (`lm-plugin-host run --group`), the
 /// cost of a group being that a crash or a hang of one takes the others down with it
 pub struct Process {
-    child: Mutex<Child>,
-    stdin: Mutex<Option<ChildStdin>>,
+    child: Arc<Mutex<Child>>,
+    /// Lines for the helper's standard input, written by a thread of their own: a helper that stopped reading blocks
+    /// that thread, never the caller (and never the thread that drops the last reference)
+    outbox: Mutex<Option<SyncSender<Vec<u8>>>>,
     routes: Routes,
     group: bool,
     next: AtomicI64,
@@ -195,9 +213,11 @@ impl Process {
         let stdin = child.stdin.take().ok_or_else(|| Error::new("plugin_host.spawn"))?;
         let stdout = child.stdout.take().ok_or_else(|| Error::new("plugin_host.spawn"))?;
         let routes: Routes = Arc::new(Mutex::new(BTreeMap::new()));
-        let (tx, hello_rx) = channel();
+        let child = Arc::new(Mutex::new(child));
+        let (tx, hello_rx) = sync_channel(REPLY_QUEUE);
         routes.lock().unwrap_or_else(PoisonError::into_inner).insert(-1, (tx, Arc::new(AtomicBool::new(false))));
         let reader_routes = Arc::clone(&routes);
+        let reader_child = Arc::clone(&child);
         let reader = std::thread::Builder::new().name("lm-plugin-host-out".into()).spawn(move || {
             let mut r = BufReader::new(stdout);
             while let Ok(Some(v)) = read_message(&mut r) {
@@ -214,19 +234,33 @@ impl Process {
                     gui.store(false, Ordering::Release);
                     continue;
                 }
-                let _ = tx.send(v);
+                // Never blocks: a full queue drops the message
+                let _ = tx.try_send(v);
             }
-            // The helper is gone: every instance's wait ends as a crash
+            // The helper is gone, or sent a line that cannot be read (the control channel is lost, so the instance
+            // would be half dead: the audio goes on, the state and the window never answer): it is killed, and every
+            // instance's wait ends as a crash
+            let _ = reader_child.lock().unwrap_or_else(PoisonError::into_inner).kill();
             reader_routes.lock().unwrap_or_else(PoisonError::into_inner).clear();
         });
-        if let Err(e) = reader {
-            let _ = child.kill();
-            let _ = child.wait();
+        let (out_tx, out_rx) = sync_channel::<Vec<u8>>(OUTBOX);
+        let writer = std::thread::Builder::new().name("lm-plugin-host-in".into()).spawn(move || {
+            let mut stdin = stdin;
+            for line in out_rx {
+                if stdin.write_all(&line).and_then(|()| stdin.flush()).is_err() {
+                    break;
+                }
+            }
+        });
+        if let Err(e) = reader.and(writer) {
+            let mut c = child.lock().unwrap_or_else(PoisonError::into_inner);
+            let _ = c.kill();
+            let _ = c.wait();
             return Err(io("plugin_host.spawn", &e));
         }
         let process = Arc::new(Process {
-            child: Mutex::new(child),
-            stdin: Mutex::new(Some(stdin)),
+            child,
+            outbox: Mutex::new(Some(out_tx)),
             routes,
             group,
             next: AtomicI64::new(if group { 1 } else { 0 }),
@@ -258,10 +292,12 @@ impl Process {
 
     fn send(&self, msg: &Value, id: i64) -> Result<()> {
         let msg = if self.group { msg.with("i", Value::int(id)) } else { msg.clone() };
-        let mut stdin = self.stdin.lock().unwrap_or_else(PoisonError::into_inner);
-        match stdin.as_mut() {
-            Some(s) => write_message(s, &msg),
-            None => Err(Error::new("plugin_host.crashed")),
+        let line = encode_message(&msg)?;
+        let outbox = self.outbox.lock().unwrap_or_else(PoisonError::into_inner);
+        match outbox.as_ref().map(|o| o.try_send(line)) {
+            Some(Ok(())) => Ok(()),
+            Some(Err(TrySendError::Full(_))) => Err(Error::new("plugin_host.pipe").arg("error", "the helper is not reading")),
+            Some(Err(TrySendError::Disconnected(_))) | None => Err(Error::new("plugin_host.crashed")),
         }
     }
 }
@@ -269,7 +305,7 @@ impl Process {
 impl Drop for Process {
     fn drop(&mut self) {
         // The end of the standard input ends the helper; a helper that does not leave is killed
-        drop(self.stdin.lock().unwrap_or_else(PoisonError::into_inner).take());
+        drop(self.outbox.lock().unwrap_or_else(PoisonError::into_inner).take());
         let mut child = self.child.lock().unwrap_or_else(PoisonError::into_inner);
         let until = Instant::now() + Duration::from_millis(500);
         loop {
@@ -336,7 +372,7 @@ pub fn start_in(config: &HostConfig, req: &LoadRequest, group: Option<&Group>) -
         None => Process::spawn(config, false, until)?,
     };
     let id = process.next.fetch_add(1, Ordering::AcqRel);
-    let (tx, rx) = channel();
+    let (tx, rx) = sync_channel(REPLY_QUEUE);
     let gui_open = Arc::new(AtomicBool::new(false));
     process.routes.lock().unwrap_or_else(PoisonError::into_inner).insert(id, (tx, Arc::clone(&gui_open)));
     let forget = |process: &Process| {
@@ -371,7 +407,8 @@ pub fn start_in(config: &HostConfig, req: &LoadRequest, group: Option<&Group>) -
     };
     // The helper has it mapped: the name can go
     shm.unlink();
-    let latency = ready.get("latency").and_then(Value::as_int).unwrap_or(0).clamp(0, i64::from(u32::MAX)) as u32;
+    // What the helper says is the plugin's own number: limited here, once, before anything allocates by it
+    let latency = clamp_latency(ready.get("latency").and_then(Value::as_int).unwrap_or(0).clamp(0, i64::from(u32::MAX)) as u32);
     shm.words()[w::LATENCY].store(latency, Ordering::Release);
     let shm = Arc::new(shm);
     let state = Arc::new(ProxyState::default());
@@ -443,7 +480,7 @@ impl Hosted {
         };
         let params = r
             .get("params")
-            .map(|p| p.entries().filter_map(|(k, v)| Some((k.to_owned(), v.as_real()? as f32))).collect())
+            .map(|p| p.entries().filter_map(|(k, v)| Some((k.to_owned(), finite_f32(v.as_real()?)?))).collect())
             .unwrap_or_default();
         Ok(Saved { chunk, params })
     }
@@ -474,12 +511,17 @@ impl Hosted {
         let r = self.request(&msg, &["gui"], timeout)?;
         let open = r.get("on").and_then(Value::as_bool).unwrap_or(false);
         self.gui_open.store(open, Ordering::Release);
-        let at =
-            |i: usize| r.get("size").and_then(|s| s.at(i)).and_then(Value::as_int).and_then(|v| u32::try_from(v).ok());
+        let at = |i: usize| {
+            r.get("size")
+                .and_then(|s| s.at(i))
+                .and_then(Value::as_int)
+                .and_then(|v| u32::try_from(v).ok())
+                .filter(|v| (1..=MAX_WINDOW).contains(v))
+        };
         Ok(WindowInfo {
             open,
             size: at(0).zip(at(1)),
-            reason: r.get("reason").and_then(Value::as_text).map(str::to_owned),
+            reason: r.get("reason").and_then(Value::as_text).map(|t| t.chars().take(MAX_REASON).collect()),
         })
     }
 
