@@ -17,6 +17,7 @@
     ],
     "param.wheel_fine": [
       "secondary-wheel"
-    ]
+    ],
+    "param.carry": []
   }
 }

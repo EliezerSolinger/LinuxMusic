@@ -20,6 +20,7 @@
     ],
     "param.spin_coarse": [
       "shift-click"
-    ]
+    ],
+    "param.carry": []
   }
 }

@@ -31,7 +31,10 @@
     ],
     "desk.remove_channel": [
       "delete"
-    ]
+    ],
+    "desk.select_left": [],
+    "desk.rename_channel": [],
+    "desk.fader_up": []
   },
   "mouse": {
     "mix.fader.fine": [
@@ -54,6 +57,8 @@
     ],
     "mix.channel.rename": [
       "double-click"
-    ]
+    ],
+    "mix.knob.reset": [],
+    "mix.fader.wheel_coarse": []
   }
 }

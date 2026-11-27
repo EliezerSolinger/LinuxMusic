@@ -135,7 +135,17 @@
     ],
     "notes.grid_9": [
       "alt-9"
-    ]
+    ],
+    "notes.octave_up": [],
+    "notes.move_left": [],
+    "notes.mode_draw": [],
+    "notes.mode_erase": [],
+    "notes.mode_select": [],
+    "notes.mode_knife": [],
+    "notes.glue": [],
+    "notes.cut_overlaps": [],
+    "notes.step_rest": [],
+    "notes.scroll_up": []
   },
   "mouse": {
     "pr.grid.select_override": [
@@ -167,6 +177,15 @@
     ],
     "pr.view.length_wheel": [
       "secondary-shift-wheel"
-    ]
+    ],
+    "pr.note.stretch": [],
+    "pr.grid.free": [],
+    "pr.knife.free": [],
+    "pr.knife.drop_short": [],
+    "pr.ruler.select": [],
+    "pr.view.zoom": [],
+    "pr.view.scroll_h": [],
+    "pr.view.scroll": [],
+    "pr.note.sticky": []
   }
 }

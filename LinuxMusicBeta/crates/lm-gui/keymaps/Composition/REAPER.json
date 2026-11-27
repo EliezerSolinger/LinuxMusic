@@ -73,7 +73,15 @@
     ],
     "marks.jump_9": [
       "9"
-    ]
+    ],
+    "arrange.duplicate_selection": [],
+    "clip.glue_selection": [],
+    "arrange.open_item": [],
+    "arrange.tool_draw": [],
+    "arrange.tool_knife": [],
+    "arrange.tool_select": [],
+    "arrange.bar_left": [],
+    "arrange.bar_right": []
   },
   "mouse": {
     "comp.item.toggle_select": [
@@ -136,6 +144,11 @@
     ],
     "comp.view.track_height_coarse": [
       "alt-shift-wheel"
-    ]
+    ],
+    "comp.free": [],
+    "comp.item.snap_edge": [],
+    "comp.item.delete": [],
+    "comp.row.marquee": [],
+    "comp.view.scroll_v": []
   }
 }

@@ -46,7 +46,10 @@
     "view.notices": [],
     "help.about": [
       "f1"
-    ]
+    ],
+    "view.composition": [],
+    "view.mixing": [],
+    "file.import": []
   },
   "mouse": {}
 }

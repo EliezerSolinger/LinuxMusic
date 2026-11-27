@@ -13,7 +13,8 @@
     ],
     "transport.loop": [
       "secondary-r"
-    ]
+    ],
+    "transport.stop": []
   },
   "mouse": {
     "transport.transpose_down": [

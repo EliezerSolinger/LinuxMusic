@@ -32,7 +32,12 @@
     ],
     "auto.play": [
       "space"
-    ]
+    ],
+    "auto.tool_draw": [],
+    "auto.tool_erase": [],
+    "auto.tool_select": [],
+    "auto.tool_pencil": [],
+    "auto.tool_out": []
   },
   "mouse": {
     "au.select_override": [
@@ -52,6 +57,9 @@
     ],
     "au.view.grid_wheel": [
       "secondary-alt-wheel"
-    ]
+    ],
+    "au.free": [],
+    "au.view.zoom": [],
+    "au.view.scroll": []
   }
 }

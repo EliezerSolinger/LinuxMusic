@@ -19,7 +19,8 @@
     ],
     "browser.refresh": [
       "f5"
-    ]
+    ],
+    "browser.find": []
   },
   "mouse": {}
 }

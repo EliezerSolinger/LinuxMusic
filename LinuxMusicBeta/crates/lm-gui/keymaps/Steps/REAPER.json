@@ -8,6 +8,8 @@
     ],
     "st.step.velocity": [
       "secondary-wheel"
-    ]
+    ],
+    "st.pitch": [],
+    "st.view.zoom": []
   }
 }
