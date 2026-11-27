@@ -1088,6 +1088,8 @@ impl CorePort for FakePort {
             "tuning.set_scale" | "tuning.set_keymap" | "tuning.clear" => self.set_tuning(action.as_str(), &params),
             // a file into a plugin field (a patch, a wave): one undo step
             "plugin.load_into_field" => field_load::load_into_field(self, &params),
+            // the list of the presets of a bank file (the real core reads the file; the fake has none to read)
+            "sampler.list_presets" => Ok(()),
             // the entry's file shown in the system's file manager (F-BRW-008): the fake says where it is
             "browser.reveal" => self.reveal(&params),
             // a project of the browser opened (F-BRW-006): an operation on the project

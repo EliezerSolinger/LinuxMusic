@@ -24,6 +24,7 @@
 #![forbid(unsafe_code)]
 
 pub mod kits;
+pub mod list;
 pub mod load;
 mod processor;
 mod source;
@@ -106,6 +107,18 @@ fn own_params() -> Vec<ParamSpec> {
     v
 }
 
+/// The display frame (`f32` words, for the panel): the last note-on count of each key (0 to 127), its velocity
+/// (127 to 255) and then, for each key, how many zones cover each of 8 velocity bands of 16 (from 256: key times 8
+/// plus the band)
+pub mod display {
+    pub const KEYS: usize = 128;
+    pub const BANDS: usize = 8;
+    pub const HIT_COUNT: usize = 0;
+    pub const HIT_VELOCITY: usize = KEYS;
+    pub const ZONES: usize = 2 * KEYS;
+    pub const WORDS: usize = ZONES + KEYS * BANDS;
+}
+
 pub static DESCRIPTOR: Descriptor = Descriptor {
     id: ID,
     name: "plugin.sampler.name",
@@ -114,7 +127,7 @@ pub static DESCRIPTOR: Descriptor = Descriptor {
     ports,
     // The velocity layers of a SoundFont, the filter of a zone and the level all follow it
     velocity: Velocity::Timbre,
-    display: None,
+    display: Some(lm_plugin::DisplaySpec { bytes: 4 * display::WORDS }),
     build,
     tests: TestHints {
         tuning: None,

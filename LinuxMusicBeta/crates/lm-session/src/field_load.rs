@@ -226,6 +226,10 @@ impl Session {
         })?;
         if let Some(r) = asked {
             self.request(&r);
+            // A bank file in a Sampler: its presets are listed for the panel
+            if matches!(r.kind(), "soundfont" | "gig") {
+                let _ = self.sampler_list(node);
+            }
         }
         Ok(())
     }

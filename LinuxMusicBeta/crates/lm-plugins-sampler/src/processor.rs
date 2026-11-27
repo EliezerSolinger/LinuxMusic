@@ -14,7 +14,7 @@ use lm_sampler::{Engine, EngineConfig, EnvOverride, Params, Window};
 use lm_state::Value;
 
 use crate::source::Built;
-use crate::{DESCRIPTOR, ENV_KEYS, p};
+use crate::{DESCRIPTOR, ENV_KEYS, display, p};
 
 /// Frames the ghost may stay silent before it is left alone
 const GHOST_QUIET_SECONDS: f32 = 0.1;
@@ -28,6 +28,9 @@ pub struct Sampler {
     multi: bool,
     values: [f32; p::COUNT],
     max_block: usize,
+    /// The display frame: the hits of the keys, and the zone map of the instrument (made in the build)
+    frame: Vec<f32>,
+    frame_dirty: bool,
 }
 
 impl std::fmt::Debug for Sampler {
@@ -81,6 +84,7 @@ impl Sampler {
         let mut config = EngineConfig::new(cx.spec.sample_rate, cx.spec.max_block);
         config.quality = built.source.quality;
         config.multi = built.source.multi;
+        let frame = display_frame(&built.instrument);
         let mut engine = Engine::new(built.instrument, config);
         engine.set_params(engine_params(&values));
         Ok(Self {
@@ -92,6 +96,8 @@ impl Sampler {
             multi: built.source.multi,
             values,
             max_block: cx.spec.max_block,
+            frame,
+            frame_dirty: true,
         })
     }
 
@@ -101,6 +107,10 @@ impl Sampler {
                 if let Some(e) = self.current.as_mut() {
                     e.note_on(note.0, key, velocity);
                 }
+                let k = usize::from(key.min(127));
+                self.frame[display::HIT_COUNT + k] = (self.frame[display::HIT_COUNT + k] + 1.0) % 16_384.0;
+                self.frame[display::HIT_VELOCITY + k] = (velocity * 127.0 + 0.5).clamp(1.0, 127.0);
+                self.frame_dirty = true;
             }
             EventKind::NoteOff { note, .. } => {
                 if let Some(e) = self.current.as_mut() {
@@ -199,6 +209,22 @@ impl Sampler {
     }
 }
 
+/// The display frame of an instrument: no hits yet, and the zone map (how many zones cover each key and velocity band)
+fn display_frame(instrument: &lm_sampler::Instrument) -> Vec<f32> {
+    let mut frame = vec![0.0f32; display::WORDS];
+    for z in &instrument.zones {
+        for key in z.keys.0..=z.keys.1.min(127) {
+            for band in 0..display::BANDS {
+                let (lo, hi) = (band as u8 * 16, band as u8 * 16 + 15);
+                if z.vels.0 <= hi && z.vels.1 >= lo {
+                    frame[display::ZONES + usize::from(key) * display::BANDS + band] += 1.0;
+                }
+            }
+        }
+    }
+    frame
+}
+
 /// Adds an engine's buses to the outputs; the largest sample added
 fn mix(e: &Engine, outs: &mut ChannelsMut<'_>, at: usize, n: usize, multi: bool) -> f32 {
     let mut peak = 0.0f32;
@@ -252,6 +278,19 @@ impl Processor for Sampler {
             self.event(e.kind);
         }
         self.render(&mut outs, position, frames - position);
+        if self.frame_dirty
+            && let Some(d) = cx.display.as_deref_mut()
+        {
+            let words = &self.frame;
+            d.write(|bytes| {
+                for (i, w) in words.iter().enumerate() {
+                    if let Some(b) = bytes.get_mut(4 * i..4 * i + 4) {
+                        b.copy_from_slice(&w.to_le_bytes());
+                    }
+                }
+            });
+            self.frame_dirty = false;
+        }
     }
 
     fn reset(&mut self) {
@@ -279,10 +318,12 @@ impl Processor for Sampler {
                 a.take_over(b);
             }
             std::mem::swap(&mut self.ghost, &mut old.ghost);
+            self.frame[..display::ZONES].copy_from_slice(&old.frame[..display::ZONES]);
             self.ghost_live = old.ghost_live;
             self.ghost_quiet = old.ghost_quiet;
         } else {
             // The old engine plays out its notes beside the new one
+            self.frame[..display::ZONES].copy_from_slice(&old.frame[..display::ZONES]);
             self.ghost = old.current.take();
             self.ghost_live = self.ghost.is_some();
             self.ghost_quiet = 0;

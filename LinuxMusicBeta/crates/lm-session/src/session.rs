@@ -792,6 +792,11 @@ impl Session {
         &self.status
     }
 
+    /// Sets one key of the status tree (what the screens read; nothing of the project)
+    pub(crate) fn set_status_key(&mut self, key: &str, value: Value) {
+        self.status = self.status.with(key, value);
+    }
+
     /// The keys of the notices kept (tests, the headless tool)
     pub fn notices_keys(&self) -> Vec<&'static str> {
         self.notices.keys()
@@ -1657,6 +1662,7 @@ impl Session {
                     self.notices.error(&e, Some(target), None);
                 }
             }
+            ("sampler.list_presets", Ok(result)) => self.sampler_presets_finished(&result),
             ("plugin.load_into_field", Ok(result)) => {
                 if let Err(e) = self.field_load_finished(&result) {
                     self.notices.error(&e, Some(target), None);
