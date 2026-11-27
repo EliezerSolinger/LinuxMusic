@@ -2331,3 +2331,8 @@ derruba ou trava o processo principal nem a thread de áudio.
   pontos e descarta o valor repetido.
 - **Exportar MIDI.** Escreve as faixas de controle e, para um Sampler em SF2/GIG, banco e program no início; banco 128
   vai ao canal 10 sem seleção de banco (o GM não a usa ali), como o import espera.
+- **Cópia da versão anterior ao salvar.** A thread de disco, antes de substituir `projeto.json`, copia o arquivo antigo
+  para `backup/projeto-NNNN.json` e apaga as cópias mais velhas além de `backup.kept` (as preferências
+  `backup.kept` e `backup.onSave` já existiam na tela e ninguém as lia). O número cresce, em vez de usar a data: a ordem
+  é a idade e não há relógio de parede. Se a cópia falha (disco cheio), o salvar segue e um aviso diz o que faltou: a
+  cópia é conforto, o arquivo novo é o que importa.

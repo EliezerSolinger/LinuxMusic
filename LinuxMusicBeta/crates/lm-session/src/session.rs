@@ -1923,6 +1923,7 @@ impl Session {
                     // The autosave that follows makes up for the lost line
                     self.autosave_now();
                 }
+                JournalEvent::BackupFailed(e) => self.notices.error(&e, Some(Target::Project), None),
                 JournalEvent::AutosaveFailed(e) => {
                     if !self.autosave_warned {
                         self.autosave_warned = true;
@@ -2034,7 +2035,13 @@ impl Session {
         let root = self.document.root().clone();
         let tree = self.document.saved();
         let ui = self.ui_document.root().clone();
-        if !self.journal.save(tree, Some(ui), self.project.migrated_from, id) {
+        // The previous file is kept in `backup/` (F-PRJ-010): `backup.kept` versions, none when `backup.onSave` is off
+        let keep = if self.preferences.bool(&["backup", "onSave"]).unwrap_or(true) {
+            self.preferences.int(&["backup", "kept"]).unwrap_or(10).clamp(1, 100) as usize
+        } else {
+            0
+        };
+        if !self.journal.save(tree, Some(ui), self.project.migrated_from, keep, id) {
             return Err(err("session.disk.busy"));
         }
         self.saving = Some((id, root, self.clock.now()));

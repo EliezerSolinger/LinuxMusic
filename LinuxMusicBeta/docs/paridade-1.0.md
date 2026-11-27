@@ -481,7 +481,7 @@ a ação contam como parcial.
 | F-PRJ-006 | Guardar o que não entende | feito |  | lm-doc/src/document.rs,lm-doc/src/edit.rs |
 | F-PRJ-007 | Salvar e Salvar como | feito |  | lm-session/src/session.rs,lm-gui/src/screens/project.rs |
 | F-PRJ-008 | Salvar como nova versão | feito |  | lm-gui/src/screens/project.rs |
-| F-PRJ-010 | Cópia de segurança ao salvar | parcial | o salvar é atômico, mas só se guarda cópia do original migrado (.bak) e o diário; a versão anterior não é copiada para backup/ a cada salvar, e não há opção | lm-session/src/journal.rs,lm-session/src/folder.rs |
+| F-PRJ-010 | Cópia de segurança ao salvar | feito | o salvar é atômico; cada salvar guarda o arquivo que substitui em `backup/projeto-NNNN.json` (numerado, sem relógio) e apaga os mais velhos além de `backup.kept`; `backup.onSave` desliga (as duas opções já estavam na tela); falha da cópia vira aviso e o salvar segue; o original migrado (.bak) continua | lm-session/src/journal.rs,lm-session/src/folder.rs |
 | F-PRJ-012 | Descartar as conexões MIDI ao salvar | feito | aberto: P-36 respondido; nada a fazer | lm-session/src/midi/devices.rs |
 | F-PRJ-013 | Juntar as mídias ao salvar | feito |  | lm-session/src/core_actions.rs,lm-gui/src/screens/files.rs |
 | F-PRJ-015 | Recentes | feito |  | lm-session/src/prefs.rs,lm-gui/src/screens/project.rs |

@@ -64,6 +64,8 @@ enum Job {
     /// Saves the project (H3, H11, U6) and starts the journal over on the new file. In order with the lines: the
     /// lines sent before it are in the file saved, those after go to the new journal
     Save {
+        /// Versions of the previous file kept in `backup/` (0: none)
+        keep: usize,
         tree: Value,
         interface: Option<Value>,
         migrated_from: Option<u32>,
@@ -80,6 +82,8 @@ pub enum JournalEvent {
         error: Error,
     },
     AutosaveFailed(Error),
+    /// The copy of the previous file in `backup/` could not be made or pruned: the save itself went on
+    BackupFailed(Error),
     AutosaveDone {
         seq: u64,
     },
@@ -173,7 +177,12 @@ impl DiskSide {
                 }
             }
             Job::Sync { done } => done.store(true, Ordering::Release),
-            Job::Save { tree, interface, migrated_from, id } => {
+            Job::Save { keep, tree, interface, migrated_from, id } => {
+                if keep > 0
+                    && let Err(error) = self.keep_previous(keep)
+                {
+                    self.report(JournalEvent::BackupFailed(error));
+                }
                 match self.save(&tree, interface.as_ref(), migrated_from) {
                     Ok(base) => self.report(JournalEvent::Saved { id, base }),
                     Err(error) => self.report(JournalEvent::SaveFailed { id, error }),
@@ -183,7 +192,49 @@ impl DiskSide {
     }
 }
 
+/// The name of a kept version in `backup/`: `projeto-0001.json`, numbered up (the order is the age; no clock)
+const VERSION_PREFIX: &str = "projeto-";
+
+/// The number in a kept version's file name
+fn version_number(name: &str) -> Option<u64> {
+    name.strip_prefix(VERSION_PREFIX)?.strip_suffix(".json")?.parse().ok()
+}
+
 impl DiskSide {
+    /// Copies the file about to be replaced to `backup/projeto-NNNN.json` and removes the oldest copies beyond
+    /// `keep` (F-PRJ-010). A project never saved has nothing to keep
+    fn keep_previous(&mut self, keep: usize) -> Result<()> {
+        let project = self.folder.project();
+        if !project.exists() {
+            return Ok(());
+        }
+        let dir = self.folder.backup();
+        let mut numbers: Vec<u64> = std::fs::read_dir(&dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| version_number(&e.file_name().to_string_lossy()))
+            .collect();
+        numbers.sort_unstable();
+        let next = numbers.last().map_or(1, |n| n + 1);
+        let name = |n: u64| dir.join(format!("{VERSION_PREFIX}{n:04}.json"));
+        let size = std::fs::metadata(&project).map(|m| m.len()).unwrap_or(0);
+        self.faults.check(size)?;
+        std::fs::create_dir_all(&dir).map_err(|e| crate::folder::io_error("session.folder.create", &dir, &e))?;
+        let (dest, tmp) = (name(next), dir.join(format!("{VERSION_PREFIX}{next:04}.tmp")));
+        crate::folder::copy_via_tmp(&project, &tmp, &dest, "session.backup.copy")?;
+        numbers.push(next);
+        // the oldest beyond the limit go; one that cannot be removed is reported with the others tried
+        let excess = numbers.len().saturating_sub(keep);
+        let mut failed = None;
+        for n in numbers.into_iter().take(excess) {
+            if let Err(e) = std::fs::remove_file(name(n)) {
+                failed.get_or_insert_with(|| crate::folder::io_error("session.backup.prune", &name(n), &e));
+            }
+        }
+        failed.map_or(Ok(()), Err)
+    }
+
     fn save(&mut self, tree: &Value, interface: Option<&Value>, migrated_from: Option<u32>) -> Result<String> {
         let project = self.folder.project();
         // H11: the original of a migrated project is kept before it is first written over
@@ -332,8 +383,15 @@ impl Journal {
 
     /// Saves the project on the disk thread, in order with the journal; the answer comes as `Saved` or `SaveFailed`
     /// with `id`. `false` when the disk thread's ring is full (try again)
-    pub fn save(&mut self, tree: Value, interface: Option<Value>, migrated_from: Option<u32>, id: u64) -> bool {
-        self.send(Job::Save { tree, interface, migrated_from, id })
+    pub fn save(
+        &mut self,
+        tree: Value,
+        interface: Option<Value>,
+        migrated_from: Option<u32>,
+        keep: usize,
+        id: u64,
+    ) -> bool {
+        self.send(Job::Save { keep, tree, interface, migrated_from, id })
     }
 
     /// After a save: the journal starts over on the new file

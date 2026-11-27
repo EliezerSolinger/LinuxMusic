@@ -8,6 +8,7 @@
 //! <folder>/audio/                  the resources, by BLAKE3 hash (C9, C10)
 //! <folder>/backup/diario.jsonl     the journal (I-4)
 //! <folder>/backup/autosave.json    the last autosave
+//! <folder>/backup/projeto-NNNN.json the previous file at each save, the last `backup.kept` (F-PRJ-010)
 //! ```
 //!
 //! Every file written whole is written to a `.tmp`, synced, renamed over the old one, and the folder synced (U6): a

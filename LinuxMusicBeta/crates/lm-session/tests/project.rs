@@ -51,6 +51,35 @@ fn save_open_save_gives_the_same_file() {
     assert_eq!(String::from_utf8_lossy(&first), String::from_utf8_lossy(&second));
 }
 
+/// F-PRJ-010: each save keeps the file it replaces in `backup/`, numbered up, and the oldest go past `backup.kept`
+#[test]
+fn a_save_keeps_the_previous_file_in_backup() {
+    let dir = TempDir::new("keep");
+    let folder = dir.join("song");
+    let mut s = session(&dir);
+    s.set_preference(&[lm_state::PathStep::key("backup"), lm_state::PathStep::key("kept")], Value::int(2)).expect("pref");
+    s.create(folder.clone()).expect("create");
+    let mut versions = Vec::new();
+    for name in ["A", "B", "C", "D"] {
+        add_synth_track(&mut s, name);
+        s.save().expect("save");
+        settle(&mut s);
+        versions.push(std::fs::read_to_string(project_file(&folder)).expect("read"));
+    }
+    let mut kept: Vec<(String, String)> = std::fs::read_dir(folder.join("backup"))
+        .expect("backup")
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("projeto-") && n.ends_with(".json"))
+        .map(|n| (std::fs::read_to_string(folder.join("backup").join(&n)).expect("read"), n))
+        .collect();
+    kept.sort_by(|a, b| a.1.cmp(&b.1));
+    assert_eq!(kept.len(), 2, "the oldest are pruned: {kept:?}");
+    // the last save replaced the file the one before wrote, and that one is the newest copy
+    assert_eq!(kept[1].0, versions[2]);
+    assert_eq!(kept[0].0, versions[1]);
+}
+
 #[test]
 fn a_project_open_elsewhere_opens_read_only() {
     let dir = TempDir::new("lock");
