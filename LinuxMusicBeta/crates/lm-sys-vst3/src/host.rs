@@ -557,11 +557,15 @@ impl IBStreamTrait for Stream {
         let bytes = unsafe { std::slice::from_raw_parts(buffer.cast::<u8>(), n as usize) };
         let mut d = self.data.borrow_mut();
         let at = self.at.get();
-        if d.len() < at + bytes.len() {
-            d.resize(at + bytes.len(), 0);
+        // The position and the size come from the plugin: bounded, so a wild seek cannot ask for a huge allocation
+        let Some(end) = at.checked_add(bytes.len()).filter(|e| *e <= MAX_STREAM) else {
+            return kResultFalse;
+        };
+        if d.len() < end {
+            d.resize(end, 0);
         }
-        d[at..at + bytes.len()].copy_from_slice(bytes);
-        self.at.set(at + bytes.len());
+        d[at..end].copy_from_slice(bytes);
+        self.at.set(end);
         if !written.is_null() {
             // SAFETY: the plugin's out pointer
             unsafe { *written = n };
@@ -577,7 +581,11 @@ impl IBStreamTrait for Stream {
             m if m == IBStream_::IStreamSeekMode_::kIBSeekEnd => len,
             _ => return kInvalidArgument,
         };
-        let to = (base + pos).max(0) as usize;
+        let to = match base.checked_add(pos) {
+            Some(to) => usize::try_from(to.max(0)).ok().filter(|t| *t <= MAX_STREAM),
+            None => None,
+        };
+        let Some(to) = to else { return kInvalidArgument };
         self.at.set(to);
         if !result.is_null() {
             // SAFETY: the plugin's out pointer
@@ -595,6 +603,9 @@ impl IBStreamTrait for Stream {
         kResultOk
     }
 }
+
+/// The most a plugin can make a state stream grow to (or seek to)
+const MAX_STREAM: usize = 256 << 20;
 
 impl Stream {
     pub fn new(data: Vec<u8>) -> ComWrapper<Stream> {
@@ -705,5 +716,25 @@ impl Frame {
             // SAFETY: the plugin's handler, kept alive by our reference; the main thread
             unsafe { h.onTimer() };
         }
+    }
+}
+
+#[cfg(test)]
+mod stream_tests {
+    use super::*;
+
+    #[test]
+    fn a_wild_seek_or_write_is_refused_not_allocated() {
+        let s = Stream { data: RefCell::new(Vec::new()), at: Cell::new(0) };
+        let mut out: int64 = 0;
+        // SAFETY: valid out pointer and buffers
+        unsafe {
+            assert_eq!(s.seek(i64::MAX, IBStream_::IStreamSeekMode_::kIBSeekSet as i32, &mut out), kInvalidArgument);
+            assert_eq!(s.seek(1, IBStream_::IStreamSeekMode_::kIBSeekEnd as i32, &mut out), kResultOk);
+            s.at.set(MAX_STREAM);
+            let mut byte = 1u8;
+            assert_eq!(s.write((&mut byte as *mut u8).cast(), 1, std::ptr::null_mut()), kResultFalse);
+        }
+        assert!(s.data.borrow().is_empty());
     }
 }
