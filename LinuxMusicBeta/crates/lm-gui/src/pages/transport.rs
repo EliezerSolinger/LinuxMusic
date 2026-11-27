@@ -6,7 +6,8 @@
 //! transport as actions.
 
 use gpui::{Context, FontWeight, IntoElement, MouseButton, MouseDownEvent, ScrollEvent, div, prelude::*, px};
-use lm_port::{EditOp, GestureId, HostTime, Label, Position, ROOT, Value};
+use lm_gui_plugins::Gesture;
+use lm_port::{EditOp, HostTime, Label, Position, ROOT, Value};
 
 use crate::keymap;
 use crate::model;
@@ -39,7 +40,7 @@ impl DisplayFormat {
 pub struct TempoDrag {
     pub start_y: f32,
     pub start_bpm: f64,
-    pub gesture: GestureId,
+    pub gesture: Gesture,
 }
 
 fn bpm_text(bpm: f64) -> Value {
@@ -67,7 +68,7 @@ fn tempo_op(bpm: f64) -> EditOp {
 pub fn set_song(ws: &mut Workspace, path: &[&str], v: Value, cx: &mut Context<Workspace>) {
     let op = EditOp::set(ROOT, path, v);
     ws.core.update(cx, |core, _| {
-        let _ = core.port_mut().apply(Label::new("Transport"), vec![op]);
+        core.report(|pt| pt.apply(Label::new("Transport"), vec![op]));
     });
     cx.notify();
 }
@@ -86,7 +87,7 @@ pub fn record(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     };
     let param = track.map_or(Value::NULL, |t| Value::text(t.to_string()));
     ws.core.update(cx, |core, _| {
-        let _ = core.port_mut().run_action("transport.record".into(), param);
+        core.report(|pt| pt.run_action("transport.record".into(), param));
     });
     cx.notify();
 }
@@ -97,7 +98,7 @@ pub fn tap_tempo(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     if let Some(bpm) = ws.tap.tap(now) {
         let bpm = (bpm * 100.0).round() / 100.0;
         ws.core.update(cx, |core, _| {
-            let _ = core.port_mut().apply(Label::new("Tempo"), vec![tempo_op(bpm)]);
+            core.report(|pt| pt.apply(Label::new("Tempo"), vec![tempo_op(bpm)]));
         });
     }
     cx.notify();
@@ -112,7 +113,7 @@ pub fn set_signature(ws: &mut Workspace, numerator: i64, denominator: i64, cx: &
         value: Value::list([Value::int(n), Value::int(d)]),
     };
     ws.core.update(cx, |core, _| {
-        let _ = core.port_mut().apply(Label::new("Time signature"), vec![op]);
+        core.report(|pt| pt.apply(Label::new("Time signature"), vec![op]));
     });
     cx.notify();
 }
@@ -135,7 +136,7 @@ pub fn toggle_master_mute(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     let Some(m) = master else { return };
     let op = EditOp::set(m.id, &["mute"], Value::bool(!m.mute));
     ws.core.update(cx, |core, _| {
-        let _ = core.port_mut().apply(Label::new("Mute"), vec![op]);
+        core.report(|pt| pt.apply(Label::new("Mute"), vec![op]));
     });
     cx.notify();
 }
@@ -158,13 +159,13 @@ fn level_bar(id: &'static str, label: &'static str, fraction: f32) -> impl IntoE
 pub fn begin_tempo(ws: &mut Workspace, ev: &MouseDownEvent, cx: &mut Context<Workspace>) {
     if ev.click_count == 2 {
         ws.core.update(cx, |core, _| {
-            let _ = core.port_mut().apply(Label::new("Tempo"), vec![tempo_op(120.0)]);
+            core.report(|pt| pt.apply(Label::new("Tempo"), vec![tempo_op(120.0)]));
         });
         cx.notify();
         return;
     }
     let start_bpm = first_bpm(ws.core.read(cx).port().root());
-    let gesture = ws.core.update(cx, |core, _| core.port_mut().begin_gesture(Label::new("Tempo")));
+    let gesture = ws.core.update(cx, |core, _| core.begin_gesture(Label::new("Tempo")));
     ws.tempo_drag = Some(TempoDrag { start_y: ev.position.y.as_f32(), start_bpm, gesture });
 }
 
@@ -172,14 +173,14 @@ pub fn drag_tempo(ws: &mut Workspace, y: f32, fine: bool, cx: &mut Context<Works
     let Some(d) = &ws.tempo_drag else { return };
     let bpm = ((d.start_bpm - (y - d.start_y) as f64 * if fine { 0.05 } else { 0.5 }) * 100.0).round() / 100.0;
     ws.core.update(cx, |core, _| {
-        core.port_mut().gesture_apply(&ws.tempo_drag.as_ref().unwrap().gesture, vec![tempo_op(bpm)])
+        core.gesture_apply(ws.tempo_drag.as_ref().unwrap().gesture, vec![tempo_op(bpm)])
     });
     cx.notify();
 }
 
 pub fn end_tempo(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     if let Some(d) = ws.tempo_drag.take() {
-        ws.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
+        ws.core.update(cx, |core, _| core.gesture_commit(d.gesture));
         cx.notify();
     }
 }
@@ -231,20 +232,20 @@ pub fn render(ws: &Workspace, position: Position, cx: &Context<Workspace>) -> im
         .border_color(c(THEME.line))
         .child(tbutton("rew", "", false, 0).child(icon("back_to_start")).on_click(cx.listener(|ws, _, _, cx| {
             ws.core.update(cx, |core, _| {
-                let _ = core.port_mut().run_action("transport.locate".into(), Value::int(0));
+                core.report(|pt| pt.run_action("transport.locate".into(), Value::int(0)));
             });
             cx.notify();
         })))
         .child(tbutton("stop", "", false, 0).child(icon("stop")).on_click(cx.listener(|ws, _, _, cx| {
             ws.core.update(cx, |core, _| {
-                let _ = core.port_mut().run_action("transport.stop".into(), Value::NULL);
+                core.report(|pt| pt.run_action("transport.stop".into(), Value::NULL));
             });
             cx.notify();
         })))
         .child(tbutton("play", "", position.playing && !position.recording, THEME.green).child(icon("play")).on_click(
             cx.listener(|ws, _, _, cx| {
                 ws.core.update(cx, |core, _| {
-                    let _ = core.port_mut().run_action("transport.play".into(), Value::NULL);
+                    core.report(|pt| pt.run_action("transport.play".into(), Value::NULL));
                 });
                 cx.notify();
             }),
@@ -305,7 +306,7 @@ pub fn render(ws: &Workspace, position: Position, cx: &Context<Workspace>) -> im
                     let d = ev.delta.pixel_delta(px(16.0)).y.as_f32();
                     let bpm = first_bpm(ws.core.read(cx).port().root()) + d.signum() as f64;
                     ws.core.update(cx, |core, _| {
-                        let _ = core.port_mut().apply(Label::new("Tempo"), vec![tempo_op(bpm)]);
+                        core.report(|pt| pt.apply(Label::new("Tempo"), vec![tempo_op(bpm)]));
                     });
                     cx.notify();
                 })),
@@ -375,7 +376,7 @@ pub fn render(ws: &Workspace, position: Position, cx: &Context<Workspace>) -> im
             d.child(tbutton("rearm", tr("Re-arm"), true, THEME.yellow).debug_selector(|| "rearm-all".into()).on_click(
                 cx.listener(|ws, _, _, cx| {
                     ws.core.update(cx, |core, _| {
-                        let _ = core.port_mut().run_action("automation.rearm".into(), Value::empty_object());
+                        core.report(|pt| pt.run_action("automation.rearm".into(), Value::empty_object()));
                     });
                     cx.notify();
                 }),

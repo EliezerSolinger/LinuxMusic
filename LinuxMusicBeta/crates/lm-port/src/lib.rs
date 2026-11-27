@@ -25,17 +25,20 @@
 #![forbid(unsafe_code)]
 
 pub mod browse;
+pub mod tempo;
 pub mod trees;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub use lm_base::{Error, HostTime, Label, OperationId, ParamRange, RangeScale, Result, intern};
+pub use lm_base::{Arg, Error, HostTime, Label, OperationId, ParamRange, RangeScale, Result, intern};
 pub use lm_doc::{Diff, Feed, GestureId, Topic};
 pub use lm_render::{METER_CHANNELS, Meter};
 pub use lm_state::{FieldKind, FieldSpec, NodeId, NodeSchema, ParamSpec, PathStep, ROOT, Resource, Scale, Value};
 
+pub use lm_time::TempoMap;
+pub use tempo::{TempoCache, tempo_map, tempo_map_or_default};
 pub use browse::{BrowseEntry, BrowsePage, EntryId, EntryKind, PluginInfo, Preview};
 pub use lm_midimap::{DocSource, MapScope, MapTarget, Mapping, Message as MidiMessage, NodeRef, SelRole};
 
@@ -393,6 +396,12 @@ pub trait CorePort {
     fn dismiss_notice(&mut self, id: u64);
     fn telemetry(&self) -> &TelemetryView;
     fn peaks(&mut self, resource: &Resource, level: u8, from: u64, to: u64) -> Pending<PeakBlock>;
+    /// The project's tempo map (ticks <-> samples, bars and beats): the core's own, the one the render and the edits
+    /// use, shared by revision: the interface asks it, it never rebuilds one from the tree. The provided method builds
+    /// it again on every call; the ports keep it in a [`TempoCache`]
+    fn tempo_map(&self) -> Arc<TempoMap> {
+        Arc::new(tempo_map_or_default(self.root()))
+    }
     /// A plugin's live data (F2)
     fn display(&self, node: NodeId) -> Option<DisplayView>;
     /// A parameter's value law (its range and curve: linear, log, stepped, gain), the one the core uses for mapped

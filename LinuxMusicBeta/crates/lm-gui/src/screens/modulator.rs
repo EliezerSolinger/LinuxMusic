@@ -101,7 +101,7 @@ impl Modulator {
 
     fn apply(&mut self, label: &'static str, ops: Vec<EditOp>, cx: &mut Context<Self>) {
         self.scx.core.update(cx, |core, _| {
-            let _ = core.port_mut().apply(Label::new(label), ops);
+            core.report(|pt| pt.apply(Label::new(label), ops));
         });
         cx.notify();
     }

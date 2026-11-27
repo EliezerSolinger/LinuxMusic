@@ -15,4 +15,5 @@ lm-base.workspace = true
 lm-state.workspace = true
 lm-doc.workspace = true
 lm-render.workspace = true
+lm-time.workspace = true
 lm-midimap = { workspace = true, features = ["doc"] }

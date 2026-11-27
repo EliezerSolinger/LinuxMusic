@@ -1983,7 +1983,7 @@ fn markers_keys_and_jumps(cx: &mut TestAppContext) {
     let core = core(&ws, cx);
     let at = core.read_with(cx, |c, _| {
         let p = c.port();
-        model::tempo_map(p.root()).tick_at(p.telemetry().position.samples)
+        p.tempo_map().tick_at(p.telemetry().position.samples)
     });
     assert_eq!(at, second, "2 goes to the second marker");
 }
@@ -2360,6 +2360,51 @@ fn piano_roll_draw_auditions(cx: &mut TestAppContext) {
     cx.simulate_mouse_up(p, MouseButton::Left, Modifiers::none());
     cx.run_until_parked();
     assert!(log.held().is_empty());
+}
+
+/// A mouse button released anywhere closes the gestures the views left open (a drag released outside its element)
+#[gpui::test]
+fn a_release_anywhere_closes_the_open_gestures(cx: &mut TestAppContext) {
+    use lm_gui_plugins::PortHost;
+    let (ws, cx) = open(cx);
+    let core = core(&ws, cx);
+    let g = core.update(cx, |c, _| c.begin_gesture(lm_port::Label::new("test")));
+    assert!(core.update(cx, |c, _| PortHost::gesture_is_open(c, g)));
+    cx.simulate_mouse_down(point(px(2.), px(2.)), MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_up(point(px(2.), px(2.)), MouseButton::Left, Modifiers::none());
+    cx.run_until_parked();
+    assert!(!core.update(cx, |c, _| PortHost::gesture_is_open(c, g)), "the release closed it");
+    // a stale drag writes nothing
+    let wrote = core.update(cx, |c, _| c.gesture_apply(g, Vec::new()));
+    assert!(!wrote);
+}
+
+/// The error of a call to the port is shown as a short notice, not dropped
+#[gpui::test]
+fn a_failed_call_shows_a_notice(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let core = core(&ws, cx);
+    let done = core.update(cx, |c, _| c.report(|pt| pt.run_action("no.such.action".into(), Value::NULL)));
+    assert!(done.is_none());
+    // the frame collects it as a floating notice
+    cx.update(|_, _| {});
+    ws.update(cx, |_, _| {});
+    settle(cx);
+    let toasts = ws.read_with(cx, |ws, _| ws.toasts.iter().map(|t| t.text.clone()).collect::<Vec<_>>());
+    assert!(toasts.iter().any(|t| t.contains("port.action.unknown")), "the error shows: {toasts:?}");
+}
+
+/// The requests nobody takes are not kept
+#[gpui::test]
+fn a_forgotten_request_leaves_no_answer(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let core = core(&ws, cx);
+    core.update(cx, |c, _| {
+        c.expect(4_000_000);
+        assert_eq!(c.waiting_requests(), 1);
+        c.forget_request(4_000_000);
+        assert_eq!(c.waiting_requests(), 0);
+    });
 }
 
 mod keymap_tests;

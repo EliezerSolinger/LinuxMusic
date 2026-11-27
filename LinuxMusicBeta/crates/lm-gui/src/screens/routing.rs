@@ -25,9 +25,9 @@ impl Routing {
 
     fn route(&mut self, output: NodeId, to: NodeId, cx: &mut Context<Self>) {
         self.scx.core.update(cx, |core, _| {
-            let _ = core
-                .port_mut()
-                .apply(Label::new("Route"), vec![EditOp::set(output, &["to"], Value::text(to.to_string()))]);
+            core.report(|pt| {
+                pt.apply(Label::new("Route"), vec![EditOp::set(output, &["to"], Value::text(to.to_string()))])
+            });
         });
         self.picking = None;
         cx.notify();
@@ -37,10 +37,12 @@ impl Routing {
     /// per output sending to it, each output routed to its channel
     pub fn create_channels(&mut self, track: NodeId, cx: &mut Context<Self>) {
         self.scx.core.update(cx, |core, _| {
-            let _ = core.port_mut().run_action(
-                "mixer.create_channels_for_outputs".into(),
-                Value::object([("track", Value::text(track.to_string()))]),
-            );
+            core.report(|pt| {
+                pt.run_action(
+                    "mixer.create_channels_for_outputs".into(),
+                    Value::object([("track", Value::text(track.to_string()))]),
+                )
+            });
         });
         cx.notify();
     }

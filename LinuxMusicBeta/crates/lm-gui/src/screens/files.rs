@@ -80,7 +80,7 @@ pub fn choose_new(cx: &mut App, folder: &Path, name: &str, then: impl FnOnce(Pat
 
 fn run(core: &Entity<Core>, action: &str, params: Value, cx: &mut App) {
     core.update(cx, |c, cx| {
-        let _ = c.port_mut().run_action(action.into(), params);
+        c.report(|pt| pt.run_action(action.into(), params));
         cx.notify();
     });
 }
@@ -107,7 +107,7 @@ pub fn import_paths(core: &Entity<Core>, paths: &[PathBuf], tick: i64, cx: &mut 
 /// An audio file into the store, then a new audio track with the item at `tick` (F-ARR-011, F-PRJ-020)
 pub fn import_audio(core: &Entity<Core>, path: PathBuf, tick: i64, cx: &mut App) {
     let name = path.file_stem().map_or_else(String::new, |s| s.to_string_lossy().to_string());
-    let answer = core.update(cx, |c, _| c.port_mut().import(path));
+    let answer = core.update(cx, |c, _| c.import(path));
     let core = core.clone();
     match answer {
         Pending::Ready(Ok(res)) => wait_length(core, res, name, tick, cx),
@@ -125,6 +125,8 @@ pub fn import_audio(core: &Entity<Core>, path: PathBuf, tick: i64, cx: &mut App)
                         return;
                     }
                 }
+                // gave up waiting: the answer, if it comes, is dropped
+                cx.update(|cx| core.update(cx, |c, _| c.forget_request(id)));
             })
             .detach();
         }
@@ -164,10 +166,10 @@ pub fn add_audio_track(core: &Entity<Core>, res: &Resource, name: &str, tick: i6
     ]);
     let track = Value::object([("name", Value::text(name)), ("items", Value::list([item]))]);
     core.update(cx, |c, cx| {
-        let _ = c.port_mut().apply(
+        c.report(|pt| pt.apply(
             Label::new("Import audio"),
             vec![EditOp::Insert { temp: 1, parent: Ref::Id(ROOT), list: "tracks".into(), index, node: track }],
-        );
+        ));
         cx.notify();
     });
 }

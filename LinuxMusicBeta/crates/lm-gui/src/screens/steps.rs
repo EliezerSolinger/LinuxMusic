@@ -19,7 +19,8 @@ use gpui::{
     Bounds, Context, CursorStyle, FocusHandle, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels,
     Point, Render, ScrollEvent, SharedString, Window, canvas, div, fill, point, prelude::*, px, size,
 };
-use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, Topic, Value};
+use lm_gui_plugins::Gesture;
+use lm_port::{EditOp, Feed, HostTime, Label, NodeId, Topic, Value};
 
 use super::ScreenCx;
 use super::piano_roll::kit::{self, MenuItem, dropdown, icon_button, label, paint_text, popup, sep, tip, with_alpha};
@@ -78,14 +79,14 @@ enum Drag {
     },
     /// Alt+drag on a pitched step: its note
     Pitch {
-        g: Option<GestureId>,
+        g: Option<Gesture>,
         item: NodeId,
         n: u64,
         origin: Note,
         from_y: f32,
     },
     Swing {
-        g: Option<GestureId>,
+        g: Option<Gesture>,
         items: Vec<(NodeId, f64)>,
         from_y: f32,
     },
@@ -223,24 +224,26 @@ impl StepEditor {
         if ops.is_empty() {
             return;
         }
-        let _ = self.scx.core.update(cx, |core, _| core.port_mut().apply(Label::new(label), ops));
+        self.scx.core.update(cx, |core, _| {
+            core.report(|pt| pt.apply(Label::new(label), ops));
+        });
         cx.notify();
     }
 
-    fn gesture(&self, g: &mut Option<GestureId>, label: &'static str, ops: Vec<EditOp>, cx: &mut Context<Self>) {
+    fn gesture(&self, g: &mut Option<Gesture>, label: &'static str, ops: Vec<EditOp>, cx: &mut Context<Self>) {
         if ops.is_empty() {
             return;
         }
         self.scx.core.update(cx, |core, _| {
-            let port = core.port_mut();
-            let g = g.get_or_insert_with(|| port.begin_gesture(Label::new(label)));
-            port.gesture_apply(g, ops);
+            // a gesture closed under the drag (the release was lost) refuses the edits: the drag writes nothing more
+            let open = *g.get_or_insert_with(|| core.begin_gesture(Label::new(label)));
+            core.gesture_apply(open, ops);
         });
     }
 
-    fn commit(&self, g: Option<GestureId>, cx: &mut Context<Self>) {
+    fn commit(&self, g: Option<Gesture>, cx: &mut Context<Self>) {
         if let Some(g) = g {
-            self.scx.core.update(cx, |core, _| core.port_mut().gesture_commit(g));
+            self.scx.core.update(cx, |core, _| core.gesture_commit(g));
         }
     }
 
@@ -583,7 +586,7 @@ impl Render for StepEditor {
         }
         let core = self.scx.core.read(cx);
         let pos = core.port().telemetry().position;
-        let map = model::tempo_map(core.port().root());
+        let map = core.port().tempo_map();
         let tick = match self.playing {
             Some(t0) => Some(now.since(t0) as f64 * 1e-9 * self.ticks_per_sec),
             None => pos.playing.then(|| map.tick_at(pos.at(now) as i64) as f64),

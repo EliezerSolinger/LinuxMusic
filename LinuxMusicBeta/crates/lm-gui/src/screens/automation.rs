@@ -22,7 +22,8 @@ use gpui::{
     PathBuilder, PinchEvent, Pixels, Point, Render, ScrollEvent, SharedString, Stateful, Window, canvas, div, fill,
     point, prelude::*, px, size,
 };
-use lm_port::{CorePort, EditOp, Feed, GestureId, HostTime, Label, NodeId, ParamRange, RangeScale, Topic, Value};
+use lm_gui_plugins::Gesture;
+use lm_port::{CorePort, EditOp, Feed, HostTime, Label, NodeId, ParamRange, RangeScale, Topic, Value};
 
 use super::ScreenCx;
 use super::piano_roll::kit::{
@@ -306,17 +307,17 @@ const MODES: [(&str, &str); 5] =
 enum Drag {
     /// the selection moving (a new point is a selection of one); `uids` are the points' places before the drag
     Move {
-        g: Option<GestureId>,
+        g: Option<Gesture>,
         origin: Arc<Vec<Pt>>,
         from: (f64, f64),
     },
     Out {
-        g: Option<GestureId>,
+        g: Option<Gesture>,
         i: usize,
         origin: Arc<Vec<Pt>>,
     },
     Curve {
-        g: Option<GestureId>,
+        g: Option<Gesture>,
         i: usize,
         origin: Arc<Vec<Pt>>,
         from_y: f32,
@@ -333,7 +334,7 @@ enum Drag {
         stroke: Vec<(i64, f64)>,
     },
     Tension {
-        g: Option<GestureId>,
+        g: Option<Gesture>,
         origin: Arc<Vec<Pt>>,
         from_y: f32,
         start: f64,
@@ -513,24 +514,26 @@ impl AutomationEditor {
         let (pts, sel) = Self::sorted(pts, &self.sel);
         let Some(op) = self.points_op(&pts) else { return };
         self.sel = sel;
-        let _ = self.scx.core.update(cx, |core, _| core.port_mut().apply(Label::new(label), vec![op]));
+        self.scx.core.update(cx, |core, _| {
+            core.report(|pt| pt.apply(Label::new(label), vec![op]));
+        });
         cx.notify();
     }
 
-    fn gesture(&mut self, g: &mut Option<GestureId>, label: &'static str, pts: Vec<Pt>, cx: &mut Context<Self>) {
+    fn gesture(&mut self, g: &mut Option<Gesture>, label: &'static str, pts: Vec<Pt>, cx: &mut Context<Self>) {
         let (pts, sel) = Self::sorted(pts, &self.sel);
         let Some(op) = self.points_op(&pts) else { return };
         self.sel = sel;
         self.scx.core.update(cx, |core, _| {
-            let port = core.port_mut();
-            let g = g.get_or_insert_with(|| port.begin_gesture(Label::new(label)));
-            port.gesture_apply(g, vec![op]);
+            // a gesture closed under the drag (the release was lost) refuses the edits: the drag writes nothing more
+            let open = *g.get_or_insert_with(|| core.begin_gesture(Label::new(label)));
+            core.gesture_apply(open, vec![op]);
         });
     }
 
-    fn commit(&self, g: Option<GestureId>, cx: &mut Context<Self>) {
+    fn commit(&self, g: Option<Gesture>, cx: &mut Context<Self>) {
         if let Some(g) = g {
-            self.scx.core.update(cx, |core, _| core.port_mut().gesture_commit(g));
+            self.scx.core.update(cx, |core, _| core.gesture_commit(g));
         }
     }
 
@@ -797,7 +800,7 @@ impl AutomationEditor {
         self.cursor = music::snap(self.x_to_tick(x), self.grid_ticks()).max(0);
         let t = self.cursor;
         self.scx.core.update(cx, |core, _| {
-            let _ = core.port_mut().run_action("transport.locate".into(), Value::int(t));
+            core.report(|pt| pt.run_action("transport.locate".into(), Value::int(t)));
         });
         cx.notify();
     }
@@ -908,8 +911,8 @@ impl AutomationEditor {
 
     fn set_mode(&mut self, mode: &'static str, cx: &mut Context<Self>) {
         let Some(id) = self.lane else { return };
-        let _ = self.scx.core.update(cx, |core, _| {
-            core.port_mut().apply(Label::new("Automation mode"), vec![EditOp::set(id, &["mode"], Value::text(mode))])
+        self.scx.core.update(cx, |core, _| {
+            core.report(|pt| pt.apply(Label::new("Automation mode"), vec![EditOp::set(id, &["mode"], Value::text(mode))]));
         });
         cx.notify();
     }
@@ -919,7 +922,7 @@ impl AutomationEditor {
         let Some(id) = self.lane else { return };
         let params = Value::object([("lane", Value::text(id.to_string()))]);
         self.scx.core.update(cx, |core, _| {
-            let _ = core.port_mut().run_action("automation.rearm".into(), params);
+            core.report(|pt| pt.run_action("automation.rearm".into(), params));
         });
         cx.notify();
     }
@@ -1330,7 +1333,7 @@ impl Render for AutomationEditor {
         }
         let core = self.scx.core.read(cx);
         let pos = core.port().telemetry().position;
-        let map = model::tempo_map(core.port().root());
+        let map = core.port().tempo_map();
         let play = match self.playing {
             Some((t0, from)) => Some(from as f64 + now.since(t0) as f64 * 1e-9 * self.ticks_per_sec),
             None => pos.playing.then(|| map.tick_at(pos.at(now) as i64) as f64),

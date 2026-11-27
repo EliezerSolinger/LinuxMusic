@@ -27,14 +27,14 @@ use gpui::{
     img, point, prelude::*, px, rgb, size,
 };
 use lm_port::{
-    CorePort, EditOp, GestureId, Label, MapScope, MapTarget, Mapping, NodeId, NodeRef, NodeSchema, PathStep, PeakBlock,
+    CorePort, EditOp, Label, MapScope, MapTarget, Mapping, NodeId, NodeRef, NodeSchema, PathStep, PeakBlock,
     Pending, Ref, Value,
 };
 
 use crate::raster::{Canvas, Rgba};
 use crate::spec::{Bind, ButtonSpec, Kind, KnobSpec, PanelSpec, SurfaceCx, SurfaceHandle, Target, Text, ToggleSpec};
 use crate::widgets::{self, Range, theme};
-use crate::{PortHost, assets};
+use crate::{Gesture, PortHost, assets};
 
 /// The value copied by "Copy value", for "Paste value" in any panel (the legacy keeps one for all controls)
 static CLIPBOARD: Mutex<Option<f64>> = Mutex::new(None);
@@ -50,7 +50,7 @@ const PIXELS_PER_NOTCH: f32 = 20.0;
 /// A graph being drawn: one gesture, the samples as drawn so far
 struct GraphDraw {
     ctrl: usize,
-    gesture: GestureId,
+    gesture: Gesture,
     samples: Vec<f64>,
     last_x: f32,
     cursor: (f32, f32),
@@ -58,7 +58,7 @@ struct GraphDraw {
 
 struct Drag {
     ctrl: usize,
-    gesture: GestureId,
+    gesture: Gesture,
     last_y: f32,
     left_over: f64,
     value: f64,
@@ -93,7 +93,7 @@ fn level_for(samples_per_px: f64) -> u8 {
 struct SurfDrag {
     ctrl: usize,
     handle: usize,
-    gesture: GestureId,
+    gesture: Gesture,
 }
 
 /// What the value float shows and for whom
@@ -210,6 +210,8 @@ pub struct PluginPanel<H: PortHost> {
     open_imports: Vec<(lm_port::RequestId, usize, &'static str)>,
     timer: Option<Task<()>>,
     _observe: Subscription,
+    /// Closes the open gestures when the window loses the focus (made by the first render, which has the window)
+    _activation: Option<Subscription>,
 }
 
 impl<H: PortHost> PluginPanel<H> {
@@ -253,6 +255,7 @@ impl<H: PortHost> PluginPanel<H> {
             open_imports: Vec::new(),
             timer: None,
             _observe: observe,
+            _activation: None,
         }
     }
 
@@ -407,9 +410,8 @@ impl<H: PortHost> PluginPanel<H> {
         let label = Label::new(c.name.key);
         let op = self.field_op(field, Self::samples_value(&samples));
         let gesture = self.host.update(cx, |h, _| {
-            let port = h.port_mut();
-            let gid = port.begin_gesture(label);
-            port.gesture_apply(&gid, vec![op]);
+            let gid = h.gesture_begin(label);
+            h.gesture_apply(gid, vec![op]);
             gid
         });
         self.graph = Some(GraphDraw { ctrl, gesture, samples, last_x: lx, cursor: (lx, ly) });
@@ -437,13 +439,13 @@ impl<H: PortHost> PluginPanel<H> {
         self.graph_last_x.insert(ctrl, lx);
         let host = self.host.clone();
         let Some(d) = &self.graph else { return };
-        host.update(cx, |h, _| h.port_mut().gesture_apply(&d.gesture, vec![op]));
+        host.update(cx, |h, _| h.gesture_apply(d.gesture, vec![op]));
         cx.notify();
     }
 
     fn graph_up(&mut self, cx: &mut Context<Self>) {
         if let Some(d) = self.graph.take() {
-            self.host.update(cx, |h, _| h.port_mut().gesture_commit(d.gesture));
+            self.host.update(cx, |h, _| h.gesture_commit(d.gesture));
             cx.notify();
         }
     }
@@ -616,12 +618,11 @@ impl<H: PortHost> PluginPanel<H> {
         };
         let Some(op) = op else { return };
         self.host.update(cx, |h, _| {
-            let port = h.port_mut();
             if let Some((k, v)) = live {
-                port.param_write(node, k, v as f32);
+                h.port_mut().param_write(node, k, v as f32);
             }
             // a refusal (the node is gone, another client removed it) changes nothing; the view follows the tree
-            let _ = port.apply(label, vec![op]);
+            h.report(|pt| pt.apply(label, vec![op]));
         });
         cx.notify();
     }
@@ -641,9 +642,8 @@ impl<H: PortHost> PluginPanel<H> {
             let node = self.node;
             let label = Label::new("Turn on");
             self.host.update(cx, |h, _| {
-                let port = h.port_mut();
-                port.param_write(node, param, 1.0);
-                let _ = port.apply(label, vec![op]);
+                h.port_mut().param_write(node, param, 1.0);
+                h.report(|pt| pt.apply(label, vec![op]));
             });
         }
     }
@@ -658,7 +658,7 @@ impl<H: PortHost> PluginPanel<H> {
         let op = self.field_op(field, Value::text("off"));
         let label = Label::new("Tempo Sync");
         self.host.update(cx, |h, _| {
-            let _ = h.port_mut().apply(label, vec![op]);
+            h.report(|pt| pt.apply(label, vec![op]));
         });
     }
 
@@ -668,7 +668,7 @@ impl<H: PortHost> PluginPanel<H> {
         let key = self.spec.controls[ctrl].target().key();
         let value = self.param(key, cx);
         let label = Label::new(self.spec.controls[ctrl].name.key);
-        let gesture = self.host.update(cx, |h, _| h.port_mut().begin_gesture(label));
+        let gesture = self.host.update(cx, |h, _| h.gesture_begin(label));
         self.drag = Some(Drag { ctrl, gesture, last_y: y, left_over: 0.0, value, offset: 0.0 });
         self.show_float(ctrl, None, cx);
     }
@@ -713,11 +713,10 @@ impl<H: PortHost> PluginPanel<H> {
         let host = self.host.clone();
         let Some(d) = &self.drag else { return };
         host.update(cx, |h, _| {
-            let port = h.port_mut();
             if let Some(key) = live {
-                port.param_write(node, key, v as f32);
+                h.port_mut().param_write(node, key, v as f32);
             }
-            port.gesture_apply(&d.gesture, vec![op]);
+            h.gesture_apply(d.gesture, vec![op]);
         });
         self.show_float(ctrl, None, cx);
     }
@@ -742,10 +741,9 @@ impl<H: PortHost> PluginPanel<H> {
         let host = self.host.clone();
         let Some(d) = &self.drag else { return };
         host.update(cx, |h, _| {
-            let port = h.port_mut();
-            port.param_write(node, key, v as f32);
+            h.port_mut().param_write(node, key, v as f32);
             if let Some(op) = op {
-                port.gesture_apply(&d.gesture, vec![op]);
+                h.gesture_apply(d.gesture, vec![op]);
             }
         });
         self.show_float(ctrl, None, cx);
@@ -791,10 +789,9 @@ impl<H: PortHost> PluginPanel<H> {
         let host = self.host.clone();
         let Some(d) = &self.drag else { return };
         host.update(cx, |h, _| {
-            let port = h.port_mut();
-            port.param_write(node, key, v as f32);
+            h.port_mut().param_write(node, key, v as f32);
             if let Some(op) = op {
-                port.gesture_apply(&d.gesture, vec![op]);
+                h.gesture_apply(d.gesture, vec![op]);
             }
         });
         self.show_float(ctrl, None, cx);
@@ -963,7 +960,7 @@ impl<H: PortHost> PluginPanel<H> {
             let params = Value::object([("node", Value::text(self.node.to_string()))]);
             let action = l.action;
             self.host.update(cx, |h, _| {
-                let _ = h.port_mut().run_action(action.into(), params);
+                h.report(|pt| pt.run_action(action.into(), params));
             });
         }
     }
@@ -982,7 +979,7 @@ impl<H: PortHost> PluginPanel<H> {
         let ops = vec![self.field_op(l.bank, Value::int(*bank)), self.field_op(l.program, Value::int(*program))];
         let label = Label::new(c.name.key);
         self.host.update(cx, |h, _| {
-            let _ = h.port_mut().apply(label, ops);
+            h.report(|pt| pt.apply(label, ops));
         });
         cx.notify();
     }
@@ -1062,7 +1059,7 @@ impl<H: PortHost> PluginPanel<H> {
         });
         let Some((Some(handle), set_on_press)) = found else { return };
         let label = Label::new(c.name.key);
-        let gesture = self.host.update(cx, |h, _| h.port_mut().begin_gesture(label));
+        let gesture = self.host.update(cx, |h, _| h.gesture_begin(label));
         self.surf = Some(SurfDrag { ctrl, handle, gesture });
         if set_on_press {
             self.surface_to(x, y, cx);
@@ -1099,18 +1096,17 @@ impl<H: PortHost> PluginPanel<H> {
         let host = self.host.clone();
         let Some(d) = &self.surf else { return };
         host.update(cx, |h, _| {
-            let port = h.port_mut();
             for (k, v) in &live {
-                port.param_write(node, k, *v as f32);
+                h.port_mut().param_write(node, k, *v as f32);
             }
-            port.gesture_apply(&d.gesture, ops);
+            h.gesture_apply(d.gesture, ops);
         });
         cx.notify();
     }
 
     fn surface_up(&mut self, cx: &mut Context<Self>) {
         if let Some(d) = self.surf.take() {
-            self.host.update(cx, |h, _| h.port_mut().gesture_commit(d.gesture));
+            self.host.update(cx, |h, _| h.gesture_commit(d.gesture));
             self.overrides.clear();
             cx.notify();
         }
@@ -1118,7 +1114,7 @@ impl<H: PortHost> PluginPanel<H> {
 
     fn end_drag(&mut self, cx: &mut Context<Self>) {
         if let Some(d) = self.drag.take() {
-            self.host.update(cx, |h, _| h.port_mut().gesture_commit(d.gesture));
+            self.host.update(cx, |h, _| h.gesture_commit(d.gesture));
             self.float = None;
             cx.notify();
         }
@@ -1335,7 +1331,7 @@ impl<H: PortHost> PluginPanel<H> {
                     .collect();
                 let label = Label::new(self.spec.controls[ctrl].name.key);
                 self.host.update(cx, |h, _| {
-                    let _ = h.port_mut().apply(label, ops);
+                    h.report(|pt| pt.apply(label, ops));
                 });
                 cx.notify();
             }
@@ -1389,7 +1385,7 @@ impl<H: PortHost> PluginPanel<H> {
 
     /// Imports `path` through the port and sets `field` with it (the "open" button of an audio file)
     pub fn import_open(&mut self, ctrl: usize, field: &'static str, path: std::path::PathBuf, cx: &mut Context<Self>) {
-        let pending = self.host.update(cx, |h, _| h.port_mut().import(path));
+        let pending = self.host.update(cx, |h, _| h.import(path));
         match pending {
             Pending::Ready(Ok(res)) => self.field_imported(ctrl, field, res, cx),
             Pending::Ready(Err(_)) => {}
@@ -1401,7 +1397,7 @@ impl<H: PortHost> PluginPanel<H> {
         let label = Label::new(self.spec.controls[ctrl].name.key);
         let op = self.field_op(field, Value::resource(res));
         self.host.update(cx, |h, _| {
-            let _ = h.port_mut().apply(label, vec![op]);
+            h.report(|pt| pt.apply(label, vec![op]));
         });
         cx.notify();
     }
@@ -1424,7 +1420,7 @@ impl<H: PortHost> PluginPanel<H> {
             ("bytes", Value::list(bytes.iter().map(|b| Value::int(i64::from(*b))))),
         ]);
         self.host.update(cx, |h, _| {
-            let _ = h.port_mut().run_action(action.into(), params);
+            h.report(|pt| pt.run_action(action.into(), params));
         });
     }
 
@@ -1475,7 +1471,7 @@ impl<H: PortHost> PluginPanel<H> {
 
     /// Imports `path` for the file field of `ctrl` (also what the double click ends in; the tests call it)
     pub fn import_file(&mut self, ctrl: usize, path: std::path::PathBuf, cx: &mut Context<Self>) {
-        let pending = self.host.update(cx, |h, _| h.port_mut().import(path));
+        let pending = self.host.update(cx, |h, _| h.import(path));
         match pending {
             Pending::Ready(Ok(res)) => self.file_imported(ctrl, res, cx),
             Pending::Ready(Err(_)) => {}
@@ -1494,7 +1490,7 @@ impl<H: PortHost> PluginPanel<H> {
         }
         let label = Label::new(c.name.key);
         self.host.update(cx, |h, _| {
-            let _ = h.port_mut().apply(label, ops);
+            h.report(|pt| pt.apply(label, ops));
         });
         cx.notify();
     }
@@ -1653,11 +1649,10 @@ impl<H: PortHost> PluginPanel<H> {
                 }
                 let live: Vec<(&'static str, f64)> = edits;
                 self.host.update(cx, |h, _| {
-                    let port = h.port_mut();
                     for (k, v) in &live {
-                        port.param_write(node, k, *v as f32);
+                        h.port_mut().param_write(node, k, *v as f32);
                     }
-                    let _ = port.apply(label, ops);
+                    h.report(|pt| pt.apply(label, ops));
                 });
                 cx.notify();
             }
@@ -1853,7 +1848,7 @@ impl<H: PortHost> PluginPanel<H> {
         let label = Label::new(self.spec.controls[ctrl].name.key);
         let op = self.field_op(field, Value::text(text));
         self.host.update(cx, |h, _| {
-            let _ = h.port_mut().apply(label, vec![op]);
+            h.report(|pt| pt.apply(label, vec![op]));
         });
         cx.stop_propagation();
         cx.notify();
@@ -1978,13 +1973,13 @@ impl<H: PortHost> PluginPanel<H> {
                 // the next controller moved becomes the source (I-21.2); the session shows the learning and its end
                 let target = self.map_target(ctrl);
                 self.host.update(cx, |h, _| {
-                    let _ = h.port_mut().midi_learn(target, MapScope::Project);
+                    h.report(|pt| pt.midi_learn(target, MapScope::Project));
                 });
             }
             MenuItem::MidiForget => {
                 let target = self.map_target(ctrl);
                 self.host.update(cx, |h, _| {
-                    let _ = h.port_mut().unmap(&target, MapScope::Project);
+                    h.report(|pt| pt.unmap(&target, MapScope::Project));
                 });
             }
             MenuItem::MidiBinding => cx.emit(PanelEvent::OpenBinding(self.map_target(ctrl))),
@@ -2011,7 +2006,7 @@ impl<H: PortHost> PluginPanel<H> {
                     let op = self.at_end(op, owner, cx);
                     let label = Label::new("Add automation lane");
                     self.host.update(cx, |h, _| {
-                        let _ = h.port_mut().apply(label, vec![op]);
+                        h.report(|pt| pt.apply(label, vec![op]));
                     });
                 }
             }
@@ -2019,7 +2014,7 @@ impl<H: PortHost> PluginPanel<H> {
                 if let Some(id) = self.lane(ctrl, cx) {
                     let label = Label::new("Remove automation lane");
                     self.host.update(cx, |h, _| {
-                        let _ = h.port_mut().apply(label, vec![EditOp::Remove { id: Ref::Id(id) }]);
+                        h.report(|pt| pt.apply(label, vec![EditOp::Remove { id: Ref::Id(id) }]));
                     });
                 }
             }
@@ -2033,7 +2028,7 @@ impl<H: PortHost> PluginPanel<H> {
                     let op = self.field_op(field, Value::text(SYNC_NOTES[i].0));
                     let label = Label::new("Tempo Sync");
                     self.host.update(cx, |h, _| {
-                        let _ = h.port_mut().apply(label, vec![op]);
+                        h.report(|pt| pt.apply(label, vec![op]));
                     });
                 }
             }
@@ -2653,6 +2648,9 @@ impl<H: PortHost> Focusable for PluginPanel<H> {
 
 impl<H: PortHost> Render for PluginPanel<H> {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self._activation.is_none() {
+            self._activation = Some(crate::host::guard_activation(self.host.clone(), window, cx));
+        }
         let spec = self.spec;
         let (w, h) = spec.size;
         let scale = window.scale_factor();
@@ -2710,6 +2708,7 @@ impl<H: PortHost> Render for PluginPanel<H> {
             .w(px(w))
             .h(px(h)),
         );
+        root = root.child(crate::host::release_guard(self.host.downgrade()));
         // the controls' places, for the tests and the accessibility tree (no paint, no hitbox)
         for c in spec.controls.iter().zip(&shown).filter(|(_, s)| **s).map(|(c, _)| c) {
             let (cw, ch) = c.size();

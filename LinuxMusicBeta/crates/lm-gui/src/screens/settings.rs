@@ -177,7 +177,7 @@ pub fn path(keys: &[&str]) -> Vec<PathStep> {
 pub fn port_action(scx: &ScreenCx, id: &str, params: Value, cx: &mut App) {
     scx.core.update(cx, |core, cx| {
         // a refusal comes back as a notice from the core; a Waiting answer arrives in a later pump
-        let _ = core.port_mut().run_action(id.into(), params);
+        core.report(|pt| pt.run_action(id.into(), params));
         cx.notify();
     });
 }
@@ -436,7 +436,7 @@ impl Settings {
     /// One setting, applied at once (the core reads the tree)
     fn set_path(&mut self, cx: &mut Context<Self>, p: Vec<PathStep>, v: Value) {
         self.scx.core.update(cx, |core, cx| {
-            let _ = core.port_mut().set_preference(p, v);
+            core.report(|pt| pt.set_preference(p, v));
             cx.notify();
         });
         cx.notify();

@@ -13,6 +13,7 @@
 //! before it is sent: a map the time kernel would refuse is never written.
 
 use gpui::{MouseDownEvent, MouseMoveEvent};
+use lm_gui_plugins::Gesture;
 use lm_port::{PathStep, ROOT};
 use lm_time::{Bpm, Ppq, TempoPoint, TimeSignature};
 
@@ -128,7 +129,7 @@ struct Drag {
     bpm0: f64,
     range: (f64, f64),
     before: Vec<Pt>,
-    gesture: Option<GestureId>,
+    gesture: Option<Gesture>,
 }
 
 struct Menu {
@@ -424,7 +425,7 @@ impl CompositionPage {
         let pts = normalized(pts);
         if valid(&root, &pts) {
             let g = d.gesture.take().unwrap_or_else(|| {
-                self.core.update(cx, |core, _| core.port_mut().begin_gesture(Label::new("Move the tempo point")))
+                self.core.update(cx, |core, _| core.begin_gesture(Label::new("Move the tempo point")))
             });
             let op = EditOp::Set {
                 id: Ref::Id(ROOT),
@@ -432,7 +433,7 @@ impl CompositionPage {
                 value: Value::list(pts.iter().map(Pt::value)),
             };
             self.core.update(cx, |core, cx| {
-                core.port_mut().gesture_apply(&g, vec![op]);
+                core.gesture_apply(g, vec![op]);
                 cx.notify();
             });
             d.gesture = Some(g);
@@ -443,7 +444,7 @@ impl CompositionPage {
     pub(super) fn tempo_up(&mut self, cx: &mut Context<Self>) {
         let Some(d) = self.tempo.drag.take() else { return };
         if let Some(g) = d.gesture {
-            self.core.update(cx, |core, _| core.port_mut().gesture_commit(g));
+            self.core.update(cx, |core, _| core.gesture_commit(g));
             let root = self.tempo_root(cx);
             self.ask_rerender(&d.before, &read(&root), &root);
         }
@@ -704,7 +705,7 @@ impl CompositionPage {
                 .child(btn("tempo-render-undo", tr("Undo").into()).on_click(cx.listener(|p, _, _, cx| {
                     p.tempo.rerender = None;
                     p.core.update(cx, |core, _| {
-                        let _ = core.port_mut().undo();
+                        core.report(|pt| pt.undo());
                     });
                     cx.notify();
                 })))

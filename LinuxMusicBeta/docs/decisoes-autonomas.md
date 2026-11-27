@@ -2268,3 +2268,31 @@ derruba ou trava o processo principal nem a thread de áudio.
   tenta de novo; o segundo estouro bloqueia. Um plugin que a varredura achou funcionando sai da lista. O usuário desfaz
   com a ação `plugin.unblock {format?, uri?}` (sem `uri`: todo o formato; sem `format`: tudo). A tela ainda não tem
   botão para ela.
+
+## Rodada de desenho (27/11): estado e erros na GUI
+
+- **Gestos abertos.** Um arrasto ficava aberto no núcleo se o botão era solto fora do elemento ou da janela, ou se a janela
+  perdia o foco. Agora todo gesto nasce num único registro (`lm_gui_plugins::host::Gestures`, dono do `GestureId`); a tela
+  guarda só um `Gesture` (número, `Copy`) e fecha com `commit` ou `cancel`. O que sobrar aberto é fechado (commit: o que o
+  usuário fez fica, um passo de desfazer) quando um botão do mouse é solto em qualquer lugar (`release_guard`, um elemento
+  de pintura que escuta o mouse da janela inteira e fecha depois que os tratadores da tela rodaram) ou quando a janela
+  perde a ativação (`guard_activation`). Há um guarda na janela principal, em cada janela destacada (`Hosted`) e em cada
+  painel de plugin. Um `Gesture` já fechado recusa edições (`apply` devolve `false`), então um arrasto velho não escreve.
+  Escolhi commit e não cancel porque soltar fora é terminar o gesto, não desistir dele.
+- **Erros do port.** Todo resultado de chamada ao port passa por `Core::report` (ou `PortHost::report` nos painéis): erro
+  pronto vira um aviso curto (`Core::take_errors`, mostrado como toast pelo `Workspace`); pedido que espera
+  (`Pending::Waiting`) mostra o erro quando a resposta chega em `on_pump`. O mesmo erro repetido substitui o aviso ainda
+  visível; cancelamento não é erro. Nenhum `let _ = port...` restou na GUI.
+- **Mapas que nunca diminuíam.** `Core` guarda as respostas de `imported`/`entries`/`previews` só para pedidos registrados
+  (`expect`, feito por `Core::browse/search/prepare_preview/import`); a resposta sai quando a tela a pega, quando ela
+  esquece o pedido (`forget_request`, ao trocar a busca ou a pré-escuta) ou após 2 minutos. No `TileCache`, os nomes de
+  recurso viraram um mapa com teto de 256 (sai o menos usado, com blocos e imagens) e `forget` também tira o nome.
+- **`Finished::Peaks`.** O `Core` não o descarta mais: guarda o id que chegou ou falhou (`take_peak_answers`) e redesenha;
+  o `TileCache` pede um bloco uma vez só enquanto o pedido voa (a deduplicação do lado da GUI), pede de novo quando a
+  resposta chega (o port já a guarda) e, se falhou, mostra o erro uma vez e não pede mais até o recurso ser esquecido.
+- **`Clip::read` por evento.** O piano roll lê o clipe por um `ClipCache` (até 4 clipes) invalidado quando a lista `tracks`
+  da árvore deixa de ser o mesmo nó (a árvore é persistente: sem mudança, é o mesmo nó).
+- **`tempo_map`.** A GUI tinha uma cópia própria da leitura do mapa de tempo. Agora `CorePort::tempo_map() -> Arc<TempoMap>`
+  devolve o mapa do núcleo, guardado por revisão (`lm_port::TempoCache`: refeito só se os pontos, a taxa ou o ppq mudam);
+  a leitura é uma só (`lm_port::tempo_map`, a mesma do `lm-session`). `model::tempo_map(root)` ficou só para quem recebeu
+  uma árvore sem o port (instantâneos de exportação) e chama a mesma função do núcleo.

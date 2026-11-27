@@ -18,7 +18,7 @@ use crate::model;
 /// The tick of the playhead
 pub fn playhead_tick(core: &Entity<Core>, cx: &App) -> i64 {
     let c = core.read(cx);
-    model::tempo_map(c.port().root()).tick_at(c.port().telemetry().position.samples)
+    c.port().tempo_map().tick_at(c.port().telemetry().position.samples)
 }
 
 /// What a drop does, decided from the entry alone (the part the tests cover)
@@ -63,14 +63,18 @@ pub fn drop_entry(core: &Entity<Core>, d: &Dragged, track: Option<NodeId>, tick:
         Drop::Preset(entry) => {
             if let Some(t) = track {
                 let params = Value::object([("node", Value::text(t.to_string())), ("entry", Value::int(entry as i64))]);
-                let _ = core.update(cx, |c, _| c.port_mut().run_action("plugin.load_preset".into(), params));
+                core.update(cx, |c, _| {
+                    c.report(|pt| pt.run_action("plugin.load_preset".into(), params));
+                });
             }
         }
         Drop::Instrument(id) => {
             if let Some(t) = track {
                 let node = Value::object([("plugin", Value::text(id)), ("state", Value::empty_object())]);
                 let ops = vec![EditOp::set(t, &["instrument"], node)];
-                let _ = core.update(cx, |c, _| c.port_mut().apply(Label::new("Swap the instrument"), ops));
+                core.update(cx, |c, _| {
+                    c.report(|pt| pt.apply(Label::new("Swap the instrument"), ops));
+                });
             }
         }
         Drop::Nothing => {}
@@ -80,7 +84,7 @@ pub fn drop_entry(core: &Entity<Core>, d: &Dragged, track: Option<NodeId>, tick:
 /// An audio file as an item of this track at `tick`: imported by the core, then added when its length is known
 fn audio_on_track(core: &Entity<Core>, path: PathBuf, track: NodeId, tick: i64, cx: &mut App) {
     let name = path.file_stem().map_or_else(String::new, |s| s.to_string_lossy().to_string());
-    let answer = core.update(cx, |c, _| c.port_mut().import(path));
+    let answer = core.update(cx, |c, _| c.import(path));
     let core = core.clone();
     match answer {
         Pending::Ready(Ok(res)) => wait_length(core, res, name, track, tick, cx),
@@ -96,6 +100,7 @@ fn audio_on_track(core: &Entity<Core>, path: PathBuf, track: NodeId, tick: i64, 
                         return;
                     }
                 }
+                cx.update(|cx| core.update(cx, |c, _| c.forget_request(id)));
             })
             .detach();
         }
@@ -132,10 +137,10 @@ fn add_item(core: &Entity<Core>, res: &Resource, name: &str, track: NodeId, tick
         ("lanes", Value::list([lane])),
     ]);
     core.update(cx, |c, cx| {
-        let _ = c.port_mut().apply(
+        c.report(|pt| pt.apply(
             Label::new("Add audio"),
             vec![EditOp::Insert { temp: 1, parent: Ref::Id(track), list: "items".into(), index, node: item }],
-        );
+        ));
         cx.notify();
     });
 }

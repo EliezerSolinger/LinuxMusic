@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use lm_port::{NodeId, Resource, Value};
-use lm_time::{Bpm, Ppq, TempoMap, TempoPoint, TimeSignature};
+use lm_time::TempoMap;
 
 pub fn id_of(v: &Value) -> Option<NodeId> {
     v.get("id").and_then(Value::as_text).and_then(|t| NodeId::parse(t).ok())
@@ -52,26 +52,11 @@ pub fn ppq(root: &Value) -> u32 {
     at(root, &["project", "ppq"]).and_then(Value::as_int).unwrap_or(960) as u32
 }
 
-/// The tempo map of the tree (lm-time): positions in samples <-> ticks, bars and beats
+/// The tempo map of a tree the caller already holds (an export's snapshot, a function that got only the root): the
+/// core's own reading of it (`lm_port::tempo_map_or_default`), never one of the interface's. Where the port is at hand
+/// the screens ask `CorePort::tempo_map`, which is kept by revision
 pub fn tempo_map(root: &Value) -> TempoMap {
-    let rate = sample_rate(root);
-    let ppq = Ppq::new(ppq(root)).unwrap_or_else(|_| Ppq::new(960).expect("960 is a valid ppq"));
-    let points: Vec<TempoPoint> = list(root, "tempoMap")
-        .filter_map(|p| {
-            let bpm = Bpm::parse(p.get("bpm").and_then(Value::as_text).unwrap_or("120")).ok()?;
-            let sig = p
-                .get("timeSig")
-                .map(|s| (s.at(0).and_then(Value::as_int).unwrap_or(4), s.at(1).and_then(Value::as_int).unwrap_or(4)));
-            let (n, d) = sig.unwrap_or((4, 4));
-            let ts = TimeSignature::new(n as u8, d as u8).ok()?;
-            let point = TempoPoint::new(int(p, "tick", 0), bpm, ts);
-            Some(if flag(p, "ramp") { point.linear() } else { point })
-        })
-        .collect();
-    TempoMap::new(rate, ppq, &points).unwrap_or_else(|_| {
-        TempoMap::constant(rate, ppq, Bpm::from_integer(120).expect("120 bpm"), TimeSignature::new(4, 4).expect("4/4"))
-            .expect("a constant map")
-    })
+    lm_port::tempo_map_or_default(root)
 }
 
 #[derive(Clone, Debug)]

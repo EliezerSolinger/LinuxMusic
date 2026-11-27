@@ -211,7 +211,7 @@ impl ProjectDialog {
                             if import {
                                 let tick = {
                                     let p = core.read(cx).port();
-                                    crate::model::tempo_map(p.root()).tick_at(p.telemetry().position.samples)
+                                    p.tempo_map().tick_at(p.telemetry().position.samples)
                                 };
                                 super::files::import_paths(&core, &[path], tick, cx);
                             } else {

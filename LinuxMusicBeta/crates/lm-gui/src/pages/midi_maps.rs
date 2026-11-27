@@ -44,19 +44,18 @@ impl MidiMapsPage {
     /// Sets a key path of a mapping: a node edit in the project, a preference on this machine
     fn set(&mut self, scope: MapScope, index: usize, path: &[&str], value: Value, cx: &mut Context<Self>) {
         self.core.update(cx, |core, _| {
-            let port = core.port_mut();
             match scope {
                 MapScope::Project => {
                     let id =
-                        port.root().get("midiMap").and_then(|l| l.items().nth(index)).and_then(crate::model::id_of);
+                        core.port().root().get("midiMap").and_then(|l| l.items().nth(index)).and_then(crate::model::id_of);
                     if let Some(id) = id {
-                        let _ = port.apply(Label::new("MIDI mapping"), vec![EditOp::set(id, path, value)]);
+                        core.report(|pt| pt.apply(Label::new("MIDI mapping"), vec![EditOp::set(id, path, value)]));
                     }
                 }
                 MapScope::Machine => {
                     let mut p = vec![PathStep::key("midiMap"), PathStep::Index(index)];
                     p.extend(path.iter().map(|k| PathStep::key(k)));
-                    let _ = port.set_preference(p, value);
+                    core.report(|pt| pt.set_preference(p, value));
                 }
             }
         });
@@ -66,18 +65,18 @@ impl MidiMapsPage {
     fn remove(&mut self, scope: MapScope, m: &Mapping, index: usize, cx: &mut Context<Self>) {
         let id = m.id;
         self.core.update(cx, |core, _| {
-            let port = core.port_mut();
             match (scope, id) {
                 (MapScope::Project, Some(id)) => {
-                    let _ = port.apply(Label::new("MIDI: tirar o mapa"), vec![EditOp::Remove { id: Ref::Id(id) }]);
+                    core.report(|pt| pt.apply(Label::new("MIDI: tirar o mapa"), vec![EditOp::Remove { id: Ref::Id(id) }]));
                 }
                 _ => {
-                    let kept: Vec<Value> = port
+                    let kept: Vec<Value> = core
+                        .port()
                         .preferences()
                         .get("midiMap")
                         .map(|l| l.items().enumerate().filter(|(i, _)| *i != index).map(|(_, v)| v.clone()).collect())
                         .unwrap_or_default();
-                    let _ = port.set_preference(vec![PathStep::key("midiMap")], Value::list(kept));
+                    core.report(|pt| pt.set_preference(vec![PathStep::key("midiMap")], Value::list(kept)));
                 }
             }
         });

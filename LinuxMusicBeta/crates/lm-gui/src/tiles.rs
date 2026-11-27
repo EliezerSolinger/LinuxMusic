@@ -13,7 +13,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use gpui::{Bounds, Pixels, RenderImage, Window, point, px, size};
-use lm_port::{CorePort, PeakBlock, Pending, Resource};
+use lm_port::{CorePort, Error, PeakBlock, Pending, RequestId, Resource};
 
 /// The pyramid's shape (I-20.4): 64 samples per pair at level 0, each level joins 4
 const LEVEL0: u64 = 64;
@@ -25,6 +25,15 @@ pub const TILE_PAIRS: usize = 256;
 pub const TILE_H: usize = 64;
 const MAX_IMAGES: usize = 512; // 64 KB each: 32 MB at most
 const MAX_BLOCKS: usize = 16_384; // 1 KB each: 16 MB at most
+/// Resources kept by number; the one used the longest ago leaves (with its blocks and images) when a new one comes
+const MAX_RESOURCES: usize = 256;
+/// Requests in flight remembered (answers that never come are forgotten past this)
+const MAX_IN_FLIGHT: usize = 4096;
+
+/// The peaks that arrived and the ones that failed since the last frame (`Core::take_peak_answers`)
+pub type PeakAnswers = (Vec<RequestId>, Vec<(RequestId, Error)>);
+
+type BlockKey = (u32, u8, u32);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct Key {
@@ -36,13 +45,23 @@ struct Key {
 
 #[derive(Default)]
 pub struct TileCache {
-    /// the resources seen, by a small number (the keys below)
-    names: Vec<Resource>,
-    blocks: HashMap<(u32, u8, u32), Arc<PeakBlock>>,
+    /// the resources seen, by a small number (the keys below); numbers are never reused. At most `MAX_RESOURCES`:
+    /// the least recently used leaves, and so does a resource whose peaks grew
+    names: HashMap<Resource, u32>,
+    by_slot: HashMap<u32, Resource>,
+    used: HashMap<u32, u64>,
+    next_slot: u32,
+    clock: u64,
+    blocks: HashMap<BlockKey, Arc<PeakBlock>>,
     images: HashMap<Key, Arc<RenderImage>>,
-    wanted: HashSet<(u32, u8, u32)>,
+    wanted: HashSet<BlockKey>,
     /// Blocks the port answered `Waiting` last frame: only the ones still visible are asked again
-    retry: Vec<(u32, u8, u32)>,
+    retry: Vec<BlockKey>,
+    /// The requests in flight, by block: a block is asked once until its answer comes (or fails, and then never
+    /// again until the resource is forgotten)
+    asked: HashMap<BlockKey, RequestId>,
+    in_flight: HashMap<RequestId, BlockKey>,
+    failed: HashSet<BlockKey>,
     /// Images of resources that grew, waiting for a window to free them
     stale: Vec<Arc<RenderImage>>,
     pub rasterized: u64,
@@ -75,21 +94,43 @@ pub fn tile_range(level: u8, samples_per_px: f64, origin_x: f32, a: f32, z: f32)
 
 impl TileCache {
     fn slot(&mut self, r: &Resource) -> u32 {
-        match self.names.iter().position(|n| n == r) {
-            Some(i) => i as u32,
-            None => {
-                self.names.push(r.clone());
-                (self.names.len() - 1) as u32
-            }
+        self.clock += 1;
+        if let Some(&slot) = self.names.get(r) {
+            self.used.insert(slot, self.clock);
+            return slot;
         }
+        if self.names.len() >= MAX_RESOURCES
+            && let Some((&oldest, _)) = self.used.iter().min_by_key(|(_, at)| **at)
+            && let Some(old) = self.by_slot.get(&oldest).cloned()
+        {
+            self.forget(&old);
+        }
+        let slot = self.next_slot;
+        self.next_slot += 1;
+        self.names.insert(r.clone(), slot);
+        self.by_slot.insert(slot, r.clone());
+        self.used.insert(slot, self.clock);
+        slot
     }
 
-    /// A resource whose peaks grow (a take being recorded, U3): what was kept of it is stale; its tiles are asked
-    /// again and drawn again
+    /// The resources kept (the tests check the bound)
+    #[cfg(test)]
+    pub fn resources(&self) -> usize {
+        self.names.len()
+    }
+
+    /// A resource whose peaks grow (a take being recorded, U3) or that is gone: what was kept of it is dropped,
+    /// number included; its tiles are asked again and drawn again if it is shown again
     pub fn forget(&mut self, resource: &Resource) {
-        let Some(slot) = self.names.iter().position(|n| n == resource) else { return };
-        let slot = slot as u32;
+        let Some(slot) = self.names.remove(resource) else { return };
+        self.by_slot.remove(&slot);
+        self.used.remove(&slot);
         self.blocks.retain(|k, _| k.0 != slot);
+        self.wanted.retain(|k| k.0 != slot);
+        self.retry.retain(|k| k.0 != slot);
+        self.failed.retain(|k| k.0 != slot);
+        self.asked.retain(|k, _| k.0 != slot);
+        self.in_flight.retain(|_, k| k.0 != slot);
         let gone: Vec<Key> = self.images.keys().filter(|k| k.resource == slot).copied().collect();
         for k in gone {
             if let Some(img) = self.images.remove(&k) {
@@ -115,26 +156,60 @@ impl TileCache {
     }
 
     /// Asks the port for the wanted blocks (once per frame, with the port borrowed mutably); the ones still
-    /// `Waiting` are asked again only if the next frame still wants them (scrolled-away ones are dropped)
-    pub fn fetch(&mut self, port: &mut dyn CorePort) {
+    /// `Waiting` are asked again only if the next frame still wants them (scrolled-away ones are dropped), and only
+    /// after the answer to the first ask came. `answers` are the peaks that arrived or failed since the last frame;
+    /// gives the errors to show
+    pub fn fetch(&mut self, port: &mut dyn CorePort, answers: PeakAnswers) -> Vec<Error> {
+        let (arrived, failed) = answers;
+        for id in arrived {
+            if let Some(k) = self.in_flight.remove(&id) {
+                self.asked.remove(&k);
+            }
+        }
+        let mut errors = Vec::new();
+        for (id, e) in failed {
+            if let Some(k) = self.in_flight.remove(&id) {
+                self.asked.remove(&k);
+                self.failed.insert(k);
+                errors.push(e);
+            }
+        }
+        if self.in_flight.len() > MAX_IN_FLIGHT {
+            self.in_flight.clear();
+            self.asked.clear();
+        }
         self.retry.clear();
-        for (res, level, tile) in std::mem::take(&mut self.wanted) {
+        for k in std::mem::take(&mut self.wanted) {
+            let (res, level, tile) = k;
+            if self.failed.contains(&k) {
+                continue;
+            }
+            if self.asked.contains_key(&k) {
+                self.retry.push(k);
+                continue;
+            }
             let from = tile as u64 * TILE_PAIRS as u64;
-            let Some(name) = self.names.get(res as usize).cloned() else { continue };
+            let Some(name) = self.by_slot.get(&res).cloned() else { continue };
             match port.peaks(&name, level, from, from + TILE_PAIRS as u64) {
                 Pending::Ready(Ok(b)) => {
                     if self.blocks.len() >= MAX_BLOCKS {
                         // simple eviction, like the images: the visible ones are asked again by the next frame
                         self.blocks.clear();
                     }
-                    self.blocks.insert((res, level, tile), Arc::new(b));
+                    self.blocks.insert(k, Arc::new(b));
                 }
-                Pending::Waiting(_) => {
-                    self.retry.push((res, level, tile));
+                Pending::Waiting(id) => {
+                    self.asked.insert(k, id);
+                    self.in_flight.insert(id, k);
+                    self.retry.push(k);
                 }
-                Pending::Ready(Err(_)) => {}
+                Pending::Ready(Err(e)) => {
+                    self.failed.insert(k);
+                    errors.push(e);
+                }
             }
         }
+        errors
     }
 
     fn image(
@@ -225,11 +300,48 @@ mod tests {
         let res = Resource::new("sample", "0000000000000000").expect("a valid key");
         let mut cache = TileCache::default();
         cache.want(&res, 0, 0..1);
-        cache.fetch(&mut port);
+        cache.fetch(&mut port, Default::default());
         // unknown to the port: answered Waiting, so another frame is asked
         assert!(cache.waiting());
         // the next frame no longer wants it: it is dropped, and the animation stops
-        cache.fetch(&mut port);
+        cache.fetch(&mut port, Default::default());
         assert!(!cache.waiting());
+    }
+
+    #[test]
+    fn a_block_in_flight_is_asked_once_and_a_failure_stops_it() {
+        let mut port = FakePort::new(Config { tracks: 1, slow_delay: None, slow_track: usize::MAX }).expect("the demo");
+        let res = Resource::new("sample", "0000000000000001").expect("a valid key");
+        let mut cache = TileCache::default();
+        cache.want(&res, 0, 0..1);
+        cache.fetch(&mut port, Default::default());
+        let id = *cache.in_flight.keys().next().expect("asked");
+        // wanted again while the answer has not come: not asked a second time
+        cache.want(&res, 0, 0..1);
+        cache.fetch(&mut port, Default::default());
+        assert_eq!(cache.in_flight.len(), 1);
+        assert!(cache.waiting());
+        // the answer failed: reported once, and never asked again
+        let errors = cache.fetch(&mut port, (Vec::new(), vec![(id, Error::new("test.failed"))]));
+        assert_eq!(errors.len(), 1);
+        cache.want(&res, 0, 0..1);
+        cache.fetch(&mut port, Default::default());
+        assert!(!cache.waiting());
+        assert!(cache.in_flight.is_empty());
+    }
+
+    #[test]
+    fn the_resources_kept_are_bounded_and_forget_removes_the_name() {
+        let mut cache = TileCache::default();
+        for i in 0..(MAX_RESOURCES + 40) {
+            let res = Resource::new("sample", &format!("{i:016x}")).expect("a valid key");
+            cache.want(&res, 0, 0..1);
+        }
+        assert_eq!(cache.resources(), MAX_RESOURCES);
+        let res = Resource::new("sample", &format!("{:016x}", MAX_RESOURCES + 39)).expect("a valid key");
+        assert_eq!(cache.resources(), cache.by_slot.len());
+        cache.forget(&res);
+        assert_eq!(cache.resources(), MAX_RESOURCES - 1);
+        assert_eq!(cache.used.len(), cache.names.len());
     }
 }

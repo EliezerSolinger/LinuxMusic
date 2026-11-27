@@ -452,30 +452,7 @@ pub(crate) fn err(key: &'static str) -> Error {
 
 /// The project's tempo map (as lm-compile reads it)
 pub fn tempo_map(root: &Value) -> Result<lm_time::TempoMap> {
-    use lm_time::{Bpm, Ppq, TempoMap, TempoPoint, TimeSignature};
-    let p = root.get("project");
-    let int = |k: &str, d: i64| p.and_then(|p| p.get(k)).and_then(Value::as_int).unwrap_or(d);
-    let rate = u32::try_from(int("sampleRate", 48_000)).unwrap_or(48_000);
-    let ppq = Ppq::new(u32::try_from(int("ppq", 960)).unwrap_or(960))?;
-    let mut points = Vec::new();
-    for t in root.get("tempoMap").map(|l| l.items().cloned().collect::<Vec<_>>()).unwrap_or_default() {
-        let bpm = Bpm::parse(t.get("bpm").and_then(Value::as_text).unwrap_or("120"))?;
-        let sig: Vec<i64> = t.get("timeSig").map(|l| l.items().filter_map(Value::as_int).collect()).unwrap_or_default();
-        let (n, d) = match sig.as_slice() {
-            [n, d] => (*n, *d),
-            _ => (4, 4),
-        };
-        let ts = TimeSignature::new(u8::try_from(n).unwrap_or(4), u8::try_from(d).unwrap_or(4))?;
-        let mut point = TempoPoint::new(t.get("tick").and_then(Value::as_int).unwrap_or(0), bpm, ts);
-        if t.get("ramp").and_then(Value::as_bool) == Some(true) {
-            point = point.linear();
-        }
-        points.push(point);
-    }
-    if points.is_empty() {
-        points.push(TempoPoint::new(0, Bpm::from_integer(120)?, TimeSignature::COMMON));
-    }
-    TempoMap::new(rate, ppq, &points)
+    lm_port::tempo_map(root)
 }
 
 /// The project's sample rate

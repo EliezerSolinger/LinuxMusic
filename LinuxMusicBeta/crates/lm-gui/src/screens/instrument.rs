@@ -27,8 +27,9 @@ use gpui::{
 };
 use gpui_component::Sizable;
 use gpui_component::input::{Input, InputEvent, InputState};
+use lm_gui_plugins::Gesture;
 use lm_port::{
-    BrowsePage, EditOp, Feed, FieldKind, GestureId, Label, Loading, NodeId, NodeSchema, Pending, PluginInfo, Ref,
+    BrowsePage, EditOp, Feed, FieldKind, Label, Loading, NodeId, NodeSchema, Pending, PluginInfo, Ref,
     Scale, Target, Topic, Value,
 };
 
@@ -370,7 +371,7 @@ pub struct ParamDrag {
     ctl: Ctl,
     start_y: f32,
     start_t: f64,
-    gesture: GestureId,
+    gesture: Gesture,
 }
 
 /// A popup of a window: the shared ones (a choice's list, a control's menu) or the window's own
@@ -425,14 +426,19 @@ fn flipped(c_: &Ctl, cx: &App) -> bool {
 /// Applies edits as one undo step. Over the network the answer comes in a later pump (`Waiting`): the window shows
 /// the change when the root has it; a refusal comes back as a notice
 pub fn apply_ops<V: 'static>(core: &Entity<Core>, label: &'static str, ops: Vec<EditOp>, cx: &mut Context<V>) -> bool {
-    let r = core.update(cx, |core, _| core.port_mut().apply(Label::new(label), ops));
+    let r = core.update(cx, |core, _| {
+        let p = core.port_mut().apply(Label::new(label), ops);
+        core.settle(p)
+    });
     cx.notify();
     matches!(r, Pending::Ready(Ok(_)) | Pending::Waiting(_))
 }
 
 /// Runs a core action (presets...) by id
 pub fn run_action<V: 'static>(core: &Entity<Core>, action: &str, params: Value, cx: &mut Context<V>) {
-    let _ = core.update(cx, |core, _| core.port_mut().run_action(action.into(), params));
+    core.update(cx, |core, _| {
+        core.report(|pt| pt.run_action(action.into(), params));
+    });
     cx.notify();
 }
 
@@ -482,9 +488,9 @@ pub fn begin_drag<C: Clone + 'static, V: ParamHost<C>>(
     let prev = v.editor().drag.take();
     let gesture = core.update(cx, |core, _| {
         if let Some(d) = prev {
-            core.port_mut().gesture_commit(d.gesture);
+            core.gesture_commit(d.gesture);
         }
-        core.port_mut().begin_gesture(Label::new("Change a parameter"))
+        core.begin_gesture(Label::new("Change a parameter"))
     });
     let start_t = c_.to_t(value, flip);
     v.editor().drag = Some(ParamDrag { ctl: c_, start_y: ev.position.y.as_f32(), start_t, gesture });
@@ -506,7 +512,7 @@ pub fn drag_move<C: Clone + 'static, V: ParamHost<C>>(v: &mut V, ev: &MouseMoveE
             core.port_mut().param_write(c_.node, c_.key(), value as f32);
         }
         if let Some(d) = &v.editor_ref().drag {
-            core.port_mut().gesture_apply(&d.gesture, vec![c_.op(value)]);
+            core.gesture_apply(d.gesture, vec![c_.op(value)]);
         }
     });
     cx.notify();
@@ -516,7 +522,7 @@ pub fn drag_move<C: Clone + 'static, V: ParamHost<C>>(v: &mut V, ev: &MouseMoveE
 pub fn drag_end<C: Clone + 'static, V: ParamHost<C>>(v: &mut V, cx: &mut Context<V>) {
     let core = v.core().clone();
     if let Some(d) = v.editor().drag.take() {
-        core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
+        core.update(cx, |core, _| core.gesture_commit(d.gesture));
         cx.notify();
     }
     v.editor().carried = None;

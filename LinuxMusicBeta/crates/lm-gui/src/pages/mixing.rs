@@ -25,7 +25,8 @@ use gpui::{
     Window, canvas, div, prelude::*, px,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
-use lm_port::{EditOp, GestureId, Label, NodeId, PathStep, ROOT, Ref, Value};
+use lm_gui_plugins::Gesture;
+use lm_port::{EditOp, Label, NodeId, PathStep, ROOT, Ref, Value};
 
 use super::desk::{self, Light, Role, Slot, col, rgb};
 use crate::actions::{
@@ -180,7 +181,7 @@ struct Drag {
     start_y: f32,
     start_t: f64,
     travel: f32,
-    gesture: Option<GestureId>,
+    gesture: Option<Gesture>,
     /// the linked faders and the other PRE fader, with their starting travels
     linked: Vec<(Target, f64)>,
 }
@@ -446,7 +447,7 @@ impl MixingPage {
 
     fn apply(&mut self, label: &'static str, ops: Vec<EditOp>, cx: &mut Context<Self>) {
         self.core.update(cx, |core, _| {
-            let _ = core.port_mut().apply(Label::new(label), ops);
+            core.report(|pt| pt.apply(Label::new(label), ops));
         });
         cx.notify();
     }
@@ -462,7 +463,7 @@ impl MixingPage {
         let mut path = vec![PathStep::key("monitor")];
         path.extend(key.iter().map(|k| PathStep::key(k)));
         self.core.update(cx, |core, _| {
-            let _ = core.port_mut().set_preference(path, v);
+            core.report(|pt| pt.set_preference(path, v));
         });
         cx.notify();
     }
@@ -537,9 +538,9 @@ impl MixingPage {
         let monitor = t == Target::Monitor;
         let gesture = self.core.update(cx, |core, _| {
             if let Some(g) = prev.and_then(|d| d.gesture) {
-                core.port_mut().gesture_commit(g);
+                core.gesture_commit(g);
             }
-            (!monitor).then(|| core.port_mut().begin_gesture(Label::new("Mix")))
+            (!monitor).then(|| core.begin_gesture(Label::new("Mix")))
         });
         self.drag = Some(Drag { target: t, start_y: ev.position.y.as_f32(), start_t, travel, gesture, linked });
         cx.notify();
@@ -564,7 +565,7 @@ impl MixingPage {
             let drag = self.drag.as_ref();
             self.core.update(cx, |core, _| {
                 if let Some(g) = drag.and_then(|d| d.gesture.as_ref()) {
-                    core.port_mut().gesture_apply(g, ops)
+                    core.gesture_apply(*g, ops);
                 }
             });
         } else {
@@ -589,7 +590,7 @@ impl MixingPage {
     fn release(&mut self, cx: &mut Context<Self>) {
         if let Some(d) = self.drag.take() {
             if let Some(g) = d.gesture {
-                self.core.update(cx, |core, _| core.port_mut().gesture_commit(g));
+                self.core.update(cx, |core, _| core.gesture_commit(g));
             }
             self.hint = None;
             cx.notify();
@@ -649,7 +650,7 @@ impl MixingPage {
         // kept in the interface document, so the link survives saving and opening the project
         let list = Value::list(self.linked.iter().map(|id| Value::text(id.to_string())));
         self.core.update(cx, |core, _| {
-            let _ = core.port_mut().set_ui(vec![PathStep::key("desk")], Value::object([("linked", list)]));
+            core.report(|pt| pt.set_ui(vec![PathStep::key("desk")], Value::object([("linked", list)])));
         });
         cx.notify();
     }
@@ -750,7 +751,7 @@ impl MixingPage {
             index: n,
             node: Value::object([("name", Value::text(name))]),
         };
-        let created = self.core.update(cx, |core, _| core.port_mut().apply(Label::new("Add channel"), vec![op]).ok());
+        let created = self.core.update(cx, |core, _| core.report(|pt| pt.apply(Label::new("Add channel"), vec![op])));
         if let Some(id) = created.and_then(|a| a.created.first().map(|(_, id)| *id)) {
             self.selected = Some(id);
             self.scroll = 1e9;
@@ -785,7 +786,7 @@ impl MixingPage {
         if dont_ask {
             self.core.update(cx, |core, _| {
                 let path = vec![PathStep::key("interface"), PathStep::key("confirmChannelRemoval")];
-                let _ = core.port_mut().set_preference(path, Value::bool(false));
+                core.report(|pt| pt.set_preference(path, Value::bool(false)));
             });
         }
         if yes {
@@ -852,7 +853,7 @@ impl MixingPage {
         }
         let params = Value::object([("channels", Value::list(set.iter().map(|id| Value::text(id.to_string()))))]);
         self.core.update(cx, |core, _| {
-            let _ = core.port_mut().run_action("mixer.group".into(), params);
+            core.report(|pt| pt.run_action("mixer.group".into(), params));
         });
         self.multi.clear();
         cx.notify();
@@ -973,7 +974,7 @@ impl MixingPage {
                     ("amount", Value::real(0.0).unwrap_or_default()),
                 ]);
                 let op = EditOp::Insert { temp: 0, parent: Ref::Id(ch), list: "sends".into(), index: n, node };
-                let made = self.core.update(cx, |core, _| core.port_mut().apply(Label::new("Send"), vec![op]).ok());
+                let made = self.core.update(cx, |core, _| core.report(|pt| pt.apply(Label::new("Send"), vec![op])));
                 match made.and_then(|a| a.created.first().map(|(_, id)| *id)) {
                     Some(id) => id,
                     None => return,
@@ -1912,7 +1913,7 @@ impl MixingPage {
             .child(cell("LRA", show(lra, ""), false))
             .on_click(cx.listener(|p, _, _, cx| {
                 p.core.update(cx, |core, _| {
-                    let _ = core.port_mut().run_action("loudness.reset".into(), Value::empty_object());
+                    core.report(|pt| pt.run_action("loudness.reset".into(), Value::empty_object()));
                 });
                 cx.notify();
             }))

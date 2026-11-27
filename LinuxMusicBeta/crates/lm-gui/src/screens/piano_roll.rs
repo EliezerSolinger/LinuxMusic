@@ -25,7 +25,8 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, ScrollEvent, SharedString,
     Subscription, Window, canvas, div, fill, point, prelude::*, px, size,
 };
-use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, NoteRef, PathStep, Ref, Topic, Value};
+use lm_gui_plugins::Gesture;
+use lm_port::{EditOp, Feed, HostTime, Label, NodeId, NoteRef, PathStep, Ref, Topic, Value};
 
 use self::kit::{MenuItem, ValueEntry, dropdown, dropdown_icon, icon_button, paint_text, popup, sep, tip, with_alpha};
 use self::music::{
@@ -127,13 +128,13 @@ const KEY_H_100: f32 = 12.0;
 enum Drag {
     /// a new note (a chord) whose length follows the mouse
     Draw {
-        g: Option<GestureId>,
+        g: Option<Gesture>,
         ns: Vec<u64>,
         start: i64,
         base: Vec<Note>,
     },
     Move {
-        g: Option<GestureId>,
+        g: Option<Gesture>,
         origin: Vec<(u64, Note)>,
         anchor: Note,
         from: (f64, i32),
@@ -143,7 +144,7 @@ enum Drag {
         toggle: bool,
     },
     Resize {
-        g: Option<GestureId>,
+        g: Option<Gesture>,
         origin: Vec<(u64, Note)>,
         anchor: Note,
         from: f64,
@@ -162,7 +163,7 @@ enum Drag {
         gone: BTreeSet<u64>,
     },
     Pitch {
-        g: Option<GestureId>,
+        g: Option<Gesture>,
         n: u64,
         origin: Note,
         from: (f64, f32),
@@ -172,13 +173,13 @@ enum Drag {
         to: Point<Pixels>,
     },
     Strum {
-        g: Option<GestureId>,
+        g: Option<Gesture>,
         origin: Vec<(u64, Note)>,
         from: f64,
         from_y: f32,
     },
     Lane {
-        g: Option<GestureId>,
+        g: Option<Gesture>,
         last_x: f32,
         only_under: bool,
     },
@@ -255,6 +256,8 @@ pub struct PianoRoll {
     scx: ScreenCx,
     focus: FocusHandle,
     feed: Feed,
+    /// The clips read from the tree, by revision (see `ClipCache`)
+    clips: std::cell::RefCell<music::ClipCache>,
     pub clip: Option<NodeId>,
     ghost: Option<NodeId>,
     pub tool: Tool,
@@ -334,6 +337,7 @@ impl PianoRoll {
         let mut pr = PianoRoll {
             focus: cx.focus_handle(),
             feed,
+            clips: Default::default(),
             clip,
             ghost: None,
             tool: Tool::Draw,
@@ -381,7 +385,9 @@ impl PianoRoll {
         let release = cx.on_release(move |pr, cx| {
             pr.live.release_all(&core, cx);
             if pr.rec == Rec::Step {
-                let _ = core.update(cx, |c, _| c.port_mut().run_action("notes.step_stop".into(), Value::NULL));
+                core.update(cx, |c, _| {
+                    c.report(|pt| pt.run_action("notes.step_stop".into(), Value::NULL));
+                });
             }
         });
         let blur = cx.on_blur(&pr.focus, window, |pr, _, cx| pr.release_all(cx));
@@ -446,7 +452,7 @@ impl PianoRoll {
         let mut fields = vec![("item", Value::text(item.to_string()))];
         fields.extend(extra);
         self.scx.core.update(cx, |core, _| {
-            let _ = core.port_mut().run_action(id.into(), Value::object(fields));
+            core.report(|pt| pt.run_action(id.into(), Value::object(fields)));
         });
     }
 
@@ -463,7 +469,7 @@ impl PianoRoll {
     // --- reading -----------------------------------------------------------------------------------------------
 
     pub fn clip(&self, cx: &gpui::App) -> Option<Clip> {
-        self.clip.and_then(|id| Clip::read(self.scx.core.read(cx).port().root(), id))
+        self.clip.and_then(|id| self.clips.borrow_mut().get(self.scx.core.read(cx).port().root(), id))
     }
 
     pub fn notes(&self, cx: &gpui::App) -> Arc<NoteMap> {
@@ -482,7 +488,7 @@ impl PianoRoll {
             ("lock", Value::bool(self.lock)),
         ]);
         self.scx.core.update(cx, |core, _| {
-            let _ = core.port_mut().set_ui(vec![PathStep::key("pianoRoll")], v);
+            core.report(|pt| pt.set_ui(vec![PathStep::key("pianoRoll")], v));
         });
     }
 
@@ -538,9 +544,9 @@ impl PianoRoll {
         }
         let old = self.notes(cx);
         let ops = note_ops(id, &old, changes);
-        let applied = self.scx.core.update(cx, |core, _| core.port_mut().apply(Label::new(label), ops));
+        let applied = self.scx.core.update(cx, |core, _| core.report(|pt| pt.apply(Label::new(label), ops)));
         cx.notify();
-        let mut notes = applied.ok().map(|a| a.notes).unwrap_or_default();
+        let mut notes = applied.map(|a| a.notes).unwrap_or_default();
         notes.sort_by_key(|(t, _)| *t);
         notes.into_iter().map(|(_, n)| n).collect()
     }
@@ -548,7 +554,7 @@ impl PianoRoll {
     /// Updates a drag's gesture, opening it at the first change (field changes only)
     fn gesture(
         &self,
-        g: &mut Option<GestureId>,
+        g: &mut Option<Gesture>,
         label: &'static str,
         changes: Vec<NoteChange>,
         cx: &mut Context<Self>,
@@ -560,15 +566,15 @@ impl PianoRoll {
             return;
         }
         self.scx.core.update(cx, |core, _| {
-            let port = core.port_mut();
-            let g = g.get_or_insert_with(|| port.begin_gesture(Label::new(label)));
-            port.gesture_apply(g, ops);
+            // a gesture closed under the drag (the release was lost) refuses the edits: the drag writes nothing more
+            let open = *g.get_or_insert_with(|| core.begin_gesture(Label::new(label)));
+            core.gesture_apply(open, ops);
         });
     }
 
-    fn commit(&self, g: Option<GestureId>, cx: &mut Context<Self>) {
+    fn commit(&self, g: Option<Gesture>, cx: &mut Context<Self>) {
         if let Some(g) = g {
-            self.scx.core.update(cx, |core, _| core.port_mut().gesture_commit(g));
+            self.scx.core.update(cx, |core, _| core.gesture_commit(g));
         }
     }
 
@@ -610,7 +616,7 @@ impl PianoRoll {
         let Some(c) = self.clip(cx) else { return (None, false) };
         let core = self.scx.core.read(cx);
         let pos = core.port().telemetry().position;
-        let map = model::tempo_map(core.port().root());
+        let map = core.port().tempo_map();
         let t = map.tick_at(pos.at(now) as i64) as f64 - c.start as f64;
         if t < 0.0 || t >= c.length as f64 {
             return (None, pos.playing);
@@ -638,7 +644,7 @@ impl PianoRoll {
         self.play.cursor = 0;
         if self.rec == Rec::Accompany {
             self.scx.core.update(cx, |core, _| {
-                let _ = core.port_mut().run_action("transport.stop".into(), Value::NULL);
+                core.report(|pt| pt.run_action("transport.stop".into(), Value::NULL));
             });
         }
         if self.rec != Rec::Step {
@@ -1207,7 +1213,7 @@ impl PianoRoll {
             }
             if let Some(c) = self.clip(cx) {
                 self.scx.core.update(cx, |core, _| {
-                    let _ = core.port_mut().run_action("transport.locate".into(), Value::int(c.start + t));
+                    core.report(|pt| pt.run_action("transport.locate".into(), Value::int(c.start + t)));
                 });
             }
         }
@@ -1675,13 +1681,13 @@ impl PianoRoll {
         if was_step && self.rec != Rec::Step {
             self.step_chord.clear();
             self.scx.core.update(cx, |core, _| {
-                let _ = core.port_mut().run_action("notes.step_stop".into(), Value::NULL);
+                core.report(|pt| pt.run_action("notes.step_stop".into(), Value::NULL));
             });
         }
         match self.rec {
             Rec::Live if self.play.since.is_none() => self.toggle_play_item(cx),
             Rec::Accompany => self.scx.core.update(cx, |core, _| {
-                let _ = core.port_mut().run_action("transport.play".into(), Value::NULL);
+                core.report(|pt| pt.run_action("transport.play".into(), Value::NULL));
             }),
             Rec::Step => {
                 let (at, step) = (self.play.cursor, self.new_len());
@@ -1954,7 +1960,7 @@ impl Render for PianoRoll {
         {
             let port = self.scx.core.read(cx).port();
             if port.drain(&mut self.feed).is_some() {
-                match self.clip.and_then(|id| Clip::read(port.root(), id)).map(|c| c.notes) {
+                match self.clip.and_then(|id| self.clips.borrow_mut().get(port.root(), id)).map(|c| c.notes) {
                     None => self.clip = None,
                     Some(n) if self.sel.iter().any(|k| !n.contains_key(k)) => {
                         self.sel = Rc::new(self.sel.iter().copied().filter(|k| n.contains_key(k)).collect());
@@ -2372,7 +2378,10 @@ impl PianoRoll {
     }
 
     fn render_center(&self, clip: Clip, play: Option<f64>, cx: &Context<Self>) -> impl IntoElement {
-        let ghost = self.ghost.and_then(|g| Clip::read(self.scx.core.read(cx).port().root(), g)).map(|c| c.notes);
+        let ghost = self
+            .ghost
+            .and_then(|g| self.clips.borrow_mut().get(self.scx.core.read(cx).port().root(), g))
+            .map(|c| c.notes);
         let (gone, copies) = match &self.drag {
             Some(Drag::Erase { gone }) => (gone.clone(), Vec::new()),
             Some(Drag::Move { origin, copy: true, delta, .. }) if *delta != (0, 0) => (
@@ -2766,6 +2775,44 @@ pub mod music {
             }
             v.extend(self.mpe.changed(&old.mpe));
             v
+        }
+    }
+
+    /// The clips read from the tree, kept while the track list is the same node: the persistent tree gives the
+    /// unchanged list back as the same node, so a mouse event reads nothing again until a change reaches the tracks
+    #[derive(Default)]
+    pub struct ClipCache {
+        tracks: Option<Value>,
+        entries: Vec<(NodeId, Option<Clip>)>,
+    }
+
+    impl ClipCache {
+        pub fn get(&mut self, root: &Value, id: NodeId) -> Option<Clip> {
+            let tracks = root.get("tracks");
+            let same = match (&self.tracks, tracks) {
+                (Some(a), Some(b)) => a.same_node(b),
+                (None, None) => true,
+                _ => false,
+            };
+            if !same {
+                self.entries.clear();
+                self.tracks = tracks.cloned();
+            }
+            if let Some((_, c)) = self.entries.iter().find(|(i, _)| *i == id) {
+                return c.clone();
+            }
+            let c = Clip::read(root, id);
+            if self.entries.len() >= 4 {
+                self.entries.remove(0);
+            }
+            self.entries.push((id, c.clone()));
+            c
+        }
+
+        /// How many entries are kept (the tests check the reuse)
+        #[cfg(test)]
+        pub fn len(&self) -> usize {
+            self.entries.len()
         }
     }
 

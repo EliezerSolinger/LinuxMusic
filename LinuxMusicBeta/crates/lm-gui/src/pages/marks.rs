@@ -17,7 +17,8 @@ use gpui::{
     Subscription, Window, div, prelude::*, px,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
-use lm_port::{EditOp, GestureId, Label, NodeId, PathStep, ROOT, Ref, Value};
+use lm_gui_plugins::Gesture;
+use lm_port::{EditOp, Label, NodeId, PathStep, ROOT, Ref, Value};
 
 use super::composition::CompositionPage;
 use crate::core::Core;
@@ -48,7 +49,7 @@ struct Drag {
     from0: i64,
     to0: i64,
     moved: bool,
-    gesture: Option<GestureId>,
+    gesture: Option<Gesture>,
     /// a new region's other end, while drawing
     anchor: i64,
 }
@@ -85,14 +86,14 @@ impl MarksState {
 
     fn apply(&self, label: &'static str, ops: Vec<EditOp>, cx: &mut App) {
         self.core.update(cx, |c, cx| {
-            let _ = c.port_mut().apply(Label::new(label), ops);
+            c.report(|pt| pt.apply(Label::new(label), ops));
             cx.notify();
         });
     }
 
     fn run(&self, action: &str, params: Value, cx: &mut App) {
         self.core.update(cx, |c, cx| {
-            let _ = c.port_mut().run_action(action.into(), params);
+            c.report(|pt| pt.run_action(action.into(), params));
             cx.notify();
         });
     }
@@ -105,7 +106,7 @@ impl MarksState {
 
     fn cursor_tick(&self, cx: &App) -> i64 {
         let port = self.core.read(cx).port();
-        model::tempo_map(port.root()).tick_at(port.telemetry().position.samples)
+        port.tempo_map().tick_at(port.telemetry().position.samples)
     }
 
     fn insert(&self, list: &str, node: Value, cx: &mut App) -> Option<NodeId> {
@@ -114,7 +115,7 @@ impl MarksState {
         let label = if list == "markers" { "Add a marker" } else { "Add a region" };
         let op = EditOp::Insert { temp: 1, parent: Ref::Id(ROOT), list: list.into(), index, node };
         self.core.update(cx, |c, cx| {
-            let made = c.port_mut().apply(Label::new(label), vec![op]).ok();
+            let made = c.report(|pt| pt.apply(Label::new(label), vec![op]));
             cx.notify();
             made.and_then(|a| a.created.first().map(|(_, id)| *id))
         })
@@ -374,7 +375,7 @@ impl MarksState {
         let g = d
             .gesture
             .take()
-            .unwrap_or_else(|| self.core.update(cx, |c, _| c.port_mut().begin_gesture(Label::new(label))));
+            .unwrap_or_else(|| self.core.update(cx, |c, _| c.begin_gesture(Label::new(label))));
         let set = |k: &str, v: i64| EditOp::Set { id: Ref::Id(id), path: vec![PathStep::key(k)], value: Value::int(v) };
         let ops = match d.part {
             Part::Marker => vec![set("tick", (d.from0 + dt).max(0))],
@@ -387,7 +388,7 @@ impl MarksState {
             Part::NewRegion => Vec::new(),
         };
         self.core.update(cx, |c, cx| {
-            c.port_mut().gesture_apply(&g, ops);
+            c.gesture_apply(g, ops);
             cx.notify();
         });
         d.gesture = Some(g);
@@ -398,7 +399,7 @@ impl MarksState {
         let Some(mut d) = self.drag.take() else { return };
         if let Some(g) = d.gesture.take() {
             self.core.update(cx, |c, cx| {
-                c.port_mut().gesture_commit(g);
+                c.gesture_commit(g);
                 cx.notify();
             });
             return;

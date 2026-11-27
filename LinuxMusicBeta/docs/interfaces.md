@@ -1131,6 +1131,12 @@ pub struct Applied { pub diff: Diff, pub created: Vec<(u32, NodeId)>, pub notes:
   `lm-render` e pelo `lm-port`. A interface desenha e edita só com ela; sem resposta, a lane não é desenhada, e uma
   ação recusada (`automation.scale`, `automation.thin`) aparece como erro, sem conta feita na interface.
 
+- **O mapa de tempo (27/11):** `CorePort::tempo_map() -> Arc<TempoMap>` é o mapa de tempo do núcleo (tique <-> amostra,
+  compassos), guardado por revisão do documento (`lm_port::TempoCache`); a interface o pede e nunca monta um por conta própria.
+- **Gestos e erros na interface (27/11):** a interface abre gestos só pelo registro do host (`PortHost::gesture_begin`,
+  `Gesture` é um número `Copy`); o que sobra aberto é fechado ao soltar o mouse em qualquer lugar ou ao perder o foco da
+  janela. Todo resultado de chamada ao port passa por `PortHost::report`, que mostra o erro como aviso curto.
+
 ## I-16. A sessão (F1) (R6, S15, S16)
 
 ```rust

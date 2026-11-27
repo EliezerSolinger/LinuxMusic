@@ -106,7 +106,7 @@ pub fn describe_source(s: &DocSource) -> String {
 /// Starts learning for `target` (the first control moved becomes its source)
 pub fn learn(core: &Entity<Core>, target: MapTarget, scope: MapScope, cx: &mut App) {
     core.update(cx, |core, cx| {
-        let _ = core.port_mut().midi_learn(target, scope);
+        core.report(|pt| pt.midi_learn(target, scope));
         cx.notify();
     });
 }
@@ -115,7 +115,7 @@ pub fn learn(core: &Entity<Core>, target: MapTarget, scope: MapScope, cx: &mut A
 pub fn unmap(core: &Entity<Core>, target: &MapTarget, cx: &mut App) {
     core.update(cx, |core, cx| {
         for scope in [MapScope::Project, MapScope::Machine] {
-            let _ = core.port_mut().unmap(target, scope);
+            core.report(|pt| pt.unmap(target, scope));
         }
         cx.notify();
     });
@@ -141,7 +141,7 @@ pub fn open_modulator(
     let MapTarget::Param { node: NodeRef::Id(node), key } = &target else { return };
     let params = Value::object([("node", Value::text(node.to_string())), ("param", Value::text(key.as_str()))]);
     core.update(cx, |core, cx| {
-        let _ = core.port_mut().run_action("modulator.attach".into(), params);
+        core.report(|pt| pt.run_action("modulator.attach".into(), params));
         cx.notify();
     });
     let _ = workspace.update(cx, |ws, cx| {

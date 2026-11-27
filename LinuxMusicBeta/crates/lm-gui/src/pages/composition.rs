@@ -16,7 +16,8 @@ use gpui::{
     WeakEntity, Window, canvas, div, fill, point, prelude::*, px, size,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
-use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, PathStep, Ref, Resource, Target, Topic, Value};
+use lm_gui_plugins::Gesture;
+use lm_port::{EditOp, Feed, HostTime, Label, NodeId, PathStep, Ref, Resource, Target, Topic, Value};
 use lm_time::TempoMap;
 
 use crate::actions::{
@@ -67,7 +68,7 @@ struct KnobDrag {
     track: NodeId,
     start_y: f32,
     start_t: f64,
-    gesture: GestureId,
+    gesture: Gesture,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -92,7 +93,7 @@ struct ItemDrag {
     /// the other selected items and their starts, moved with it
     others: Vec<(NodeId, i64)>,
     /// None for a copy: nothing changes until the button goes up (F-CLP-005)
-    gesture: Option<GestureId>,
+    gesture: Option<Gesture>,
     /// Ctrl+drag on a selected item: the copy (F-CLP-005)
     copy: bool,
     /// The place the items would land: the distance in ticks and, when the tracks changed, each item's track
@@ -257,7 +258,7 @@ impl CompositionPage {
     pub(crate) fn drop_files(&mut self, paths: &[std::path::PathBuf], window: &mut Window, cx: &mut Context<Self>) {
         let b = *self.timeline_bounds.borrow();
         let tick = self.view.tick_at((window.mouse_position().x - b.origin.x).as_f32()).max(0.0) as i64;
-        let map = model::tempo_map(self.core.read(cx).port().root());
+        let map = self.core.read(cx).port().tempo_map();
         let bar = map.bar_start(map.bar_beat_tick(tick).bar).unwrap_or(0);
         crate::screens::files::import_paths(&self.core, paths, bar, cx);
     }
@@ -272,7 +273,7 @@ impl CompositionPage {
         let b = *self.timeline_bounds.borrow();
         let at = window.mouse_position();
         let tick = self.view.tick_at((at.x - b.origin.x).as_f32()).max(0.0) as i64;
-        let map = model::tempo_map(self.core.read(cx).port().root());
+        let map = self.core.read(cx).port().tempo_map();
         let bar = map.bar_start(map.bar_beat_tick(tick).bar).unwrap_or(0);
         let y = (at.y - b.origin.y).as_f32();
         let track = self.track_hits.borrow().iter().find(|(top, h, _)| y >= *top && y < top + h).map(|(_, _, id)| *id);
@@ -298,14 +299,14 @@ impl CompositionPage {
     fn apply(&mut self, label: &'static str, ops: Vec<EditOp>, cx: &mut Context<Self>) {
         self.core.update(cx, |core, _| {
             // Pending: in-process at once; in the client the feed brings the change in a later pump
-            let _ = core.port_mut().apply(Label::new(label), ops);
+            core.report(|pt| pt.apply(Label::new(label), ops));
         });
         cx.notify();
     }
 
     fn action(&mut self, id: &str, params: Value, cx: &mut Context<Self>) {
         self.core.update(cx, |core, _| {
-            let _ = core.port_mut().run_action(id.into(), params);
+            core.report(|pt| pt.run_action(id.into(), params));
         });
         cx.notify();
     }
@@ -324,9 +325,9 @@ impl CompositionPage {
         let prev = self.drag.take();
         let gesture = self.core.update(cx, |core, _| {
             if let Some(d) = prev {
-                core.port_mut().gesture_commit(d.gesture);
+                core.gesture_commit(d.gesture);
             }
-            core.port_mut().begin_gesture(Label::new("Volume"))
+            core.begin_gesture(Label::new("Volume"))
         });
         self.drag =
             Some(KnobDrag { track, start_y: ev.position.y.as_f32(), start_t: view::gain_to_travel(volume), gesture });
@@ -340,7 +341,7 @@ impl CompositionPage {
             holds("comp.knob.fine", &ev.modifiers),
         );
         let op = EditOp::set(d.track, &["volume"], Value::real(view::travel_to_gain(t)).unwrap_or_default());
-        self.core.update(cx, |core, _| core.port_mut().gesture_apply(&self.drag.as_ref().unwrap().gesture, vec![op]));
+        self.core.update(cx, |core, _| core.gesture_apply(self.drag.as_ref().unwrap().gesture, vec![op]));
         cx.notify();
     }
 
@@ -478,7 +479,7 @@ impl CompositionPage {
 
     fn cursor_tick(&self, cx: &Context<Self>) -> i64 {
         let port = self.core.read(cx).port();
-        let map = model::tempo_map(port.root());
+        let map = port.tempo_map();
         map.tick_at(port.telemetry().position.at(HostTime::now()) as i64)
     }
 
@@ -551,7 +552,7 @@ impl Render for CompositionPage {
         self.view.scroll_y = self.view.scroll_y.clamp(0.0, (content_h - view_h).max(0.0));
         let (cursor, playing) = {
             let port = self.core.read(cx).port();
-            let map = model::tempo_map(port.root());
+            let map = port.tempo_map();
             let pos = port.telemetry().position;
             (map.tick_at(pos.at(HostTime::now()) as i64) as f64, pos.playing)
         };
@@ -574,7 +575,10 @@ impl Render for CompositionPage {
         let tiles = self.tiles.clone();
         let waiting = self.core.update(cx, |core, _| {
             let mut t = tiles.borrow_mut();
-            t.fetch(core.port_mut());
+            let answers = core.take_peak_answers();
+            for e in t.fetch(core.port_mut(), answers) {
+                core.fail(e);
+            }
             t.waiting()
         });
         if waiting {
@@ -907,7 +911,7 @@ impl CompositionPage {
         if let Ok(v) = Value::real(tpp) {
             let path = vec![PathStep::key("arrangement"), PathStep::key("ticksPerPx")];
             self.core.update(cx, |core, _| {
-                let _ = core.port_mut().set_ui(path, v);
+                core.report(|pt| pt.set_ui(path, v));
             });
         }
     }

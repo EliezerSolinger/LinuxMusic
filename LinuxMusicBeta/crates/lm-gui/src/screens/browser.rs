@@ -212,7 +212,7 @@ impl Browser {
             return Vec::new();
         }
         let (page, hidden) = (self.page, cx.try_global::<BrowserState>().is_some_and(|s| s.hidden));
-        match self.scx.core.update(cx, |core, _| core.port_mut().browse(page, parent, hidden)) {
+        match self.scx.core.update(cx, |core, _| core.browse(page, parent, hidden)) {
             Pending::Ready(Ok(v)) => {
                 self.children.insert(parent, v.clone());
                 v
@@ -280,11 +280,14 @@ impl Browser {
             cx.try_global::<BrowserState>().map(|s| (s.index, s.filters.clone(), s.fav)).unwrap_or_default();
         let composed = compose_query(&filters, fav, &self.query);
         // The folders view searches only when something is typed; the index view also with the filters alone
+        // a new search replaces the last: the old one's answer is no longer waited for
+        if let Some(old) = self.search_req.take() {
+            self.scx.core.update(cx, |core, _| core.forget_request(old));
+        }
         if composed.is_empty() || (!index && self.query.trim().is_empty()) {
             self.results = None;
-            self.search_req = None;
         } else {
-            match self.scx.core.update(cx, |core, _| core.port_mut().search(&composed)) {
+            match self.scx.core.update(cx, |core, _| core.search(&composed)) {
                 Pending::Ready(Ok(v)) => self.results = Some(v),
                 Pending::Waiting(id) => self.search_req = Some(id),
                 _ => {}
@@ -352,8 +355,10 @@ impl Browser {
     fn start_preview(&mut self, e: BrowseEntry, cx: &mut Context<Self>) {
         let id = e.id;
         self.thumb = None;
-        self.preview_req = None;
-        let r = self.scx.core.update(cx, |core, _| core.port_mut().prepare_preview(id));
+        if let Some(old) = self.preview_req.take() {
+            self.scx.core.update(cx, |core, _| core.forget_request(old));
+        }
+        let r = self.scx.core.update(cx, |core, _| core.prepare_preview(id));
         match r {
             Pending::Ready(Ok(p)) => {
                 self.thumb = self.thumbnail(&p, cx).map(|t| (id, t));
@@ -371,7 +376,9 @@ impl Browser {
     }
 
     fn stop_preview(&mut self, cx: &mut Context<Self>) {
-        self.preview_req = None;
+        if let Some(old) = self.preview_req.take() {
+            self.scx.core.update(cx, |core, _| core.forget_request(old));
+        }
         if self.preview.take().is_some() {
             self.scx.core.update(cx, |core, _| core.port_mut().preview_stop());
             cx.notify();
@@ -593,7 +600,9 @@ impl Browser {
 
     fn set_favorite(&mut self, e: &BrowseEntry, on: bool, cx: &mut Context<Self>) {
         let id = e.id;
-        let _ = self.scx.core.update(cx, |core, _| core.port_mut().set_favorite(id, on));
+        self.scx.core.update(cx, |core, _| {
+            core.report(|pt| pt.set_favorite(id, on));
+        });
         self.children.clear();
         if let Some(r) = &mut self.results {
             for x in r.iter_mut().filter(|x| x.id == id) {

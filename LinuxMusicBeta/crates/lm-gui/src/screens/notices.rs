@@ -43,6 +43,22 @@ pub fn value_text(v: &Value) -> String {
     }
 }
 
+/// An error of a call to the port, as one short line: the key translated, its arguments in place
+pub fn error_text(e: &lm_port::Error) -> String {
+    use lm_port::Label;
+    let Label { key, args } = &e.label;
+    let mut s = tr(key).to_string();
+    for (i, (name, v)) in args.iter().enumerate() {
+        let shown = match v {
+            lm_port::Arg::Int(n) => n.to_string(),
+            lm_port::Arg::Real(r) => format!("{r:.1}"),
+            lm_port::Arg::Text(t) => t.clone(),
+        };
+        s = s.replace(&format!("{{{i}}}"), &shown).replace(&format!("{{{name}}}"), &shown);
+    }
+    s
+}
+
 /// The label of an action a notice offers
 pub fn action_label(id: &str) -> &'static str {
     match id {

@@ -140,6 +140,7 @@ pub struct FakePort {
     transport: Transport,
     telemetry: TelemetryView,
     preferences: Value,
+    tempo: lm_port::TempoCache,
     status: Value,
     saved_serial: u64,
     serial: u64,
@@ -215,6 +216,7 @@ impl FakePort {
         let mut doc = doc;
         let own_feed = doc.feed(Topic::All);
         let mut port = FakePort {
+            tempo: Default::default(),
             clipboard: Vec::new(),
             own_feed,
             midi: Default::default(),
@@ -1255,6 +1257,10 @@ impl CorePort for FakePort {
 
     fn param_range(&self, node: NodeId, key: &str) -> Option<lm_port::ParamRange> {
         ranges::param_range(self.doc.find(node).as_ref(), node, key)
+    }
+
+    fn tempo_map(&self) -> std::sync::Arc<lm_port::TempoMap> {
+        self.tempo.get(self.root())
     }
 
     fn display(&self, node: NodeId) -> Option<DisplayView> {

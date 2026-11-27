@@ -48,6 +48,7 @@ pub struct LocalPort {
     playing_preview: Option<PreviewId>,
     next_preview: u64,
     done: Vec<(RequestId, Finished)>,
+    tempo: lm_port::TempoCache,
 }
 
 impl std::fmt::Debug for LocalPort {
@@ -187,6 +188,7 @@ impl LocalPort {
             playing_preview: None,
             next_preview: 1,
             done: Vec::new(),
+            tempo: Default::default(),
         }
     }
 
@@ -808,6 +810,10 @@ impl CorePort for LocalPort {
     fn param_range(&self, node: NodeId, key: &str) -> Option<lm_port::ParamRange> {
         // the one value law: the compiled range when the parameter has a slot, else its schema's
         Some(self.session.param_range(node, key))
+    }
+
+    fn tempo_map(&self) -> std::sync::Arc<lm_port::TempoMap> {
+        self.tempo.get(self.root())
     }
 
     fn display(&self, node: NodeId) -> Option<DisplayView> {

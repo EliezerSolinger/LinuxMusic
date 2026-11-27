@@ -19,6 +19,7 @@
 pub mod assets;
 pub mod graphs;
 pub mod gxwidgets;
+pub mod host;
 pub mod i18n;
 pub mod panel;
 pub mod panels;
@@ -27,23 +28,11 @@ pub mod spec;
 pub mod widgets;
 
 use gpui::{AnyView, App, AppContext, Entity, Window};
-use lm_port::{CorePort, NodeId, RequestId, Resource};
+use lm_port::NodeId;
 
+pub use host::{Gesture, Gestures, Outcome, PortHost, guard_activation, release_guard};
 pub use i18n::set_language;
 pub use panel::{PanelEvent, PluginPanel};
-
-/// What a panel needs of its host: the port, read and changed (lm-gui's `Core` entity implements it)
-pub trait PortHost: 'static {
-    fn port(&self) -> &dyn CorePort;
-    fn port_mut(&mut self) -> &mut dyn CorePort;
-    /// The answer of an import that answered `Waiting` (`Finished::Imported` for `id`), once it arrived. The host
-    /// collects `CorePort::finished()` in its pump and keeps the imports' answers until asked; a host that does not
-    /// (the tests' fake answers at once) returns `None`
-    fn take_imported(&mut self, id: RequestId) -> Option<lm_port::Result<Resource>> {
-        let _ = id;
-        None
-    }
-}
 
 /// Whether the plugin has its own panel (else the window shows the generic editor)
 pub fn has_panel(plugin: &str) -> bool {

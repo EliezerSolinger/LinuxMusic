@@ -70,10 +70,32 @@ pub struct Workspace {
     pub toasts: Vec<Toast>,
     seen_notices: HashMap<u64, u32>,
     toast_seq: u64,
+    /// Closes the open gestures when this window loses the focus
+    _activation: gpui::Subscription,
     /// The in-window menu bar's open menu (Linux)
     pub menu_open: Option<usize>,
     /// The pages and screens in a window of their own (F-JAN-006), with the window
     detached: Vec<(Detachable, gpui::AnyWindowHandle)>,
+}
+
+/// What a detached window shows: the page or screen, with the guard that closes the gestures a release outside
+/// the window or a lost focus would leave open (the main window has its own in the workspace)
+struct Hosted {
+    view: AnyView,
+    core: Entity<Core>,
+    activation: Option<gpui::Subscription>,
+}
+
+impl Render for Hosted {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.activation.is_none() {
+            self.activation = Some(lm_gui_plugins::guard_activation(self.core.clone(), window, cx));
+        }
+        div()
+            .size_full()
+            .child(self.view.clone())
+            .child(lm_gui_plugins::release_guard(self.core.downgrade()))
+    }
 }
 
 /// A floating notice: its text, its color, and its number (it goes away by itself)
@@ -168,6 +190,7 @@ impl Workspace {
         let mixing = cx.new(|cx| MixingPage::new(core.clone(), weak.clone(), cx));
         let midi_maps = cx.new(|cx| crate::pages::midi_maps::MidiMapsPage::new(core.clone(), weak.clone(), window, cx));
         let observe = cx.observe(&core, |_, _, cx| cx.notify());
+        let activation = lm_gui_plugins::guard_activation(core.clone(), window, cx);
         let pages = [
             cx.observe(&composition, |ws, _, cx| ws.write_selection(cx)),
             cx.observe(&mixing, |ws, _, cx| ws.write_selection(cx)),
@@ -213,6 +236,7 @@ impl Workspace {
             toast_seq: 0,
             menu_open: None,
             detached: Vec::new(),
+            _activation: activation,
         };
         // what is there at the start is not news: only the notices that come later float
         let first = ws.core.update(cx, |core, _| core.port_mut().notices());
@@ -343,6 +367,7 @@ impl Workspace {
             ))),
             ..Default::default()
         };
+        let core = self.core.clone();
         let opened = cx.open_window(options, move |window, cx| {
             let back = me.clone();
             window.on_window_should_close(cx, move |_, cx| {
@@ -350,7 +375,8 @@ impl Workspace {
                 let _ = back.update(cx, |ws, cx| ws.forget_detached(d, cx));
                 true
             });
-            cx.new(|cx| gpui_component::Root::new(view, window, cx))
+            let hosted = cx.new(|_| Hosted { view, core, activation: None });
+            cx.new(|cx| gpui_component::Root::new(hosted, window, cx))
         });
         if let Ok(handle) = opened {
             self.detached.push((d, handle.into()));
@@ -395,7 +421,7 @@ impl Workspace {
     fn write_detached(&mut self, cx: &mut Context<Self>) {
         let list = Value::list(self.detached.iter().map(|(d, _)| Value::text(d.key())));
         self.core.update(cx, |core, _| {
-            let _ = core.port_mut().set_ui(vec![PathStep::key("detached")], list);
+            core.report(|pt| pt.set_ui(vec![PathStep::key("detached")], list));
         });
     }
 
@@ -412,6 +438,32 @@ impl Workspace {
             }
         }
         self.seen_notices.retain(|id, _| list.iter().any(|n| n.id == *id));
+        // the errors of the calls the interface made (`Core::report`): one short line each, the same error again
+        // replaces the one still showing
+        let errors = self.core.update(cx, |core, _| core.take_errors());
+        for e in errors {
+            self.toast_seq += 1;
+            let seq = self.toast_seq;
+            let text = crate::screens::notices::error_text(&e);
+            self.toasts.retain(|t| t.text != text);
+            self.toasts.push(Toast {
+                seq,
+                notice: u64::MAX - seq,
+                text,
+                color: crate::screens::notices::severity_color(lm_port::Severity::Error),
+            });
+            if self.toasts.len() > TOASTS_MAX {
+                self.toasts.remove(0);
+            }
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(TOAST_LIFE).await;
+                let _ = this.update(cx, |ws, cx| {
+                    ws.toasts.retain(|t| t.seq != seq);
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
         for n in fresh {
             self.toast_seq += 1;
             let seq = self.toast_seq;
@@ -469,7 +521,7 @@ impl Workspace {
 
     fn run(&mut self, id: &str, params: Value, cx: &mut Context<Self>) {
         self.core.update(cx, |core, _| {
-            let _ = core.port_mut().run_action(id.into(), params);
+            core.report(|pt| pt.run_action(id.into(), params));
         });
         cx.notify();
     }
@@ -504,7 +556,7 @@ impl Workspace {
         }
         if selection != before {
             self.core.update(cx, |core, _| {
-                let _ = core.port_mut().set_ui(vec![PathStep::key(ui::SELECTION)], selection);
+                core.report(|pt| pt.set_ui(vec![PathStep::key(ui::SELECTION)], selection));
             });
         }
     }
@@ -679,6 +731,7 @@ impl Render for Workspace {
                 gpui::MouseButton::Left,
                 cx.listener(|ws, _: &gpui::MouseUpEvent, _, cx| transport::end_tempo(ws, cx)),
             )
+            .child(lm_gui_plugins::release_guard(self.core.downgrade()))
             .on_action(cx.listener(|ws, _: &ShowComposition, _, cx| {
                 ws.page = Page::Composition;
                 cx.notify();
@@ -704,13 +757,13 @@ impl Render for Workspace {
             .map(|d| screens::palette::screen_actions(d, cx))
             .on_action(cx.listener(|ws, _: &Undo, _, cx| {
                 ws.core.update(cx, |core, _| {
-                    let _ = core.port_mut().undo();
+                    core.report(|pt| pt.undo());
                 });
                 cx.notify();
             }))
             .on_action(cx.listener(|ws, _: &Redo, _, cx| {
                 ws.core.update(cx, |core, _| {
-                    let _ = core.port_mut().redo();
+                    core.report(|pt| pt.redo());
                 });
                 cx.notify();
             }))
@@ -994,7 +1047,7 @@ impl Workspace {
             ("right", lm_port::Value::int(d.right.round() as i64)),
         ]);
         self.core.update(cx, |core, _| {
-            let _ = core.port_mut().set_ui(vec![lm_port::PathStep::key("docks")], docks);
+            core.report(|pt| pt.set_ui(vec![lm_port::PathStep::key("docks")], docks));
         });
         cx.notify();
     }

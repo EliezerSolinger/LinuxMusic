@@ -3893,6 +3893,7 @@ dependencies = [
  "lm-midimap",
  "lm-render",
  "lm-state",
+ "lm-time",
 ]
 
 [[package]]

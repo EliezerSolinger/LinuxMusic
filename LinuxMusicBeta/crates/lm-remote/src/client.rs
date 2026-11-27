@@ -426,6 +426,7 @@ pub struct RemotePort {
     values: Vec<(RequestId, Result<Value>)>,
     peaks: HashMap<(String, u8, u64, u64), PeakBlock>,
     peaks_asked: HashMap<RequestId, (String, u8, u64, u64)>,
+    tempo: lm_port::TempoCache,
     /// Updates applied since connecting (for tests and the indicator)
     updates: u64,
     traffic: Traffic,
@@ -517,6 +518,7 @@ impl RemotePort {
             hand_won: Vec::new(),
         };
         let mut port = RemotePort {
+            tempo: Default::default(),
             connection: Connection::Connected { role: w.role, server: w.server.clone() },
             cfg,
             live: None,
@@ -1194,6 +1196,10 @@ impl CorePort for RemotePort {
             self.peaks_asked.insert(*id, key);
         }
         p
+    }
+
+    fn tempo_map(&self) -> std::sync::Arc<lm_port::TempoMap> {
+        self.tempo.get(self.root())
     }
 
     fn display(&self, node: NodeId) -> Option<DisplayView> {

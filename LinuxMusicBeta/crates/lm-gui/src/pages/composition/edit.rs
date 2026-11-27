@@ -7,7 +7,8 @@
 use std::collections::HashSet;
 
 use gpui::{AnyElement, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Stateful};
-use lm_port::{GestureId, PathStep};
+use lm_gui_plugins::Gesture;
+use lm_port::{PathStep};
 
 use super::*;
 
@@ -87,7 +88,7 @@ pub(super) struct LoopDrag {
     punch: bool,
     mode: LoopMode,
     other: (i64, i64),
-    gesture: GestureId,
+    gesture: Gesture,
 }
 
 /// A track being dragged by its number (F-TRK-029): where it would land
@@ -331,8 +332,8 @@ fn snap_delta(map: &TempoMap, at: i64, delta: f64, frac: f64) -> i64 {
 }
 
 impl CompositionPage {
-    fn tempo(&self, cx: &Context<Self>) -> TempoMap {
-        model::tempo_map(self.core.read(cx).port().root())
+    fn tempo(&self, cx: &Context<Self>) -> std::sync::Arc<TempoMap> {
+        self.core.read(cx).port().tempo_map()
     }
 
     pub(super) fn frac(&self) -> f64 {
@@ -367,8 +368,8 @@ impl CompositionPage {
         };
         self.core.update(cx, |core, _| {
             let key = |k: &str| vec![PathStep::key("interface"), PathStep::key(k)];
-            let _ = core.port_mut().set_preference(key("followCursor"), Value::bool(follow));
-            let _ = core.port_mut().set_preference(key("scrollMode"), Value::text(mode));
+            core.report(|pt| pt.set_preference(key("followCursor"), Value::bool(follow)));
+            core.report(|pt| pt.set_preference(key("scrollMode"), Value::text(mode)));
         });
         cx.notify();
     }
@@ -566,7 +567,7 @@ impl CompositionPage {
             ("length", Value::int(length.max(1))),
         ]);
         let op = EditOp::Insert { temp: 0, parent: Ref::Id(track), list: "items".into(), index: t.items.len(), node };
-        let made = self.core.update(cx, |core, _| core.port_mut().apply(Label::new("New item"), vec![op]).ok());
+        let made = self.core.update(cx, |core, _| core.report(|pt| pt.apply(Label::new("New item"), vec![op])));
         if let Some(item) = made.and_then(|a| a.created.first().map(|(_, id)| *id)) {
             self.selected_item = Some(item);
             self.ed.selection = [item].into_iter().collect();
@@ -706,7 +707,7 @@ impl CompositionPage {
             Vec::new()
         };
         let gesture =
-            (!copy).then(|| self.core.update(cx, |core, _| core.port_mut().begin_gesture(Label::new("Item"))));
+            (!copy).then(|| self.core.update(cx, |core, _| core.begin_gesture(Label::new("Item"))));
         self.item_drag = Some(ItemDrag {
             item,
             zone,
@@ -828,7 +829,7 @@ impl CompositionPage {
             d.ghost = ghost;
         }
         if let Some(g) = self.item_drag.as_ref().and_then(|d| d.gesture.as_ref()) {
-            self.core.update(cx, |core, _| core.port_mut().gesture_apply(g, ops));
+            self.core.update(cx, |core, _| core.gesture_apply(*g, ops));
         }
         cx.notify();
     }
@@ -859,7 +860,7 @@ impl CompositionPage {
     /// The left button went up: items, the volume knob, the rectangle, the loop
     pub(super) fn release(&mut self, cx: &mut Context<Self>) {
         if let Some(d) = self.drag.take() {
-            self.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
+            self.core.update(cx, |core, _| core.gesture_commit(d.gesture));
         }
         if let Some(d) = self.item_drag.take() {
             let now = self.selected(cx).map(|(_, it)| it);
@@ -887,7 +888,7 @@ impl CompositionPage {
                 } else if ghost_delta != 0 || changed {
                     let params = relocate(true, ghost_delta);
                     self.core.update(cx, |core, _| {
-                        let _ = core.port_mut().run_action("clip.relocate".into(), params);
+                        core.report(|pt| pt.run_action("clip.relocate".into(), params));
                     });
                 }
             } else if let Some(g) = d.gesture {
@@ -895,19 +896,19 @@ impl CompositionPage {
                     // the trim again as `clip.trim_start`: the content stays where it was (F-CLP-003)
                     let tick = now.map_or(0, |n| n.start);
                     self.core.update(cx, |core, _| {
-                        core.port_mut().gesture_cancel(g);
+                        core.gesture_cancel(g);
                         if delta != 0 {
                             let params =
                                 Value::object([("item", Value::text(d.item.to_string())), ("tick", Value::int(tick))]);
-                            let _ = core.port_mut().run_action("clip.trim_start".into(), params);
+                            core.report(|pt| pt.run_action("clip.trim_start".into(), params));
                         }
                     });
                 } else if d.zone == ItemZone::Move && changed {
                     // to other tracks: the legacy's rules said yes for every item
                     let params = relocate(false, delta);
                     self.core.update(cx, |core, _| {
-                        core.port_mut().gesture_cancel(g);
-                        let _ = core.port_mut().run_action("clip.relocate".into(), params);
+                        core.gesture_cancel(g);
+                        core.report(|pt| pt.run_action("clip.relocate".into(), params));
                     });
                 } else if d.zone == ItemZone::Move && self.move_automation && delta != 0 {
                     // the move again as `items.move`, which takes the automation under the items along: one undo step
@@ -919,11 +920,11 @@ impl CompositionPage {
                         ("automation", Value::bool(true)),
                     ]);
                     self.core.update(cx, |core, _| {
-                        core.port_mut().gesture_cancel(g);
-                        let _ = core.port_mut().run_action("items.move".into(), params);
+                        core.gesture_cancel(g);
+                        core.report(|pt| pt.run_action("items.move".into(), params));
                     });
                 } else {
-                    self.core.update(cx, |core, _| core.port_mut().gesture_commit(g));
+                    self.core.update(cx, |core, _| core.gesture_commit(g));
                 }
             }
         }
@@ -959,7 +960,7 @@ impl CompositionPage {
             self.ed.selection.extend(hit);
         }
         if let Some(d) = self.ed.loop_drag.take() {
-            self.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
+            self.core.update(cx, |core, _| core.gesture_commit(d.gesture));
         }
         cx.notify();
     }
@@ -1034,7 +1035,7 @@ impl CompositionPage {
 
     // --- the loop and punch handles, the Shift modes (F-REG-006, F-REG-007) --------------------------------------
 
-    fn set_range(&mut self, punch: bool, from: i64, to: i64, gesture: Option<&GestureId>, cx: &mut Context<Self>) {
+    fn set_range(&mut self, punch: bool, from: i64, to: i64, gesture: Option<&Gesture>, cx: &mut Context<Self>) {
         let key = if punch { "punch" } else { "loop" };
         let ops = vec![
             EditOp::set(lm_port::ROOT, &["transport", key, "from"], Value::int(from)),
@@ -1042,7 +1043,9 @@ impl CompositionPage {
             EditOp::set(lm_port::ROOT, &["transport", key, "on"], Value::bool(true)),
         ];
         match gesture {
-            Some(g) => self.core.update(cx, |core, _| core.port_mut().gesture_apply(g, ops)),
+            Some(g) => {
+                self.core.update(cx, |core, _| core.gesture_apply(*g, ops));
+            }
             None => self.apply(if punch { "Punch" } else { "Loop" }, ops, cx),
         }
     }
@@ -1090,7 +1093,7 @@ impl CompositionPage {
         } else {
             LoopMode::New(tick)
         };
-        let gesture = self.core.update(cx, |core, _| core.port_mut().begin_gesture(Label::new("Loop")));
+        let gesture = self.core.update(cx, |core, _| core.begin_gesture(Label::new("Loop")));
         self.ed.loop_drag = Some(LoopDrag { punch, mode, other: (from, to), gesture });
         true
     }
@@ -1114,7 +1117,7 @@ impl CompositionPage {
                 let key = LoopEdit::ALL[row].key();
                 self.core.update(cx, |core, _| {
                     let path = vec![PathStep::key("interface"), PathStep::key("loopEditMode")];
-                    let _ = core.port_mut().set_preference(path, Value::text(key));
+                    core.report(|pt| pt.set_preference(path, Value::text(key)));
                 });
             }
             3 => self.set_range(false, tick.min(to - min).max(0), to.max(tick + min), None, cx),
@@ -1168,7 +1171,7 @@ impl CompositionPage {
         let mut v: Vec<EditOp> =
             ops.iter().map(|(k, t)| EditOp::set(lm_port::ROOT, &["transport", key, k], Value::int(*t))).collect();
         v.push(EditOp::set(lm_port::ROOT, &["transport", key, "on"], Value::bool(true)));
-        self.core.update(cx, |core, _| core.port_mut().gesture_apply(g, v));
+        self.core.update(cx, |core, _| core.gesture_apply(*g, v));
         cx.notify();
     }
 
@@ -1389,7 +1392,7 @@ impl CompositionPage {
                         ("track", Value::text(track.to_string())),
                         ("item", Value::text(item.to_string())),
                     ]);
-                    let _ = c.port_mut().run_action("midi.export".into(), params);
+                    c.report(|pt| pt.run_action("midi.export".into(), params));
                     cx.notify();
                 });
             },
@@ -1635,7 +1638,7 @@ impl CompositionPage {
             if dont_ask {
                 self.core.update(cx, |core, _| {
                     let path = vec![PathStep::key("interface"), PathStep::key("confirmTrackRemoval")];
-                    let _ = core.port_mut().set_preference(path, Value::bool(false));
+                    core.report(|pt| pt.set_preference(path, Value::bool(false)));
                 });
             }
             self.remove_track_now(track, cx);
@@ -1681,7 +1684,7 @@ impl CompositionPage {
                         ("path", Value::text(path.display().to_string())),
                         ("track", Value::text(track.to_string())),
                     ]);
-                    let _ = c.port_mut().run_action("midi.export".into(), params);
+                    c.report(|pt| pt.run_action("midi.export".into(), params));
                     cx.notify();
                 });
             },

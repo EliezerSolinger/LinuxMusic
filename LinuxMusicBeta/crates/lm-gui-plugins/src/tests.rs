@@ -21,6 +21,8 @@ use crate::{PortHost, panels};
 
 struct Host {
     port: FakePort,
+    gestures: crate::Gestures,
+    errors: Vec<lm_port::Error>,
 }
 
 impl PortHost for Host {
@@ -29,6 +31,17 @@ impl PortHost for Host {
     }
     fn port_mut(&mut self) -> &mut dyn CorePort {
         &mut self.port
+    }
+    fn gestures_and_port(&mut self) -> (&mut dyn CorePort, &mut crate::Gestures) {
+        (&mut self.port, &mut self.gestures)
+    }
+    fn settle(&mut self, outcome: crate::Outcome) {
+        if let crate::Outcome::Failed(e) = outcome {
+            self.errors.push(e);
+        }
+    }
+    fn import(&mut self, path: std::path::PathBuf) -> lm_port::Pending<lm_port::Resource> {
+        self.port.import(path)
     }
 }
 
@@ -77,7 +90,7 @@ struct Opened<'a> {
 
 fn open<'a>(cx: &'a mut TestAppContext, plugins: &[(&Descriptor, bool)], plugin: &str) -> Opened<'a> {
     let (port, node) = host(plugins, plugin);
-    let host = cx.new(|_| Host { port });
+    let host = cx.new(|_| Host { port, gestures: Default::default(), errors: Vec::new() });
     let spec = panels::spec(plugin).expect("the plugin has a panel");
     let h = host.clone();
     let (panel, vcx) = cx.add_window_view(move |_, cx| PluginPanel::new(h, node, spec, cx));

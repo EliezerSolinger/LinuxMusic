@@ -63,7 +63,7 @@ pub fn screen_actions(d: Div, cx: &mut Context<Workspace>) -> Div {
                 super::files::choose(cx, "Import (MIDI, audio)", false, true, move |paths, cx| {
                     let tick = {
                         let p = core.read(cx).port();
-                        crate::model::tempo_map(p.root()).tick_at(p.telemetry().position.samples)
+                        p.tempo_map().tick_at(p.telemetry().position.samples)
                     };
                     super::files::import_paths(&core, &paths, tick, cx);
                 });
@@ -85,7 +85,7 @@ pub fn screen_actions(d: Div, cx: &mut Context<Workspace>) -> Div {
                 super::files::choose_new(cx, &folder, &format!("{name}.mid"), move |path, cx| {
                     core.update(cx, |c, cx| {
                         let params = Value::object([("path", Value::text(path.display().to_string()))]);
-                        let _ = c.port_mut().run_action("midi.export".into(), params);
+                        c.report(|pt| pt.run_action("midi.export".into(), params));
                         cx.notify();
                     });
                 });
