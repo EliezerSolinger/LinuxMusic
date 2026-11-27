@@ -139,3 +139,4 @@ Por crate: `lm-render` tem 0 CRÍTICO, 5 ALTO, 4 MÉDIO, 2 BAIXO. `lm-compile` t
 | R-7 gravação perde trecho sem marcador | Confirmado e não corrigido: o relatório mesmo diz que os limites impedem o caso; falta decidir qual evento de falha emitir. | |
 | R-8 espera ocupada sem prazo | Confirmado e não corrigido: com `workers == 0` (padrão) não ocorre; marcar o nó morto enquanto o worker detém o núcleo exige desenho. | |
 | R-9 `expect` em `job` | Confirmado e corrigido: `job` devolve `Option` e o nó fica em silêncio. | 1df90833d |
+| C-6 `as i32` em graus do arquivo de afinação (`lm-doc::tuning`) | Verificado: a leitura do `.kbm` já recusa graus fora de 0..=1023 (`parse_kbm`); a razão de intervalo infinita foi corrigida junto (M-12). Os demais itens de MÉDIO e BAIXO desta tabela são de `lm-compile` e `lm-render` | rodada de desenho (31f5ae9ba) |

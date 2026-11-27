@@ -148,15 +148,15 @@ Por padrão (grep de alocação, pânico, casts de índice, divisões) e leitura
 | CRÍTICO sfxr.rs laço com afinação absurda | confirmado e corrigido (pitch limitado a [1/64, 64], não finito vira silêncio) | 9f56158aa |
 | CRÍTICO LB302 tabelas na primeira nota | confirmado e corrigido (`Lb302::new` chama `prepare()`) | 9f56158aa |
 | amp.rs `.nam` com cabeçalho hostil | confirmado e corrigido (arquivo > 64 MiB e taxa fora de 8 kHz a 768 kHz ou razão fora de 1/64..64 viram `Err`) | ver log (NAM amp) |
-| ALTO effect.rs parâmetros não finitos | confirmado e corrigido (rejeita não finito em `event` e `Knobs::set`); o clamp à faixa do esquema não foi feito: `BuildContext` não traz as faixas, exigiria mudar a interface | 1e617dda2 |
+| ALTO effect.rs parâmetros não finitos | confirmado e corrigido (rejeita não finito em `event` e `Knobs::set`); o clamp à faixa do esquema foi feito na rodada de desenho, numa fronteira só (`EventList::push` + `ProgramBuilder::param_limits`) | 1e617dda2, rodada de desenho (d0e22d4ef) |
 | ALTO velocity NaN / Tuning / Pan | confirmado e corrigido (velocidade, Tuning limitado a ±120, não finito ignorado, `Expressions::set`) | 1e617dda2 |
 | MÉDIO oscillator.rs `69 + semitones` | confirmado e corrigido (`saturating_add`) | ver log (Bound band index) |
 | MÉDIO Lfo::set_frequency NaN | confirmado e corrigido | idem |
 | MÉDIO xpressive smooth sem limite | confirmado e corrigido (`SMOOTH_MAX`) | idem |
 | MÉDIO lm-expr mais de 255 argumentos | confirmado e corrigido (parser rejeita) | idem |
 | MÉDIO ScaleFx `sent` cheio | confirmado e corrigido (nota descartada em vez de NoteOff errado) | idem |
-| MÉDIO vibed `(sr/pitch) as i32 + 1` | confirmado e não corrigido: coberto em parte pelo limite de Tuning; não revisado a fundo | - |
-| MÉDIO dynamics `solve()` por amostra | não corrigido: custo de CPU, não corretude; mudar mexeria no som | - |
-| MÉDIO granular grãos sem teto | não verificado | - |
+| MÉDIO vibed `(sr/pitch) as i32 + 1` | corrigido na rodada de desenho: comprimento único e limitado (`length_of`), afinação, detune e knob saneados | rodada de desenho |
+| MÉDIO dynamics `solve()` por amostra | mantido de propósito na rodada de desenho: custo de CPU, não corretude; mudar alteraria o som | - |
+| MÉDIO granular grãos sem teto | confirmado e corrigido na rodada de desenho (teto de 128 grãos, `size_samples >= 1`) | rodada de desenho |
 | MÉDIO Instrument::new / NES | falso na prática: o esquema rejeita valores fora da faixa (como o relatório admite) | - |
-| MÉDIO lm-expr profundidade de árvore | não verificado | - |
+| MÉDIO lm-expr profundidade de árvore | verificado: já limitado (`MAX_DEPTH` 200, `MAX_TOKENS` 8000); teste do pior caso numa thread de 2 MiB acrescentado na rodada de desenho | rodada de desenho |

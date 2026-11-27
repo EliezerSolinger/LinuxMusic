@@ -285,6 +285,14 @@ pub const LOADING_THRESHOLD: Duration = Duration::from_millis(200);
     janela do plugin mostra o carregamento em vez de botões vazios);
   - depois de 2 s, mostra o botão de cancelar, se a operação permitir;
   - uma falha vira aviso com "tentar de novo".
+- **O pool (`Workers`):** ao ser solto, o que ainda está na fila termina como `Cancelled` sem rodar (nenhuma alça fica
+  em `Queued` para sempre) e só o trabalho em andamento é esperado; uma fila com mutex envenenado segue funcionando; se
+  o sistema recusar todas as threads, `start` falha a operação com `error.operation.no_worker` em vez de derrubar o
+  processo.
+- **Valores de parâmetro:** todo evento `Param` entra na lista de eventos do nó por um ponto só (`EventList::push`) e é
+  limitado ali à faixa do esquema do plugin (`ProgramBuilder::param_limits`, preenchido pelo compilador a partir do
+  `ParamSpec`); não finito é descartado. Automação, modulação, MIDI e a mão passam pelo mesmo limite, então nenhum
+  plugin repete a checagem.
 - **Um componente de carregamento só**, na biblioteca de interface, usado por todas as telas. Ele lê o `Loading` do
   alvo.
 - **Medição:** a duração de toda operação vai para o perfil da sessão. Uma operação que passa de 200 ms sem estar

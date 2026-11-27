@@ -215,8 +215,8 @@ Commits: `f56190a83` (proxy), `bdc71e9f8` e `1d1952299` (host), o do documento e
 | M-5 restore pela metade no dual mono | Confirmado e corrigido: a esquerda volta ao estado anterior se a direita recusar; teste | bdc71e9f8 |
 | M-6 chaves internadas sem limite | Confirmado e corrigido na fronteira: teto de comprimento e de quantidade por plugin em `scanned_from` (o interner em si é de `lm-base`, não alterado) | f56190a83 |
 | M-7 bloqueio permanente por timeout | Confirmado e não corrigido: é política da sessão (`lm-session`), outra área | n/a |
-| M-8, M-9 (`lm-base` operation) | Não verificado: fora da área (`lm-base`) | n/a |
-| M-10 escritor JSON sem profundidade | Não verificado: fora da área (`lm-state`) | n/a |
+| M-8, M-9 (`lm-base` operation) | Corrigido na rodada de desenho: recuperação do envenenamento; o `Drop` do pool termina a fila como cancelada sem rodar; B-5 junto (pool sem threads falha a operação) | rodada de desenho (31f5ae9ba) |
+| M-10 escritor JSON sem profundidade | Corrigido na rodada de desenho: o escritor recusa `state.json.too_deep` na profundidade do leitor | rodada de desenho (31f5ae9ba) |
 | M-11 contador acima de 2^53 | Confirmado e corrigido junto com A-7 | 362f80836 |
-| M-12 razão de escala inf/NaN | Não verificado: fora da área (`lm-doc/tuning.rs`) | n/a |
+| M-12 razão de escala inf/NaN | Corrigido na rodada de desenho: resultado da razão filtrado por `is_finite`; B-8 (erro explícito de profundidade no upgrade) junto; B-9 mantido (ver decisoes-autonomas) | rodada de desenho (31f5ae9ba) |
 | Extras do relatório: B-1 (Slot sem Drop), B-2 (`from_secs_f64`), B-12 (clamp com NaN no LV2), B-13 (saídas velhas no dual) | Confirmados e corrigidos | bdc71e9f8, f56190a83 |

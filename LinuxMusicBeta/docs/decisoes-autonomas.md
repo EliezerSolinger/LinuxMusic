@@ -2092,3 +2092,33 @@ dá a mesma saída.
   de 85 ms a 48 kHz) atrás, uma constante do programa e não do dispositivo. Efeito audível: o seguidor de pico responde
   com esse atraso fixo (a atenuação de ataque/decaimento do legado continua por cima); é a correção, o preço de ser
   idêntico em qualquer `max_block` até 4096.
+
+## Rodada de desenho (27/11): parâmetros e base
+
+- **Parâmetros de efeito sem limite de faixa.** `BuildContext` não traz as faixas, e cada plugin teria de repetir a
+  checagem. Decidido: o limite fica numa fronteira só, `EventList::push` do nó (todo `EventKind::Param` passa por ali:
+  documento, curva de automação, modulador, controle MIDI, mão). O compilador declara a faixa do `ParamSpec` com
+  `ProgramBuilder::param_limits(nó, índice, min, max)` (aditivo, `ParamInfo` não mudou); parâmetro sem faixa declarada
+  (testes, nós do host) não é limitado; valor não finito é descartado. Vale para instrumento, efeito e efeito de nota.
+  Dentro da faixa o som não muda.
+- **vibed `(sr/pitch) as i32 + 1`.** Afinação 0, NaN, ínfima ou detune/knob fora da faixa estouravam o `i32` ou
+  alocavam megabytes. Decidido: `VibratingString::length_of` é o único cálculo do comprimento (afinação em 1 Hz a 1 MHz,
+  detune em ±1, knob de comprimento em 0..16, resultado em 1..2^21); `pick`, `pickup`, `fuzziness` e `stiffness` também
+  são saneados. Dentro das faixas dos knobs o comprimento é idêntico ao antigo (a nota mais grave do plugin, 1,9 Hz,
+  fica acima do piso).
+- **Granular sem teto de grãos.** `grains.push` podia realocar na thread de áudio e o custo por amostra crescia com
+  densidade absurda. Decidido: teto de 128 grãos vivos (`GRAIN_ROOM`, que a faixa válida nunca alcança: no máximo 65);
+  grão a mais não nasce; `size_samples` nunca fica abaixo de 1.
+- **lm-expr profundidade.** Já limitado: `MAX_DEPTH` 200 de aninhamento e `MAX_TOKENS` 8000 (cadeia à esquerda). Faltava
+  provar o pior caso; o teste compila a cadeia mais profunda admitida numa thread de 2 MiB. Sem mudança de código.
+- **M-8 e M-9 (`Workers`).** Mutex envenenado fazia o job sumir e a alça ficar `Queued` para sempre; o `Drop` rodava toda
+  a fila na thread que soltava o pool. Decidido: a fila e o resultado recuperam o envenenamento (os dados nunca ficam pela
+  metade); o `Drop` esvazia a fila sob o lock e termina cada job como cancelado, sem rodar; o pool sem threads (B-5)
+  falha a operação em vez de `expect`.
+- **M-10 (escritor JSON).** O escritor agora recusa `state.json.too_deep` na mesma profundidade (`MAX_DEPTH`) que o leitor
+  aceita: o que se salva sempre reabre.
+- **M-12 e C-6 (escala).** A razão de intervalo só vale se o centavo resultante for finito (`inf/1`, `1e400/1`, `inf/inf`,
+  razões que estouram). Os graus do `.kbm` já eram limitados a 0..=1023 na leitura (C-6, sem mudança). B-8: a profundidade
+  do upgrade passou a ser erro explícito (`state.json.too_deep`). B-9 (diário sem teto) fica: um teto descartaria
+  operações que a recuperação de falha precisa, e a sessão o esvazia em três pontos.
+- **`dynamics::solve()` por amostra:** mantido (custo de CPU, mudar altera o som).
