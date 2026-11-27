@@ -19,13 +19,7 @@
     ],
     "browser.refresh": [
       "f5"
-    ],
-    "browser.find": [
-      "secondary-f"
     ]
   },
-  "mouse": {},
-  "unsure": {
-    "browser.find": "REAPER's Media Explorer searches with Ctrl+F; confirm"
-  }
+  "mouse": {}
 }

@@ -2,14 +2,8 @@
   "context": "Mixing",
   "name": "REAPER",
   "keys": {
-    "desk.select_left": [
-      "left"
-    ],
     "desk.select_right": [
       "right"
-    ],
-    "desk.fader_up": [
-      "up"
     ],
     "desk.fader_down": [
       "down"
@@ -37,9 +31,6 @@
     ],
     "desk.remove_channel": [
       "delete"
-    ],
-    "desk.rename_channel": [
-      "f2"
     ]
   },
   "mouse": {
@@ -48,9 +39,6 @@
     ],
     "mix.fader.wheel": [
       "wheel"
-    ],
-    "mix.fader.wheel_coarse": [
-      "shift-wheel"
     ],
     "mix.fader.wheel_fine": [
       "secondary-wheel"
@@ -61,23 +49,11 @@
     "mix.knob.wheel_fine": [
       "secondary-wheel"
     ],
-    "mix.knob.reset": [
-      "alt-click"
-    ],
     "mix.channel.multi": [
       "secondary-click"
     ],
     "mix.channel.rename": [
       "double-click"
     ]
-  },
-  "unsure": {
-    "desk.add_channel": "REAPER inserts a track with Ctrl+T; confirm",
-    "desk.select_left": "REAPER selects tracks with the arrows in the track list; confirm",
-    "desk.rename_channel": "REAPER renames a track with F2",
-    "desk.fader_up": "REAPER has no fader keys; placeholders",
-    "mix.fader.fine": "REAPER: Ctrl+drag is the fine mode of a fader/knob (default)",
-    "mix.knob.reset": "REAPER: Alt+click on a control resets it; confirm (double click also resets)",
-    "mix.fader.wheel_coarse": "REAPER wheel steps differ; confirm"
   }
 }

@@ -32,21 +32,6 @@
     ],
     "auto.play": [
       "space"
-    ],
-    "auto.tool_draw": [
-      "d"
-    ],
-    "auto.tool_erase": [
-      "e"
-    ],
-    "auto.tool_out": [
-      "o"
-    ],
-    "auto.tool_pencil": [
-      "b"
-    ],
-    "auto.tool_select": [
-      "v"
     ]
   },
   "mouse": {
@@ -55,9 +40,6 @@
     ],
     "au.extend": [
       "shift-click"
-    ],
-    "au.free": [
-      "alt-drag"
     ],
     "au.draw.line": [
       "shift-click"
@@ -70,22 +52,6 @@
     ],
     "au.view.grid_wheel": [
       "secondary-alt-wheel"
-    ],
-    "au.view.zoom": [
-      "wheel"
-    ],
-    "au.view.scroll": [
-      "shift-wheel"
     ]
-  },
-  "unsure": {
-    "auto.tool_draw": "REAPER envelopes have no tool keys; placeholders",
-    "auto.tool_erase": "placeholder",
-    "auto.tool_select": "placeholder",
-    "auto.tool_pencil": "placeholder",
-    "auto.tool_out": "placeholder",
-    "au.free": "REAPER: Shift ignores the grid? confirm",
-    "au.view.zoom": "confirm",
-    "au.view.scroll": "confirm"
   }
 }

@@ -5,17 +5,11 @@
     "arrange.split_at_cursor": [
       "s"
     ],
-    "arrange.duplicate_selection": [
-      "secondary-alt-d"
-    ],
     "arrange.delete": [
       "delete"
     ],
     "arrange.empty_item": [
       "shift-e"
-    ],
-    "arrange.open_item": [
-      "enter"
     ],
     "arrange.copy_selection": [
       "secondary-c"
@@ -26,21 +20,12 @@
     "arrange.paste_at_cursor": [
       "secondary-v"
     ],
-    "clip.glue_selection": [
-      "secondary-j"
-    ],
     "arrange.select_all": [
       "secondary-a"
     ],
     "arrange.select_none": [
       "secondary-shift-a",
       "escape"
-    ],
-    "arrange.bar_left": [
-      "left"
-    ],
-    "arrange.bar_right": [
-      "right"
     ],
     "arrange.insert_bar_at_cursor": [
       "shift-insert",
@@ -49,15 +34,6 @@
     "arrange.remove_bar_at_cursor": [
       "shift-delete",
       "shift-backspace"
-    ],
-    "arrange.tool_draw": [
-      "d"
-    ],
-    "arrange.tool_knife": [
-      "k"
-    ],
-    "arrange.tool_select": [
-      "v"
     ],
     "arrange.zoom_in": [
       "="
@@ -106,13 +82,6 @@
     "comp.item.copy": [
       "secondary-drag"
     ],
-    "comp.free": [
-      "alt-drag",
-      "secondary-alt-drag"
-    ],
-    "comp.item.snap_edge": [
-      "shift-drag"
-    ],
     "comp.item.open": [
       "double-click"
     ],
@@ -122,14 +91,8 @@
     "comp.item.knife_free": [
       "alt-click"
     ],
-    "comp.item.delete": [
-      "shift-right-click"
-    ],
     "comp.item.mute": [
       "secondary-right-click"
-    ],
-    "comp.row.marquee": [
-      "drag"
     ],
     "comp.row.extend": [
       "shift-click"
@@ -165,9 +128,6 @@
     "comp.view.scroll_h": [
       "alt-wheel"
     ],
-    "comp.view.scroll_v": [
-      "shift-wheel"
-    ],
     "comp.view.track_height": [
       "secondary-wheel"
     ],
@@ -177,21 +137,5 @@
     "comp.view.track_height_coarse": [
       "alt-shift-wheel"
     ]
-  },
-  "unsure": {
-    "arrange.duplicate_selection": "REAPER duplicates items with Ctrl+D? confirm; Ctrl+Alt+D is a placeholder",
-    "clip.glue_selection": "REAPER glues with Ctrl+Alt+J? confirm",
-    "arrange.open_item": "REAPER opens an item with double click or F2? confirm",
-    "arrange.tool_draw": "REAPER has no tool keys (the mouse modifiers decide); these are placeholders",
-    "arrange.tool_knife": "same",
-    "arrange.tool_select": "same",
-    "arrange.bar_left": "REAPER moves the cursor with the arrows by the grid; confirm",
-    "arrange.bar_right": "same",
-    "comp.item.copy": "REAPER: Ctrl+drag copies the item (default)",
-    "comp.free": "REAPER: Alt (or Ctrl+Alt) drag ignores the grid? confirm; the snap toggle is a global option",
-    "comp.item.snap_edge": "REAPER has no Shift edge snap; placeholder",
-    "comp.item.delete": "REAPER deletes with Delete; this gesture is a placeholder",
-    "comp.row.marquee": "REAPER: dragging on empty space makes a time selection or marquee, by its mouse modifiers; confirm",
-    "comp.view.scroll_v": "F-ARR-007: Shift+wheel scrolls vertically"
   }
 }

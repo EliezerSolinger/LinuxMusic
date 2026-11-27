@@ -5,9 +5,6 @@
     "transport.toggle": [
       "space"
     ],
-    "transport.stop": [
-      "shift-space"
-    ],
     "transport.record": [
       "r"
     ],
@@ -28,11 +25,5 @@
     "transport.tempo_fine": [
       "secondary-drag"
     ]
-  },
-  "unsure": {
-    "transport.record": "REAPER: R is Record (the default), Ctrl+R toggles repeat; confirm both",
-    "transport.loop": "REAPER: Ctrl+R toggles repeat; L is a locally chosen key",
-    "transport.stop": "REAPER: Space is play/stop and Shift+Space is pause; Ctrl+Space is a placeholder",
-    "transport.tempo_fine": "REAPER: Ctrl+drag is the fine mode of its knobs and faders"
   }
 }

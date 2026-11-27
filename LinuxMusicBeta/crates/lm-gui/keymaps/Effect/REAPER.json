@@ -3,9 +3,6 @@
   "name": "REAPER",
   "keys": {},
   "mouse": {
-    "param.carry": [
-      "shift-click"
-    ],
     "param.type": [
       "double-click"
     ],
@@ -21,9 +18,5 @@
     "param.wheel_fine": [
       "secondary-wheel"
     ]
-  },
-  "unsure": {
-    "param.fine": "REAPER: Ctrl+drag is the fine mode of a plug-in control (default)",
-    "param.carry": "REAPER has no carry gesture; placeholder"
   }
 }

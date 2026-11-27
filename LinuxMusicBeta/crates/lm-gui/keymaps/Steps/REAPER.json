@@ -3,21 +3,11 @@
   "name": "REAPER",
   "keys": {},
   "mouse": {
-    "st.pitch": [
-      "alt-click"
-    ],
-    "st.view.zoom": [
-      "wheel"
-    ],
     "st.view.scroll_h": [
       "shift-wheel"
     ],
     "st.step.velocity": [
       "secondary-wheel"
     ]
-  },
-  "unsure": {
-    "st.pitch": "REAPER has no step sequencer in the same form (its MIDI editor grid is the closest); placeholders",
-    "st.view.zoom": "placeholder"
   }
 }
