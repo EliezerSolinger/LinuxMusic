@@ -114,3 +114,51 @@ fn a_broken_file_is_a_notice_not_a_change() {
     assert_eq!(s.document().root().get("tracks").map_or(0, Value::len), tracks);
     assert!(s.notices().keys().contains(&"session.midi.read"), "{:?}", s.notices().keys());
 }
+
+#[test]
+fn bend_aftertouch_and_cc_become_control_lanes_of_the_item() {
+    let dir = TempDir::new("midi-bend");
+    let mut s = session(&dir);
+    let t = |tick, event| Timed { tick, event };
+    let smf = Smf {
+        format: 1,
+        ppq: 480,
+        tracks: vec![Track {
+            events: vec![
+                t(0, Event::Controller { channel: 0, number: 1, value: 64 }),
+                t(0, Event::NoteOn { channel: 0, key: 60, velocity: 100 }),
+                t(0, Event::PitchBend { channel: 0, value: 8192 }),
+                t(240, Event::PitchBend { channel: 0, value: 16383 }),
+                t(480, Event::NoteOff { channel: 0, key: 60, velocity: 0 }),
+            ],
+        }],
+    };
+    let file = dir.join("bend.mid");
+    std::fs::write(&file, lm_smf::write(&smf)).unwrap();
+    let _ = s.midi_import(file, 0);
+    wait_ops(&mut s);
+    let root = s.document().root().clone();
+    let track = root.get("tracks").unwrap().items().last().unwrap().clone();
+    let item = track.get("items").unwrap().at(0).unwrap().clone();
+    let lanes: Vec<Value> = item.get("controls").unwrap().items().cloned().collect();
+    let bend = lanes.iter().find(|l| l.get("kind").and_then(Value::as_text) == Some("pitchBend")).expect("bend lane");
+    let ticks: Vec<i64> = bend.get("points").unwrap().items().filter_map(|p| p.get("tick").and_then(Value::as_int)).collect();
+    assert_eq!(ticks, vec![0, 480], "480 file ppq to 960");
+    assert!(lanes.iter().any(|l| l.get("kind").and_then(Value::as_text) == Some("cc")
+        && l.get("number").and_then(Value::as_int) == Some(1)));
+}
+
+#[test]
+fn only_an_audio_item_exports_its_sample() {
+    let dir = TempDir::new("sample-export");
+    let mut s = session(&dir);
+    let track = add_synth_track(&mut s, "Synth");
+    let item = add_notes(&mut s, track, &[(60, 0, 480)]);
+    let err = s
+        .run_action(
+            "clip.export_sample",
+            &Value::object([("item", Value::text(item.to_string())), ("path", Value::text(dir.join("x.flac").to_str().unwrap()))]),
+        )
+        .unwrap_err();
+    assert_eq!(err.key(), "export.sample.no_audio");
+}

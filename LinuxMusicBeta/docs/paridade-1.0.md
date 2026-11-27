@@ -245,7 +245,7 @@ a ação contam como parcial.
 | F-CLP-026 | Desenho | feito |  | lm-gui/src/pages/composition.rs |
 | F-CLP-041 | Crossfades com tensão | falta | aberto: respondido em P-30 (curvas ajustáveis entram); o item só tem fadeIn/fadeOut em amostras sem tensão e sem alças de curva | lm-doc/src/schemas.rs,lm-gui/src/pages/composition/edit.rs |
 | F-CLP-042 | Inverter a amostra | falta | aberto: respondido em P-31 (inverter o item entra, renderizado como recurso novo); não há campo nem ação |  |
-| F-CLP-043 | Exportar a amostra | falta | não há exportar o item de áudio (nem o clipe) como arquivo |  |
+| F-CLP-043 | Exportar a amostra | feito | menu do clipe de áudio "Exportar a amostra" (`clip.export_sample`, F-PRJ-026) |  |
 | F-CLP-044 | Memória | feito | aberto: respondido em P-32 (acima de 30 s toca do disco, automático); não há menu manual RAM/disco | lm-io/src/reader.rs,lm-compile/src/core.rs |
 | F-CLP-046 | Tempo | feito |  | lm-doc/src/schemas.rs,lm-compile/src/items.rs |
 | F-CLP-060 | Propriedades | feito |  | lm-doc/src/schemas.rs,lm-gui/src/pages/composition/edit.rs |
@@ -485,17 +485,17 @@ a ação contam como parcial.
 | F-PRJ-012 | Descartar as conexões MIDI ao salvar | feito | aberto: P-36 respondido; nada a fazer | lm-session/src/midi/devices.rs |
 | F-PRJ-013 | Juntar as mídias ao salvar | feito |  | lm-session/src/core_actions.rs,lm-gui/src/screens/files.rs |
 | F-PRJ-015 | Recentes | feito |  | lm-session/src/prefs.rs,lm-gui/src/screens/project.rs |
-| F-PRJ-016 | Reabrir o último projeto na partida | parcial | a GUI tem o interruptor general.reopenLast, mas nada o lê na partida (gui-app e sessão) | lm-gui/src/screens/settings.rs,lm-gui-app/src/main.rs |
+| F-PRJ-016 | Reabrir o último projeto na partida | feito | `general.reopenLast`: a partida abre o último projeto (gui-app e `Preferences::last_project`) | lm-gui/src/screens/settings.rs,lm-gui-app/src/main.rs |
 | F-PRJ-017 | Autosave e recuperação | feito |  | lm-session/src/journal.rs,lm-gui/src/screens/project.rs |
 | F-PRJ-018 | Notas do projeto | feito | campo `notes` na raiz (esquema 5, opcional, até 64 KiB), editado na janela do projeto (Notas do projeto, ação `file.notes`, sem tecla padrão), um passo de desfazer ao fechar | crates/lm-doc/src/schemas.rs,crates/lm-gui/src/screens/project.rs |
 | F-PRJ-019 | Importar MIDI | feito | importa notas, andamento/compasso, CC7 (volume), CC10 (pan), pitch bend, pressão e os outros CC (faixas de controle do item), banco (CC0/CC32) e program (o primeiro escolhe o preset, os seguintes são faixas `programChange`), canal 10 = banco 128; o instrumento é um Sampler no SoundFont padrão (sem ele, o sintetizador provisório) | lm-session/src/midifile.rs,lm-gui/src/screens/files.rs |
 | F-PRJ-020 | Importar arquivos de áudio | feito |  | lm-gui/src/screens/files.rs,lm-session/src/core_actions.rs |
 | F-PRJ-021 | Exportar MIDI | feito | exporta SMF tipo 1 com mapa de andamentos, notas e faixas de controle; um Sampler em SF2/GIG grava banco (CC0/CC32) e program no início, e o banco 128 vai ao canal 10 | lm-session/src/midifile.rs,lm-gui/src/screens/palette.rs |
 | F-PRJ-022 | Exportar áudio (assistente) | feito |  | lm-session/src/export.rs,lm-gui/src/screens/export.rs |
-| F-PRJ-023 | Exportar uma faixa, um clipe, uma região | parcial | faixa (na tela de exportar) e região (menu da régua) feitas; o menu do clipe não tem "exportar o clipe" | lm-gui/src/screens/export.rs,lm-gui/src/pages/composition.rs |
+| F-PRJ-023 | Exportar uma faixa, um clipe, uma região | feito | faixa (na tela de exportar e no menu da faixa), clipe (menu do clipe) e região (menu da régua) | lm-gui/src/screens/export.rs,lm-gui/src/pages/composition.rs |
 | F-PRJ-024 | Exportar as faixas (stems) | feito |  | lm-session/src/export.rs,lm-gui/src/screens/export.rs |
 | F-PRJ-025 | Exportar o trecho: rápido ou exato | feito |  | lm-session/src/export.rs,lm-gui/src/screens/export.rs |
-| F-PRJ-026 | Exportar a amostra de um clipe | falta | nenhuma ação nem comando para escrever a amostra de um clipe como FLAC |  |
+| F-PRJ-026 | Exportar a amostra de um clipe | feito | ação `clip.export_sample {item, path}` (operação com cancelar): o trecho da amostra que o item toca, em FLAC 24 bits; menu do clipe de áudio "Exportar a amostra". Ganho, fades e comp não entram: é a amostra, não a renderização | crates/lm-session/src/export.rs,crates/lm-gui/src/pages/composition/edit.rs |
 | F-PRJ-027 | Preset de efeito e de faixa | feito |  | lm-session/src/core_actions.rs,lm-gui/src/screens/effect.rs,lm-gui/src/screens/instrument.rs |
 
 ## F-CFG: Configurações

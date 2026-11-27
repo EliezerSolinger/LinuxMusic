@@ -12,7 +12,7 @@ use lm_compile::{CompilerConfig, CompilerCore, Environment, ResourceState, Resou
 use lm_plugin::Registry;
 use lm_render::{Command, Limits, NodeCore, ProcessSpec, SampleData};
 use lm_state::{Resource, SchemaRegistry, Value};
-use lm_sys_sndfile::{Existing, Sample, WriteFormat, WriteSpec, Writer};
+use lm_sys_sndfile::{Existing, FlacDepth, Sample, WriteFormat, WriteSpec, Writer};
 
 use crate::session::{build_processor, project_rate, tempo_map};
 
@@ -760,4 +760,78 @@ fn render_stem(
         files.push(path);
     }
     Ok(meter)
+}impl crate::session::Session {
+    /// "clip.export_sample" (F-PRJ-026): the sample an audio item plays (its first lane, from the lane's offset, as
+    /// long as the item) written as a 24-bit FLAC at `path`, in an operation with cancel. The item's gain, fades and
+    /// the comp are not applied: it is the sample, not the render (the track's export is that)
+    pub fn export_clip_sample(&mut self, item: lm_state::NodeId, path: PathBuf) -> Result<lm_base::OperationId> {
+        let root = self.document().root().clone();
+        let node = self
+            .document()
+            .find(item)
+            .ok_or_else(|| Error::new("action.node.missing").arg("node", item.to_string()))?;
+        let lane = node
+            .get("lanes")
+            .and_then(|l| l.items().next())
+            .ok_or_else(|| Error::new("export.sample.no_audio").arg("item", item.to_string()))?;
+        let key = lane
+            .get("source")
+            .and_then(Value::as_resource)
+            .map(|r| r.key().to_owned())
+            .ok_or_else(|| Error::new("export.sample.no_audio").arg("item", item.to_string()))?;
+        let offset = lane.get("sourceOffset").and_then(Value::as_int).unwrap_or(0).max(0) as usize;
+        let start = node.get("start").and_then(Value::as_int).unwrap_or(0);
+        let length = node.get("length").and_then(Value::as_int).unwrap_or(1).max(1);
+        // the item's length in seconds, by the tempo map (a musical item is as long as its bars say)
+        let map = tempo_map(&root)?;
+        let rate = f64::from(project_rate(&root));
+        let seconds = (map.sample_at(start + length) - map.sample_at(start)).max(1) as f64 / rate;
+        let folder = self.project().folder.root().to_path_buf();
+        let allowed = crate::session::allowed_folders(self.preferences());
+        let faults = self.faults().clone();
+        Ok(self.start(
+            Label::new("session.export.sample"),
+            lm_port::Target::Project,
+            true,
+            "export_sample",
+            move |cancel, progress| {
+                let file = lm_io::resource_path_in(&folder, &key, Some(&allowed))?
+                    .ok_or_else(|| Error::new("io.resource.missing").arg("key", key.as_str()))?;
+                let data = lm_io::load_file(&file, cancel, progress)?;
+                cancel.check()?;
+                let channels = data.channels();
+                let first = offset.min(data.frames());
+                let last = (first + (seconds * f64::from(data.rate())).round() as usize).min(data.frames());
+                let mut inter = Vec::with_capacity((last - first) * channels);
+                for f in first..last {
+                    for c in 0..channels {
+                        inter.push(data.channel(c)[f]);
+                    }
+                }
+                faults.check(inter.len() as u64 * 3).map_err(|e| e.arg("file", path.display().to_string()))?;
+                let tmp = path.with_extension("flac.tmp");
+                let spec = WriteSpec {
+                    format: WriteFormat::Flac { depth: FlacDepth::Int24, compression: 0.5 },
+                    rate: data.rate(),
+                    channels,
+                };
+                let written = (|| -> Result<()> {
+                    let mut w = Writer::create(&tmp, spec, Existing::Replace)?;
+                    for block in inter.chunks(channels << 15) {
+                        cancel.check()?;
+                        w.write_f32(block)?;
+                    }
+                    w.close()?;
+                    std::fs::rename(&tmp, &path).map_err(|e| crate::folder::io_error("session.file.rename", &path, &e))
+                })();
+                if written.is_err() {
+                    let _ = std::fs::remove_file(&tmp);
+                }
+                written?;
+                Ok(Value::text(path.display().to_string()))
+            },
+        ))
+    }
 }
+
+

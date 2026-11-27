@@ -78,6 +78,16 @@ pub(crate) static ACTIONS: &[ActionSpec] = &[
         enabled: always,
     },
     ActionSpec {
+        id: "clip.export_sample",
+        label: "action.clip.export_sample",
+        run: |s, p| {
+            let item = need(p, "item")?;
+            let item = lm_state::NodeId::parse(&item).map_err(|_| params())?;
+            s.export_clip_sample(item, PathBuf::from(need(p, "path")?)).map(|_| ())
+        },
+        enabled: always,
+    },
+    ActionSpec {
         id: "project.export_zip",
         label: "action.project.export_zip",
         run: |s, _| s.export_zip(),

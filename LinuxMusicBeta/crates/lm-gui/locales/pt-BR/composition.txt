@@ -16,6 +16,7 @@ Zoom out = Afastar
 Cut what is left over = Cortar o que sobra
 Export the clip as audio = Exportar o clipe como áudio
 Export the clip as MIDI = Exportar o clipe como MIDI
+Export the sample = Exportar a amostra
 Export the track as audio = Exportar a faixa como áudio
 Export the track as MIDI = Exportar a faixa como MIDI
 Colour… = Cor…

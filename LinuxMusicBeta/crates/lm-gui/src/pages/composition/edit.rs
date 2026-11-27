@@ -168,6 +168,7 @@ enum ClipCmd {
     Open,
     ExportAudio,
     ExportMidi,
+    ExportSample,
     Color,
     ColorDefault,
     ColorRandom,
@@ -1303,6 +1304,11 @@ impl CompositionPage {
                     self.export_item_midi(*i, cx);
                 }
             }
+            ClipCmd::ExportSample => {
+                if let Some(i) = targets.first() {
+                    self.export_item_sample(*i, cx);
+                }
+            }
             ClipCmd::Color => self.ed.palette = Some((ColorTarget::Items(targets), window.mouse_position())),
             ClipCmd::ColorDefault => self.set_colors(&targets, 0, cx),
             ClipCmd::ColorRandom => {
@@ -1362,6 +1368,40 @@ impl CompositionPage {
         let name = if name.is_empty() { t.name.to_string() } else { name };
         cx.set_global(crate::screens::export::ExportTrack(Some((track, Some(range), name))));
         let _ = self.workspace.update(cx, |ws, cx| ws.open(Screen::Export, None, window, cx));
+    }
+
+    /// "Export the sample" (F-PRJ-026): the system's dialog, then `clip.export_sample` for this audio item
+    fn export_item_sample(&mut self, item: NodeId, cx: &mut Context<Self>) {
+        let tracks = self.tracks(cx);
+        let Some((t, it)) = tracks.iter().find_map(|t| t.items.iter().find(|i| i.id == item).map(|i| (t, i))) else {
+            return;
+        };
+        let name = if it.name.is_empty() { t.name.to_string() } else { it.name.to_string() };
+        let core = self.core.clone();
+        let folder = core
+            .read(cx)
+            .port()
+            .status()
+            .get("project")
+            .and_then(|p| p.get("folder"))
+            .and_then(Value::as_text)
+            .unwrap_or("")
+            .to_string();
+        crate::screens::files::choose_new(
+            cx,
+            std::path::Path::new(&folder),
+            &format!("{name}.flac"),
+            move |path, cx| {
+                core.update(cx, |c, cx| {
+                    let params = Value::object([
+                        ("path", Value::text(path.display().to_string())),
+                        ("item", Value::text(item.to_string())),
+                    ]);
+                    c.report(|pt| pt.run_action("clip.export_sample".into(), params));
+                    cx.notify();
+                });
+            },
+        );
     }
 
     /// "Export the clip as MIDI": the system's dialog, then `midi.export` for this item
@@ -1484,6 +1524,8 @@ impl CompositionPage {
             rows.push(Some((tr_str("Export the clip as audio").to_string(), ClipCmd::ExportAudio, true)));
             if !i.audio {
                 rows.push(Some((tr_str("Export the clip as MIDI").to_string(), ClipCmd::ExportMidi, true)));
+            } else {
+                rows.push(Some((tr_str("Export the sample").to_string(), ClipCmd::ExportSample, true)));
             }
             rows.push(None);
             rows.push(Some((tr_str("Colour…").to_string(), ClipCmd::Color, true)));
