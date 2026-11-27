@@ -78,7 +78,18 @@ fn third_party_plugins_in_a_session() {
         prefs.get("blocked").unwrap().items().filter_map(|b| b.get("uri")?.as_text()).collect::<Vec<_>>();
     assert_eq!(blocked, ["bomb", "stall"]);
     assert_eq!(prefs.get("scanned").unwrap().len(), 6);
-    // A second scan skips the blocked ones and adds nothing twice
+    // A crash is blocked at once; a timeout is a strike, and the plugin is tried again by the next scan
+    let strikes = |s: &Session, uri: &str| {
+        s.preferences()
+            .get(&["plugins", "blocked"])
+            .unwrap()
+            .items()
+            .find(|b| b.get("uri").and_then(Value::as_text) == Some(uri))
+            .and_then(|b| b.get("strikes")?.as_int())
+    };
+    assert_eq!(strikes(&s, "bomb"), Some(1));
+    assert_eq!(strikes(&s, "stall"), Some(1));
+    // A second scan skips the crash, tries the stall again (its second timeout blocks it) and adds nothing twice
     let n = s.notices().all().len();
     s.scan_plugins("test").unwrap();
     until(&mut s, "the second scan", |s| {
@@ -86,6 +97,13 @@ fn third_party_plugins_in_a_session() {
             || s.notices().all().len() > n
     });
     assert_eq!(s.preferences().get(&["plugins", "blocked"]).unwrap().len(), 2);
+    assert_eq!(strikes(&s, "bomb"), Some(1), "skipped, not counted again");
+    assert_eq!(strikes(&s, "stall"), Some(2));
+    // The user lifts a block: the entry goes, and the next scan tries the plugin again
+    s.run_action("plugin.unblock", &Value::object([("format", Value::text("test")), ("uri", Value::text("stall"))]))
+        .unwrap();
+    assert_eq!(strikes(&s, "stall"), None);
+    assert_eq!(s.preferences().get(&["plugins", "blocked"]).unwrap().len(), 1);
 
     // A track playing the scanned synth: the session keeps its helper
     let mut pid = None;

@@ -43,6 +43,10 @@ use crate::actions::ActionSpec;
 
 /// How long a probe of one plugin may take during a scan
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Timeouts of one plugin, across scans, after which it is blocked until the user lifts it. A crash blocks at once
+/// (it repeats); a timeout may be a cold disk or a busy machine, so the first one only counts and the plugin is
+/// probed again by the next scan
+const TIMEOUT_STRIKES: i64 = 2;
 /// How long the helper may take to give its state
 const STATE_TIMEOUT: Duration = Duration::from_secs(5);
 /// The plugin's own parameter changes closer than this are one undo step (I-9.4), when it gives no gesture edges
@@ -119,6 +123,12 @@ pub(crate) static ACTIONS: &[ActionSpec] = &[
         enabled: |s| s.external.config.is_some(),
     },
     ActionSpec {
+        id: "plugin.unblock",
+        label: "action.plugin.unblock",
+        run: |s, p| s.unblock_plugins(p.get("format").and_then(Value::as_text), p.get("uri").and_then(Value::as_text)),
+        enabled: |s| s.external.config.is_some(),
+    },
+    ActionSpec {
         id: "plugin.scan",
         label: "action.plugin.scan",
         run: |s, p| {
@@ -143,6 +153,66 @@ fn blocked_value(b: &Blocked) -> Value {
         ("uri", Value::text(b.uri.as_str())),
         ("reason", Value::text(b.reason.key())),
     ])
+}
+
+fn strikes_of(b: &Value) -> i64 {
+    b.get("strikes").and_then(Value::as_int).unwrap_or(1)
+}
+
+fn is_timeout(b: &Value) -> bool {
+    b.get("reason").and_then(Value::as_text) == Some("plugin_host.timeout")
+}
+
+/// A block entry that is only a count so far: one timeout (no crash), below the strike limit
+fn soft(b: &Value) -> bool {
+    is_timeout(b) && strikes_of(b) < TIMEOUT_STRIKES
+}
+
+fn same_plugin(a: &Value, b: &Value) -> bool {
+    a.get("uri") == b.get("uri") && a.get("format") == b.get("format")
+}
+
+/// The ids of `format` a scan does not try: the hard blocks (a crash, or enough timeouts); a soft one is tried again
+fn skipped_uris(blocked: &[Value], format: &str) -> Vec<String> {
+    blocked
+        .iter()
+        .filter(|b| b.get("format").and_then(Value::as_text) == Some(format) && !soft(b))
+        .filter_map(|b| b.get("uri").and_then(Value::as_text).map(str::to_owned))
+        .collect()
+}
+
+/// The block list after a scan of `format`: a plugin the scan found working leaves it (it was only slow once); one
+/// that failed again is there with its strikes counted and its latest reason
+fn merge_blocked(existing: Vec<Value>, new: &[Value], found: &[Scanned], format: &str) -> Vec<Value> {
+    let mut out: Vec<Value> = existing
+        .into_iter()
+        .filter(|b| {
+            !(b.get("format").and_then(Value::as_text) == Some(format)
+                && found.iter().any(|s| b.get("uri").and_then(Value::as_text) == Some(s.uri.as_str())))
+        })
+        .collect();
+    for n in new {
+        match out.iter().position(|x| same_plugin(x, n)) {
+            Some(i) => {
+                let strikes = strikes_of(&out[i]) + 1;
+                out[i] = n.with("strikes", Value::int(strikes));
+            }
+            None => out.push(n.with("strikes", Value::int(1))),
+        }
+    }
+    out
+}
+
+/// The block list without what `format` and `uri` name (`None`: every entry of the format; no format: all)
+fn unblock(blocked: Vec<Value>, format: Option<&str>, uri: Option<&str>) -> Vec<Value> {
+    blocked
+        .into_iter()
+        .filter(|b| {
+            let f = format.is_none_or(|f| b.get("format").and_then(Value::as_text) == Some(f));
+            let u = uri.is_none_or(|u| b.get("uri").and_then(Value::as_text) == Some(u));
+            !(f && u)
+        })
+        .collect()
 }
 
 /// The plugin node a node key belongs to (its instrument or insert)
@@ -180,11 +250,7 @@ impl Session {
     pub fn scan_plugins(&mut self, format: &str) -> Result<lm_base::OperationId> {
         let config = self.external.config.clone().ok_or_else(|| Error::new("plugin_host.missing"))?;
         let prefs = plugins_pref(&self.preferences);
-        let blocked: Vec<String> = list_of(&prefs, "blocked")
-            .iter()
-            .filter(|b| b.get("format").and_then(Value::as_text) == Some(format))
-            .filter_map(|b| b.get("uri").and_then(Value::as_text).map(str::to_owned))
-            .collect();
+        let blocked = skipped_uris(&list_of(&prefs, "blocked"), format);
         let format = format.to_owned();
         Ok(self.start(
             Label::new("plugins.scanning"),
@@ -203,6 +269,18 @@ impl Session {
         ))
     }
 
+    /// Lifts blocks: the plugin `format`/`uri` names, every plugin of `format` when there is no `uri`, all of them when
+    /// there is no `format` either. The next scan tries them again
+    pub fn unblock_plugins(&mut self, format: Option<&str>, uri: Option<&str>) -> Result<()> {
+        let prefs = plugins_pref(&self.preferences);
+        let blocked = list_of(&prefs, "blocked");
+        let kept = unblock(blocked.clone(), format, uri);
+        if kept.len() == blocked.len() {
+            return Ok(());
+        }
+        self.set_preference(&[PathStep::key("plugins")], prefs.with("blocked", Value::list(kept)))
+    }
+
     pub(crate) fn scan_finished(&mut self, report: &Value) -> Result<()> {
         let format = report.get("format").and_then(Value::as_text).unwrap_or("");
         let found: Vec<Scanned> = list_of(report, "plugins").iter().filter_map(scanned_from).collect();
@@ -214,12 +292,7 @@ impl Session {
             .filter(|p| p.get("format").and_then(Value::as_text) != Some(format))
             .collect();
         scanned.extend(found.iter().map(Scanned::to_value));
-        let mut blocked = list_of(&prefs, "blocked");
-        for b in &new_blocked {
-            if !blocked.iter().any(|x| x.get("uri") == b.get("uri") && x.get("format") == b.get("format")) {
-                blocked.push(b.clone());
-            }
-        }
+        let blocked = merge_blocked(list_of(&prefs, "blocked"), &new_blocked, &found, format);
         let tree = prefs.with("scanned", Value::list(scanned)).with("blocked", Value::list(blocked));
         self.set_preference(&[PathStep::key("plugins")], tree)?;
         self.add_externals(&found)?;
@@ -228,6 +301,8 @@ impl Session {
             vec![
                 ("found", Value::int(found.len() as i64)),
                 ("blocked", Value::int(new_blocked.len() as i64)),
+                // Of those, the ones that only timed out once: the next scan tries them again
+                ("retry", Value::int(new_blocked.iter().filter(|b| soft(b)).count() as i64)),
                 ("format", Value::text(format)),
             ],
             Severity::Info,
@@ -596,5 +671,70 @@ impl Session {
     /// The helper running a node's plugin (tests; the plugin's window)
     pub fn plugin_host_of(&self, node: NodeId) -> Option<Arc<Hosted>> {
         self.hosted(NodeKey::Instrument(node)).or_else(|| self.hosted(NodeKey::Insert(node)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(format: &str, uri: &str, reason: &str) -> Value {
+        Value::object([
+            ("format", Value::text(format)),
+            ("uri", Value::text(uri)),
+            ("reason", Value::text(reason)),
+        ])
+    }
+
+    fn uris(v: &[Value]) -> Vec<&str> {
+        v.iter().filter_map(|b| b.get("uri")?.as_text()).collect()
+    }
+
+    #[test]
+    fn a_crash_is_skipped_at_once_and_a_first_timeout_is_tried_again() {
+        let after = merge_blocked(
+            Vec::new(),
+            &[entry("clap", "boom", "plugin_host.crashed"), entry("clap", "slow", "plugin_host.timeout")],
+            &[],
+            "clap",
+        );
+        assert_eq!(uris(&after), ["boom", "slow"], "both are on the list, so the user sees them");
+        assert_eq!(skipped_uris(&after, "clap"), ["boom"], "only the crash is skipped");
+        // The second timeout makes it a block, until the user lifts it
+        let again = merge_blocked(after, &[entry("clap", "slow", "plugin_host.timeout")], &[], "clap");
+        assert_eq!(strikes_of(&again[1]), 2);
+        assert_eq!(skipped_uris(&again, "clap"), ["boom", "slow"]);
+        assert!(skipped_uris(&again, "vst3").is_empty(), "other formats are not touched");
+    }
+
+    #[test]
+    fn a_plugin_that_works_again_leaves_the_list() {
+        let blocked = merge_blocked(Vec::new(), &[entry("clap", "slow", "plugin_host.timeout")], &[], "clap");
+        let found = [Scanned {
+            format: "clap".into(),
+            uri: "slow".into(),
+            name: "Slow".into(),
+            instrument: false,
+            inputs: 2,
+            outputs: 2,
+            midi_in: false,
+            params: Vec::new(),
+            latency: false,
+            has_window: false,
+            file: None,
+        }];
+        assert!(merge_blocked(blocked, &[], &found, "clap").is_empty());
+    }
+
+    #[test]
+    fn the_user_can_lift_one_block_or_all() {
+        let list = vec![
+            entry("clap", "a", "plugin_host.crashed"),
+            entry("clap", "b", "plugin_host.timeout"),
+            entry("vst3", "c", "plugin_host.crashed"),
+        ];
+        assert_eq!(uris(&unblock(list.clone(), Some("clap"), Some("a"))), ["b", "c"]);
+        assert_eq!(uris(&unblock(list.clone(), Some("clap"), None)), ["c"]);
+        assert!(unblock(list, None, None).is_empty());
     }
 }
