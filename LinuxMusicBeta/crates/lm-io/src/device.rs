@@ -11,7 +11,7 @@
 
 use std::any::Any;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::Duration;
@@ -422,17 +422,24 @@ impl Device {
         ABANDONED.fetch_add(1, Ordering::Relaxed);
         self.events = None;
         self.info = None;
-        if let Some(mut backend) = self.backend.take() {
+        if let Some(backend) = self.backend.take() {
+            // Shared with the watcher, so that a watcher that never starts does not drop the backend (and its
+            // callback) with the closure: the failed spawn leaves this handle, which is then leaked on purpose
+            let shared = Arc::new(Mutex::new(Some(backend)));
+            let held = shared.clone();
             let watcher = std::thread::Builder::new().name("lm-abandoned-device".to_owned()).spawn(move || {
                 if let Ok(callback) = returned.recv() {
-                    backend.join();
-                    backend.close();
+                    let backend = held.lock().ok().and_then(|mut b| b.take());
+                    if let Some(mut backend) = backend {
+                        backend.join();
+                        backend.close();
+                    }
                     drop(callback);
                 }
             });
             // Without a watcher thread the device is leaked as it is: still never killed
-            if let Err(e) = watcher {
-                let _ = e;
+            if watcher.is_err() {
+                std::mem::forget(shared);
             }
         }
     }
