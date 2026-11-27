@@ -21,7 +21,13 @@ pub(crate) struct Known {
     pub(crate) kids: Option<Vec<BrowseEntry>>,
     /// The folder is the factory's (what it lists is)
     pub(crate) factory: bool,
+    /// When it was last given out (`BrowserEntries::stamp`): the oldest go when the cache is over its cap
+    pub(crate) stamp: u64,
 }
+
+/// Entries kept; past this the oldest quarter is forgotten (M9). A forgotten id answers `port.browse.unknown_entry`,
+/// and the interface lists its parent again to get fresh ones
+pub(crate) const MAX_KNOWN: usize = 40_000;
 
 /// Every entry given out, by id
 #[derive(Debug, Default)]
@@ -32,11 +38,25 @@ pub struct BrowserEntries {
     /// A scan is running (the worker clears it)
     pub(crate) indexing: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub(crate) indexed_at: Option<std::time::Instant>,
+    clock: u64,
 }
 
 impl BrowserEntries {
+    fn put(&mut self, id: EntryId, mut known: Known) {
+        self.clock += 1;
+        known.stamp = self.clock;
+        self.known.insert(id, known);
+        if self.known.len() > MAX_KNOWN {
+            let mut stamps: Vec<u64> = self.known.values().map(|k| k.stamp).collect();
+            let cut = stamps.len() / 4;
+            let (_, limit, _) = stamps.select_nth_unstable(cut);
+            let limit = *limit;
+            self.known.retain(|_, k| k.stamp > limit);
+        }
+    }
+
     pub(crate) fn remember(&mut self, id: EntryId, page: BrowsePage, path: Option<PathBuf>) {
-        self.known.insert(id, Known { page, path, extra: Vec::new(), kids: None, factory: false });
+        self.put(id, Known { page, path, extra: Vec::new(), kids: None, factory: false, stamp: 0 });
     }
 
     /// A folder made of several (the user's and the factory's of the same name) or of entries given by the core
@@ -49,7 +69,7 @@ impl BrowserEntries {
         kids: Option<Vec<BrowseEntry>>,
         factory: bool,
     ) {
-        self.known.insert(id, Known { page, path, extra, kids, factory });
+        self.put(id, Known { page, path, extra, kids, factory, stamp: 0 });
     }
 
     /// The file of an entry, when it has one
@@ -237,6 +257,20 @@ mod tests {
         assert_eq!(o.get("folder").and_then(Value::as_text), Some("/tmp/a.json"));
         let r = b.resolve("browser.reveal", Value::object([("entry", Value::int(7))])).unwrap();
         assert_eq!(r.get("path").and_then(Value::as_text), Some("/tmp/a.json"));
+    }
+
+    /// M9: the cache is bounded; the newest entries survive
+    #[test]
+    fn the_known_entries_are_capped() {
+        let mut b = BrowserEntries::default();
+        let total = MAX_KNOWN as u64 + 10;
+        for i in 0..total {
+            b.remember(EntryId(i), BrowsePage::Samples, Some(PathBuf::from(format!("/x/{i}"))));
+        }
+        assert!(b.known.len() <= MAX_KNOWN);
+        assert!(b.known.len() > MAX_KNOWN / 2);
+        assert!(b.path(EntryId(total - 1)).is_some());
+        assert!(b.path(EntryId(0)).is_none());
     }
 
     #[test]
