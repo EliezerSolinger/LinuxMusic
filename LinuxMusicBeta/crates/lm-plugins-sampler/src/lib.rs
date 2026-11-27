@@ -16,10 +16,10 @@
 //! - parameters (MIDI-mappable and automatable): `gain`, `pan`, `tune`, `polyphony`, `bendRange`, the volume
 //!   envelope that replaces the instrument's own when `volAmount` is above 0 (`volPredelay`, `volAttack`,
 //!   `volHold`, `volDecay`, `volSustain`, `volRelease`, `volAmount`), and the audio file's `startPoint`, `endPoint`,
-//!   `loopPoint`, `reverse` and `stutter`.
+//!   `loopPoint`, `reverse` and `stutter`; the voice functions: `voiceMode` (0 poly, 1 mono, 2 legato) and `glide` (ms).
 //!
 //! What the old plugins did that the Sampler leaves to the note effects (decisoes-autonomas.md, item 2): chords and
-//! the arpeggio. Mono, legato and glide are not here yet (see the documentation of what remains).
+//! the arpeggio. Mono, legato and glide are the Sampler's own (`voiceMode`, `glide`): they belong to the voice.
 
 #![forbid(unsafe_code)]
 
@@ -67,7 +67,11 @@ pub mod p {
     pub const LOOP: usize = 14;
     pub const REVERSE: usize = 15;
     pub const STUTTER: usize = 16;
-    pub const COUNT: usize = 17;
+    /// 0 poly, 1 mono, 2 legato
+    pub const VOICE_MODE: usize = 17;
+    /// Milliseconds
+    pub const GLIDE: usize = 18;
+    pub const COUNT: usize = 19;
 }
 
 pub const ENV_KEYS: [&str; 7] =
@@ -96,6 +100,8 @@ fn own_params() -> Vec<ParamSpec> {
         ParamSpec::new("loopPoint", 0.0, 1.0, 0.0),
         switch("reverse"),
         switch("stutter"),
+        ParamSpec::new("voiceMode", 0.0, 2.0, 0.0).scale(Scale::Stepped),
+        ParamSpec::new("glide", 0.0, 2000.0, 0.0).unit("ms"),
     ]);
     v
 }

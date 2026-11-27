@@ -62,6 +62,13 @@ pub struct Params {
     pub window: Window,
     pub reverse: bool,
     pub stutter: bool,
+    /// Mono: a new note ends the sounding ones; releasing it brings back the note held before
+    pub mono: bool,
+    /// With `mono`: a note played while another is held moves the sounding voices to its pitch instead of starting
+    /// again (when the voices' zones cover its key)
+    pub legato: bool,
+    /// Seconds a new note takes to glide from the last note's pitch (0: none)
+    pub glide: f32,
 }
 
 impl Default for Params {
@@ -76,6 +83,9 @@ impl Default for Params {
             window: Window::default(),
             reverse: false,
             stutter: false,
+            mono: false,
+            legato: false,
+            glide: 0.0,
         }
     }
 }
@@ -153,6 +163,9 @@ struct Voice {
     cents: f32,
     /// The note expression's tuning, cents
     detune: f32,
+    /// The glide's offset from the key's pitch, cents, and how fast it closes, cents per second
+    glide: f32,
+    glide_rate: f32,
     /// MPE pressure (0 to 1) and timbre (0 to 1, 0.5 the middle)
     pressure: f32,
     timbre: f32,
@@ -191,6 +204,8 @@ impl Voice {
             ratio: 1.0,
             cents: 0.0,
             detune: 0.0,
+            glide: 0.0,
+            glide_rate: 0.0,
             pressure: 0.0,
             timbre: 0.5,
             pan: 0.0,
@@ -252,6 +267,8 @@ pub struct Engine {
     /// Frames rendered since the start or the reset
     frame: u64,
     sustain: bool,
+    /// The key of the last note started (the glide's origin)
+    last_key: Option<u8>,
     bend: f32,
     volume: f32,
     expression: f32,
@@ -290,6 +307,7 @@ impl Engine {
             order: 0,
             frame: 0,
             sustain: false,
+            last_key: None,
             bend: 0.0,
             volume: 1.0,
             expression: 1.0,
@@ -321,6 +339,16 @@ impl Engine {
     /// Output groups the buses hold
     pub fn groups(&self) -> usize {
         self.groups
+    }
+
+    /// The pitch in cents of the first sounding voice from the key, without bend and glide (for the tests)
+    pub fn voice_cents(&self, n: usize) -> Option<f32> {
+        self.voices.iter().filter(|v| v.active).nth(n).map(|v| v.cents)
+    }
+
+    /// The glide's offset of a sounding voice, cents
+    pub fn voice_glide(&self, n: usize) -> Option<f32> {
+        self.voices.iter().filter(|v| v.active).nth(n).map(|v| v.glide)
     }
 
     pub fn active_voices(&self) -> usize {
@@ -355,6 +383,7 @@ impl Engine {
         self.order = old.order;
         self.frame = old.frame;
         self.sustain = old.sustain;
+        self.last_key = old.last_key;
         self.bend = old.bend;
         self.volume = old.volume;
         self.expression = old.expression;
@@ -366,8 +395,30 @@ impl Engine {
     pub fn note_on(&mut self, id: u32, key: u8, velocity: f32) {
         let key = key.min(127);
         let vel = (velocity.clamp(0.0, 1.0) * 127.0 + 0.5).clamp(1.0, 127.0) as u8;
-        let r = self.rng.next_f32();
         let others_held = !self.held.is_empty();
+        self.trigger(id, key, vel, others_held);
+        if self.held.len() < self.held.capacity() {
+            self.held.push(Held { id, key, velocity: vel, at: self.frame, pedal: false });
+        }
+    }
+
+    /// Starts the voices of a note (`vel` is 1 to 127), in the mono modes ending or moving the sounding ones first
+    fn trigger(&mut self, id: u32, key: u8, vel: u8, others_held: bool) {
+        if self.params.mono {
+            if self.params.legato && others_held && self.legato_move(id, key, vel) {
+                self.last_key = Some(key);
+                return;
+            }
+            // Mono: the sounding notes end (fast: no click) as this one starts
+            for v in self.voices.iter_mut().filter(|v| v.active && !v.dying && !v.released && !v.ignores_off) {
+                if v.id != 0 {
+                    v.amp.release(FAST_RELEASE, self.rate);
+                    v.released = true;
+                    v.dying = true;
+                }
+            }
+        }
+        let r = self.rng.next_f32();
         let inst = Arc::clone(&self.instrument);
         self.touched.iter_mut().for_each(|t| *t = false);
         // First, the groups choke (before any voice of this note exists)
@@ -395,9 +446,40 @@ impl Engine {
                 *turn = turn.wrapping_add(1);
             }
         }
-        if self.held.len() < self.held.capacity() {
-            self.held.push(Held { id, key, velocity: vel, at: self.frame, pedal: false });
+        self.last_key = Some(key);
+    }
+
+    /// Legato: the sounding voices of the held note take the pitch of `key` (and its id), gliding when the glide is on.
+    /// False (nothing done) when no voice sounds or a voice's zone does not cover the key
+    fn legato_move(&mut self, id: u32, key: u8, vel: u8) -> bool {
+        let inst = Arc::clone(&self.instrument);
+        let live = |v: &Voice| v.active && !v.dying && !v.released && !v.ignores_off && v.id != 0;
+        let mut any = false;
+        for v in self.voices.iter().filter(|v| live(v)) {
+            if !inst.zones[v.zone as usize].matches_key(key, vel) {
+                return false;
+            }
+            any = true;
         }
+        if !any {
+            return false;
+        }
+        let time = self.params.glide;
+        for v in self.voices.iter_mut().filter(|v| live(v)) {
+            let z = &inst.zones[v.zone as usize];
+            let from = (f32::from(v.key) - f32::from(z.root_key)) * z.key_track;
+            let to = (f32::from(key) - f32::from(z.root_key)) * z.key_track;
+            v.key = key;
+            v.id = id;
+            v.cents = to + z.tune;
+            if time > 0.0 {
+                v.glide += from - to;
+                v.glide_rate = v.glide.abs() / time;
+            } else {
+                v.glide = 0.0;
+            }
+        }
+        true
     }
 
     fn selected(&self, z: &Zone, key: u8, vel: u8, r: f32, others_held: bool) -> bool {
@@ -519,6 +601,12 @@ impl Engine {
             }
             _ => z.amp,
         };
+        let glide = match self.last_key {
+            Some(prev) if self.params.glide > 0.0 && z.trigger != Trigger::Release => {
+                (f32::from(prev) - f32::from(key)) * z.key_track
+            }
+            _ => 0.0,
+        };
         self.order += 1;
         let release_trigger = z.trigger == Trigger::Release;
         let mut v = Voice {
@@ -540,6 +628,8 @@ impl Engine {
             ratio: f64::from(z.sample.rate) / f64::from(self.cfg.rate),
             cents: (f32::from(key) - f32::from(z.root_key)) * z.key_track + z.tune,
             detune: 0.0,
+            glide,
+            glide_rate: if glide != 0.0 && self.params.glide > 0.0 { glide.abs() / self.params.glide } else { 0.0 },
             pressure: 0.0,
             timbre: 0.5,
             pan: z.pan,
@@ -572,8 +662,31 @@ impl Engine {
             self.held[i].pedal = true;
             return;
         }
-        let h = self.held.swap_remove(i);
-        self.finish_note(h);
+        let h = self.held.remove(i);
+        let resume = self.mono_resume_target(h.id);
+        match resume {
+            Some(back) if self.params.legato => {
+                // The voice moves back to the note held before, with no new attack
+                self.legato_move(back.id, back.key, back.velocity);
+                self.last_key = Some(back.key);
+            }
+            Some(back) => {
+                self.finish_note(h);
+                self.trigger(back.id, back.key, back.velocity, false);
+            }
+            None => self.finish_note(h),
+        }
+    }
+
+    /// Mono: when the note `id` that sounds ends, the note held before it (not on the pedal) comes back
+    fn mono_resume_target(&self, id: u32) -> Option<Held> {
+        if !self.params.mono || id == 0 {
+            return None;
+        }
+        if !self.voices.iter().any(|v| v.active && v.id == id && !v.released) {
+            return None;
+        }
+        self.held.iter().rev().find(|h| !h.pedal && h.id != id).copied()
     }
 
     fn finish_note(&mut self, h: Held) {
@@ -648,7 +761,7 @@ impl Engine {
                     let mut i = 0;
                     while i < self.held.len() {
                         if self.held[i].pedal {
-                            let h = self.held.swap_remove(i);
+                            let h = self.held.remove(i);
                             self.finish_note(h);
                         } else {
                             i += 1;
@@ -692,6 +805,7 @@ impl Engine {
         self.turns.iter_mut().for_each(|t| *t = 0);
         self.stutter_at.iter_mut().for_each(|s| *s = -1.0);
         self.rng = Rng::new(self.cfg.seed);
+        self.last_key = None;
         self.bend = 0.0;
         self.volume = 1.0;
         self.expression = 1.0;
@@ -761,7 +875,11 @@ fn render_sub(
     left: &mut [f32],
     right: &mut [f32],
 ) {
-    let cents = v.cents + v.detune + params.tune + bend * params.bend_range * 100.0;
+    let cents = v.cents + v.glide + v.detune + params.tune + bend * params.bend_range * 100.0;
+    if v.glide != 0.0 {
+        let step = v.glide_rate * left.len() as f32 / rate;
+        v.glide = if v.glide > 0.0 { (v.glide - step).max(0.0) } else { (v.glide + step).min(0.0) };
+    }
     let step = v.ratio * f64::from(libm::exp2f(cents / 1200.0));
     if let Some(f) = &zone.filter {
         let mut c = 1200.0 * libm::log2f((f.cutoff / 440.0).max(1.0e-3)) + 6900.0;

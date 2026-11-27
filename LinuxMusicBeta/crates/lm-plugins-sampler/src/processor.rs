@@ -62,6 +62,9 @@ pub fn engine_params(v: &[f32; p::COUNT]) -> Params {
         window: Window { start: v[p::START], end: v[p::END], loop_start: v[p::LOOP] },
         reverse: v[p::REVERSE] >= 0.5,
         stutter: v[p::STUTTER] >= 0.5,
+        mono: v[p::VOICE_MODE] >= 0.5,
+        legato: v[p::VOICE_MODE] >= 1.5,
+        glide: v[p::GLIDE].max(0.0) / 1000.0,
     }
 }
 

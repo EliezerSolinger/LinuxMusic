@@ -280,3 +280,80 @@ fn window_bounds_follow_the_audio_file_processors_rule() {
     let (s, e, _) = window_bounds(1000, &Window { start: 0.5, end: 0.5, loop_start: 0.0 });
     assert_eq!(e - s, 1);
 }
+
+fn looped() -> Zone {
+    let mut z = zone(constant(1000));
+    z.loop_mode = LoopMode::Forward;
+    z.loop_start = 100;
+    z.loop_end = 900;
+    z.amp.release = 0.01;
+    z
+}
+
+fn mono_params(legato: bool, glide: f32) -> Params {
+    Params { mono: true, legato, glide, ..Params::default() }
+}
+
+#[test]
+fn mono_ends_the_sounding_note_and_brings_the_held_one_back() {
+    let mut e = engine_for(vec![looped()], false, Vec::new());
+    e.set_params(mono_params(false, 0.0));
+    e.note_on(1, 60, 1.0);
+    peak(&mut e, 480);
+    e.note_on(2, 64, 1.0);
+    // The first voice falls fast; only the second stays
+    peak(&mut e, 960);
+    assert_eq!(e.active_voices(), 1);
+    // Releasing the second brings the first back, as a new note
+    e.note_off(2);
+    peak(&mut e, 4800);
+    assert_eq!(e.active_voices(), 1, "the held note sounds again");
+    e.note_off(1);
+    peak(&mut e, 4800);
+    assert_eq!(e.active_voices(), 0);
+}
+
+#[test]
+fn legato_keeps_the_voice_and_moves_its_pitch() {
+    let mut e = engine_for(vec![looped()], false, Vec::new());
+    e.set_params(mono_params(true, 0.0));
+    e.note_on(1, 60, 1.0);
+    peak(&mut e, 480);
+    e.note_on(2, 72, 1.0);
+    peak(&mut e, 480);
+    // One voice, an octave up, with no new attack
+    assert_eq!(e.active_voices(), 1);
+    assert!((e.voice_cents(0).expect("a voice") - 1200.0).abs() < 1.0e-3);
+    // The note-off of the first (no longer sounding) changes nothing; the second's ends the voice
+    e.note_off(1);
+    peak(&mut e, 480);
+    assert_eq!(e.active_voices(), 1);
+    e.note_off(2);
+    peak(&mut e, 4800);
+    assert_eq!(e.active_voices(), 0);
+}
+
+#[test]
+fn glide_closes_the_distance_in_the_time_asked() {
+    let mut e = engine_for(vec![looped()], false, Vec::new());
+    e.set_params(mono_params(true, 0.1));
+    e.note_on(1, 60, 1.0);
+    peak(&mut e, 480);
+    e.note_on(2, 72, 1.0);
+    // Just after the move the voice is still near the first pitch
+    e.render(32);
+    let early = e.voice_glide(0).expect("a voice");
+    assert!(early < -1000.0, "the glide starts an octave below: {early}");
+    // 0.1 s later it has arrived
+    peak(&mut e, 5000);
+    assert_eq!(e.voice_glide(0), Some(0.0));
+}
+
+#[test]
+fn poly_with_no_glide_is_what_it_was() {
+    let mut e = engine_for(vec![looped()], false, Vec::new());
+    e.note_on(1, 60, 1.0);
+    e.note_on(2, 64, 1.0);
+    peak(&mut e, 480);
+    assert_eq!(e.active_voices(), 2);
+}
