@@ -318,7 +318,7 @@ Confirmação por leitura do código; nada foi executado (só `cargo check`). Co
 | M11 ampandir loudness | confirmado e corrigido: loudness não finito vira ganho 1 | segundo commit |
 | M12 stk banded_wg | confirmado e corrigido: guarda `min_len <= 0` e `modes.max(1)` | segundo commit |
 | M13 midimap valores não finitos | confirmado e corrigido: `Mapping::from_value` recusa min, max, curve, step não finitos | segundo commit |
-| M1 saída depende do bloco do host | corrigido na rodada de desenho: grade de atualização no quadro absoluto do motor, valores por voz guardados entre bordas; teste `the_output_does_not_depend_on_the_host_block_size` | COMMIT |
+| M1 saída depende do bloco do host | corrigido na rodada de desenho: grade de atualização no quadro absoluto do motor, valores por voz guardados entre bordas; teste `the_output_does_not_depend_on_the_host_block_size` | 8eb7d8537 |
 | M4 SF2 chunk truncado | falso na prática: a amostra além do chunk já dá `a sample past the data`; o resto é descartado sem efeito sonoro | n/a |
 | M5 GIG busca linear | não tratado: custo só em arquivos grandes, sem risco de falha | n/a |
 | M6 arquivo temporário Ogg | corrigido na rodada de desenho: arquivo exclusivo, 0600, nome imprevisível, desvinculado na hora (`Reader::from_file`) | rodada de desenho (lm-plugins-sampler, lm-sys-sndfile) |
