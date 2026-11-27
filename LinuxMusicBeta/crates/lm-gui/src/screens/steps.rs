@@ -24,7 +24,7 @@ use lm_port::{EditOp, Feed, HostTime, Label, NodeId, Topic, Value};
 
 use super::ScreenCx;
 use super::piano_roll::kit::{self, MenuItem, dropdown, icon_button, label, paint_text, popup, sep, tip, with_alpha};
-use super::piano_roll::music::{BAR, BEAT, Clip, Note, NoteChange, key_name};
+use super::piano_roll::music::{BAR, BEAT, Clip, ClipCache, Note, NoteChange, key_name};
 use super::piano_roll::{NEW, note_ops};
 use crate::keymap;
 use crate::model;
@@ -115,16 +115,19 @@ pub struct StepEditor {
     playing: Option<HostTime>,
     ticks_per_sec: f64,
     cells: Rc<RefCell<HashMap<NodeId, Bounds<Pixels>>>>,
+    /// the items read from the tree by revision, so a mouse event reads nothing again
+    clips: RefCell<ClipCache>,
 }
 
 impl StepEditor {
     pub fn new(scx: ScreenCx, _window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let mut clips = ClipCache::with_capacity(64);
         let (feed, items, tps) = scx.core.update(cx, |core, _| {
             let root = core.port().root();
             // the target, else the drum kits' items and the repeating ones (the patterns)
             let items: Vec<NodeId> = match scx.target {
                 Some(t) => vec![t],
-                None => midi_items(root)
+                None => midi_items(root, &mut clips)
                     .into_iter()
                     .filter(|(_, _, kit, repeats)| *kit || *repeats)
                     .map(|x| x.0)
@@ -148,13 +151,14 @@ impl StepEditor {
             playing: None,
             ticks_per_sec: tps,
             cells: Rc::new(RefCell::new(HashMap::new())),
+            clips: RefCell::new(clips),
             scx,
         }
     }
 
     fn group(&self, id: NodeId, cx: &gpui::App) -> Option<Group> {
         let root = self.scx.core.read(cx).port().root();
-        let clip = Clip::read(root, id)?;
+        let clip = self.clips.borrow_mut().get(root, id)?;
         let kit = is_kit(root, id);
         let rows = if kit {
             let used: BTreeSet<u8> = clip.notes.values().map(|x| x.key).collect();
@@ -444,7 +448,7 @@ impl StepEditor {
         let root = self.scx.core.read(cx).port().root();
         match m {
             Menu::Items => {
-                midi_items(root).into_iter().map(|(id, l, _, _)| MenuItem::new(l, self.items.contains(&id))).collect()
+                midi_items(root, &mut self.clips.borrow_mut()).into_iter().map(|(id, l, _, _)| MenuItem::new(l, self.items.contains(&id))).collect()
             }
             Menu::Step => {
                 let step = self.items.first().and_then(|id| self.group(*id, cx)).map_or(BEAT / 4, |g| g.clip.step);
@@ -457,7 +461,7 @@ impl StepEditor {
         self.menu = None;
         match m {
             Menu::Items => {
-                let id = midi_items(self.scx.core.read(cx).port().root()).get(i).map(|x| x.0);
+                let id = midi_items(self.scx.core.read(cx).port().root(), &mut self.clips.borrow_mut()).get(i).map(|x| x.0);
                 if let Some(id) = id {
                     if let Some(k) = self.items.iter().position(|x| *x == id) {
                         self.items.remove(k);
@@ -477,21 +481,19 @@ impl StepEditor {
 }
 
 /// The MIDI items: (id, "track · item", the track plays a drum kit, the item repeats)
-fn midi_items(root: &Value) -> Vec<(NodeId, String, bool, bool)> {
-    model::tracks(root)
-        .iter()
-        .flat_map(|t| {
-            let kit = t.kit;
-            t.items.iter().filter(|i| !i.audio).map(move |i| {
-                let repeats = Clip::read(root, i.id).is_some_and(|c| c.loop_len.is_some());
-                (i.id, format!("{} · {}", t.name, i.name), kit, repeats)
-            })
-        })
-        .collect()
+fn midi_items(root: &Value, clips: &mut ClipCache) -> Vec<(NodeId, String, bool, bool)> {
+    let mut out = Vec::new();
+    for t in model::tracks(root).iter() {
+        for i in t.items.iter().filter(|i| !i.audio) {
+            let repeats = clips.get(root, i.id).is_some_and(|c| c.loop_len.is_some());
+            out.push((i.id, format!("{} · {}", t.name, i.name), t.kit, repeats));
+        }
+    }
+    out
 }
 
 fn is_kit(root: &Value, item: NodeId) -> bool {
-    midi_items(root).iter().any(|(id, _, kit, _)| *id == item && *kit)
+    model::tracks(root).iter().any(|t| t.kit && t.items.iter().any(|i| i.id == item))
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -581,7 +583,8 @@ impl Render for StepEditor {
             let port = self.scx.core.read(cx).port();
             if port.drain(&mut self.feed).is_some() {
                 let root = port.root();
-                self.items.retain(|id| Clip::read(root, *id).is_some());
+                let mut clips = self.clips.borrow_mut();
+                self.items.retain(|id| clips.get(root, *id).is_some());
             }
         }
         let core = self.scx.core.read(cx);

@@ -29,7 +29,7 @@ use super::ScreenCx;
 use super::piano_roll::kit::{
     self, MenuItem, ValueEntry, dropdown, dropdown_icon, icon_button, label, paint_text, popup, sep, tip, with_alpha,
 };
-use super::piano_roll::music::{self, BAR, BEAT, Clip, GRIDS, NoteMap};
+use super::piano_roll::music::{self, BAR, BEAT, GRIDS, NoteMap};
 use crate::actions::{
     AuCopy, AuCut, AuDelete, AuHome, AuLeft, AuPaste, AuPlay, AuRight, AuSelectAll, AuSelectNone, AuToolDraw,
     AuToolErase, AuToolOut, AuToolPencil, AuToolSelect,
@@ -347,6 +347,8 @@ pub struct AutomationEditor {
     feed: Feed,
     pub lane: Option<NodeId>,
     ghost: Option<NodeId>,
+    /// the ghost item read by revision, not on every frame
+    clips: std::cell::RefCell<music::ClipCache>,
     pub tool: Tool,
     /// the progression of new points (the legacy's discrete, linear, cubic)
     shape: Shape,
@@ -385,6 +387,7 @@ impl AutomationEditor {
             feed,
             lane,
             ghost: None,
+            clips: Default::default(),
             tool: Tool::Draw,
             shape: Shape::Curve,
             tension: 0.5,
@@ -1621,7 +1624,7 @@ impl AutomationEditor {
 
     fn render_center(&self, lane: Lane, play: Option<f64>, cx: &Context<Self>) -> impl IntoElement {
         let root = self.scx.core.read(cx).port().root();
-        let ghost = self.ghost.and_then(|g| Clip::read(root, g)).map(|c| c.notes);
+        let ghost = self.ghost.and_then(|g| self.clips.borrow_mut().get(root, g)).map(|c| c.notes);
         let vr = self.v_range(&lane);
         let paint = CurvePaint {
             lane,

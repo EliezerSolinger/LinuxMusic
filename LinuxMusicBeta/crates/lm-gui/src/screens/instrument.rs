@@ -1343,11 +1343,17 @@ impl InstrumentWindow {
                 .or_else(|| tracks.iter().find(|t| t.instrument.is_some()))
                 .map(|t| t.id)
         };
+        // the tab it showed last time (the interface document)
+        let tab = {
+            let ui = scx.core.read(cx).port().ui();
+            let want = ui.get("instrument").and_then(|i| i.get("tab")).and_then(lm_port::Value::as_text);
+            Tab::ALL.into_iter().find(|t| Some(format!("{t:?}").as_str()) == want).unwrap_or(Tab::Instrument)
+        };
         let mut w = InstrumentWindow {
             scx,
             track: None,
             feed: None,
-            tab: Tab::Instrument,
+            tab,
             target: 0,
             keyboard: false,
             held: None,
@@ -1395,6 +1401,14 @@ impl InstrumentWindow {
                     }
                 });
             Some((node, plugin, entity.into(), sub))
+        });
+    }
+
+    /// The tab is kept in the interface document (no undo, saved with the project)
+    fn remember_tab(&self, cx: &mut Context<Self>) {
+        let v = lm_port::Value::text(format!("{:?}", self.tab));
+        self.scx.core.update(cx, |core, _| {
+            core.report(|pt| pt.set_ui(vec![lm_port::PathStep::key("instrument"), lm_port::PathStep::key("tab")], v));
         });
     }
 
@@ -1689,6 +1703,7 @@ impl InstrumentWindow {
                     .text_size(px(12.))
                     .on_click(cx.listener(move |w, _, _, cx| {
                         w.tab = tb;
+                        w.remember_tab(cx);
                         cx.notify();
                     }))
             }),

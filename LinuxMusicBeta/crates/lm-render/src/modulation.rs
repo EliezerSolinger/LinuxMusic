@@ -347,14 +347,18 @@ pub struct PeakTracker {
     /// The window in progress: its sum, its frames, whether it began on its cell's first frame and the next frame
     /// it expects (a gap or a late start drops the window rather than measuring part of it)
     acc: f64,
+    acc_signed: f64,
     acc_frames: u32,
     valid: bool,
     next_frame: u64,
     /// The closed windows, by cell number modulo the ring (`ring_cell` tells which cell a slot holds)
     ring_cell: Box<[u64]>,
-    ring_value: Box<[f32]>,
+    /// the sum of a closed window, absolute and signed: the measurement is finished with the parameters of the
+    /// grid step that reads it (an automated gain, threshold or `abs` is sampled on the grid, not at the pass)
+    ring_abs: Box<[f64]>,
+    ring_signed: Box<[f64]>,
     first_closed: u64,
-    newest: f32,
+    newest: (f64, f64),
 }
 
 impl PeakTracker {
@@ -365,20 +369,21 @@ impl PeakTracker {
             follower: PeakFollower::new(),
             cell: u64::MAX,
             acc: 0.0,
+            acc_signed: 0.0,
             acc_frames: 0,
             valid: false,
             next_frame: 0,
             ring_cell: vec![u64::MAX; cells].into_boxed_slice(),
-            ring_value: vec![0.0; cells].into_boxed_slice(),
+            ring_abs: vec![0.0; cells].into_boxed_slice(),
+            ring_signed: vec![0.0; cells].into_boxed_slice(),
             first_closed: u64::MAX,
-            newest: 0.0,
+            newest: (0.0, 0.0),
         }
     }
 
     /// The node rendered `left.len()` frames starting at engine frame `frame`
-    pub fn accumulate(&mut self, frame: u64, left: &[f32], right: &[f32], p: &[f32; MOD_PARAMS]) {
+    pub fn accumulate(&mut self, frame: u64, left: &[f32], right: &[f32]) {
         let grid = crate::AUTOMATION_GRID;
-        let absolute = p[P_ABS] >= 0.5;
         let n = left.len().min(right.len());
         let mut i = 0;
         if frame != self.next_frame {
@@ -391,25 +396,27 @@ impl PeakTracker {
             if into == 0 {
                 self.valid = true;
                 self.acc = 0.0;
+                self.acc_signed = 0.0;
                 self.acc_frames = 0;
             } else if self.acc_frames == 0 {
                 self.valid = false;
             }
             let take = ((grid - into) as usize).min(n - i);
             if self.valid {
-                self.acc += peak_sum(&left[i..i + take], &right[i..i + take], absolute);
+                self.acc += peak_sum(&left[i..i + take], &right[i..i + take], true);
+                self.acc_signed += peak_sum(&left[i..i + take], &right[i..i + take], false);
                 self.acc_frames += take as u32;
             }
             i += take;
             if into + take as u64 == grid {
                 if self.valid && u64::from(self.acc_frames) == grid {
                     let w = f / grid;
-                    let v = peak_finish(self.acc, grid as usize, p);
                     let slot = (w % self.ring_cell.len() as u64) as usize;
                     self.ring_cell[slot] = w;
-                    self.ring_value[slot] = v;
+                    self.ring_abs[slot] = self.acc;
+                    self.ring_signed[slot] = self.acc_signed;
                     self.first_closed = self.first_closed.min(w);
-                    self.newest = v;
+                    self.newest = (self.acc, self.acc_signed);
                 }
                 self.acc_frames = 0;
                 self.valid = false;
@@ -418,21 +425,23 @@ impl PeakTracker {
         self.next_frame = frame + n as u64;
     }
 
-    /// The window `cell` was measured from, or the nearest honest answer: silence before the first window ever
-    /// measured, the newest one when the pass is longer than the lag
-    fn window(&self, cell: i64) -> f32 {
+    /// The window `cell` was measured from, finished with `p`, or the nearest honest answer: silence before the
+    /// first window ever measured, the newest one when the pass is longer than the lag
+    fn window(&self, cell: i64, p: &[f32; MOD_PARAMS]) -> f32 {
         if cell < 0 {
             return 0.0;
         }
         let cell = cell as u64;
         let slot = (cell % self.ring_cell.len() as u64) as usize;
-        if self.ring_cell[slot] == cell {
-            self.ring_value[slot]
+        let (abs, signed) = if self.ring_cell[slot] == cell {
+            (self.ring_abs[slot], self.ring_signed[slot])
         } else if self.first_closed == u64::MAX || cell < self.first_closed {
-            0.0
+            return 0.0;
         } else {
             self.newest
-        }
+        };
+        let sum = if p[P_ABS] >= 0.5 { abs } else { signed };
+        peak_finish(sum, crate::AUTOMATION_GRID as usize, p)
     }
 
     /// The follower's value for a step that starts in `cell`: it first moves, a whole cell at a time, to the start
@@ -446,7 +455,7 @@ impl PeakTracker {
             self.cell = cell - 4096;
         }
         while self.cell < cell {
-            self.follower.target = self.window(self.cell as i64 - PEAK_LAG_CELLS as i64);
+            self.follower.target = self.window(self.cell as i64 - PEAK_LAG_CELLS as i64, p);
             self.follower.advance(p, sample_rate, crate::AUTOMATION_GRID as u32);
             self.cell += 1;
         }
@@ -591,5 +600,27 @@ mod tests {
         let mut h = PeakFollower { target: 1.0, current: 0.0 };
         h.advance(&p, 44100, 32);
         assert!((g.current - h.current).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_peak_tracker_finishes_with_the_parameters_of_the_reading_step() {
+        let grid = crate::AUTOMATION_GRID as usize;
+        let mut t = PeakTracker::new(256);
+        let l = vec![0.5f32; grid];
+        // a stretch long enough for the lag, cell by cell
+        for c in 0..(PEAK_LAG_CELLS as usize + 4) {
+            t.accumulate((c * grid) as u64, &l, &l);
+        }
+        let mut p = MOD_DEFAULTS;
+        p[P_PEAK_ATTACK] = 0.0;
+        let quiet = {
+            let mut q = p;
+            q[P_GAIN] = 0.0;
+            q
+        };
+        // the same closed window read with two gains: the measurement follows the reading step's parameters
+        let cell = PEAK_LAG_CELLS + 2;
+        assert_eq!(t.window(cell as i64 - PEAK_LAG_CELLS as i64, &quiet), 0.0);
+        assert!(t.window(cell as i64 - PEAK_LAG_CELLS as i64, &p) > 0.0);
     }
 }

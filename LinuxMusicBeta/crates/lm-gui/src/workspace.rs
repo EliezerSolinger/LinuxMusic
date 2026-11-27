@@ -368,6 +368,13 @@ impl Workspace {
         }
         let Some(view) = self.view_of(d) else { return };
         let me = cx.weak_entity();
+        // where the window was last time (the interface document), else the default place
+        let bounds = self.remembered_bounds(d, cx).unwrap_or_else(|| {
+            gpui::Bounds::new(
+                gpui::point(px(80.), px(80.)),
+                gpui::size(px(crate::view::WINDOW_W * 0.7), px(crate::view::WINDOW_H * 0.7)),
+            )
+        });
         let on_top = self
             .core
             .read(cx)
@@ -379,10 +386,7 @@ impl Workspace {
             .unwrap_or(false);
         let options = gpui::WindowOptions {
             titlebar: Some(gpui::TitlebarOptions { title: Some(tr(d.title()).into()), ..Default::default() }),
-            window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds::new(
-                gpui::point(px(80.), px(80.)),
-                gpui::size(px(crate::view::WINDOW_W * 0.7), px(crate::view::WINDOW_H * 0.7)),
-            ))),
+            window_bounds: Some(gpui::WindowBounds::Windowed(bounds)),
             // `plugins.windowsOnTop`: the windows of instruments and effects float over the others
             kind: if on_top && matches!(d, Detachable::Screen(Screen::Instrument | Screen::Effect)) {
                 gpui::WindowKind::Floating
@@ -394,9 +398,13 @@ impl Workspace {
         let core = self.core.clone();
         let opened = cx.open_window(options, move |window, cx| {
             let back = me.clone();
-            window.on_window_should_close(cx, move |_, cx| {
+            window.on_window_should_close(cx, move |window, cx| {
                 // the user closed it: it goes back to the main window
-                let _ = back.update(cx, |ws, cx| ws.forget_detached(d, cx));
+                let bounds = window.bounds();
+                let _ = back.update(cx, |ws, cx| {
+                    ws.remember_bounds(d, bounds, cx);
+                    ws.forget_detached(d, cx)
+                });
                 true
             });
             let hosted = cx.new(|_| Hosted { view, core, activation: None });
@@ -407,6 +415,31 @@ impl Workspace {
             self.write_detached(cx);
             cx.notify();
         }
+    }
+
+    /// The place and size a window had when it last closed or docked, kept in the interface document (`windows`)
+    fn remembered_bounds(&self, d: Detachable, cx: &gpui::App) -> Option<gpui::Bounds<gpui::Pixels>> {
+        let v = self.core.read(cx).port().ui().get("windows")?.get(&d.key())?.clone();
+        let n = |k: &str| v.get(k).and_then(lm_port::Value::as_int);
+        let (x, y, w, h) = (n("x")?, n("y")?, n("w")?, n("h")?);
+        // a value from a file: kept on a sane screen area and a usable size
+        if !(-4000..=8000).contains(&x) || !(-4000..=8000).contains(&y) || !(240..=8000).contains(&w) || !(160..=8000).contains(&h)
+        {
+            return None;
+        }
+        Some(gpui::Bounds::new(gpui::point(px(x as f32), px(y as f32)), gpui::size(px(w as f32), px(h as f32))))
+    }
+
+    fn remember_bounds(&mut self, d: Detachable, b: gpui::Bounds<gpui::Pixels>, cx: &mut Context<Self>) {
+        let v = lm_port::Value::object([
+            ("x", lm_port::Value::int(b.origin.x.as_f32().round() as i64)),
+            ("y", lm_port::Value::int(b.origin.y.as_f32().round() as i64)),
+            ("w", lm_port::Value::int(b.size.width.as_f32().round() as i64)),
+            ("h", lm_port::Value::int(b.size.height.as_f32().round() as i64)),
+        ]);
+        self.core.update(cx, |core, _| {
+            core.report(|pt| pt.set_ui(vec![PathStep::key("windows"), PathStep::key(&d.key())], v));
+        });
     }
 
     /// The window is closing by itself: only the record goes
@@ -420,6 +453,9 @@ impl Workspace {
     pub fn dock(&mut self, d: Detachable, cx: &mut Context<Self>) {
         let Some(i) = self.detached.iter().position(|(o, _)| *o == d) else { return };
         let (_, handle) = self.detached.remove(i);
+        if let Ok(bounds) = handle.update(cx, |_, window, _| window.bounds()) {
+            self.remember_bounds(d, bounds, cx);
+        }
         let _ = handle.update(cx, |_, window, _| window.remove_window());
         self.write_detached(cx);
         cx.notify();

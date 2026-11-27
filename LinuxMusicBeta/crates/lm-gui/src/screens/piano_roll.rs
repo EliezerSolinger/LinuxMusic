@@ -2780,13 +2780,24 @@ pub mod music {
 
     /// The clips read from the tree, kept while the track list is the same node: the persistent tree gives the
     /// unchanged list back as the same node, so a mouse event reads nothing again until a change reaches the tracks
-    #[derive(Default)]
     pub struct ClipCache {
         tracks: Option<Value>,
         entries: Vec<(NodeId, Option<Clip>)>,
+        cap: usize,
+    }
+
+    impl Default for ClipCache {
+        fn default() -> Self {
+            Self::with_capacity(4)
+        }
     }
 
     impl ClipCache {
+        /// A cache of the last `cap` clips read (an editor showing many items asks for more)
+        pub fn with_capacity(cap: usize) -> Self {
+            ClipCache { tracks: None, entries: Vec::new(), cap: cap.max(1) }
+        }
+
         pub fn get(&mut self, root: &Value, id: NodeId) -> Option<Clip> {
             let tracks = root.get("tracks");
             let same = match (&self.tracks, tracks) {
@@ -2802,7 +2813,7 @@ pub mod music {
                 return c.clone();
             }
             let c = Clip::read(root, id);
-            if self.entries.len() >= 4 {
+            if self.entries.len() >= self.cap {
                 self.entries.remove(0);
             }
             self.entries.push((id, c.clone()));

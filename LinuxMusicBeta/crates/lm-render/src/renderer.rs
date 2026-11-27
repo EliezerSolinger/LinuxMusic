@@ -2662,7 +2662,7 @@ impl Renderer {
             if m.kind == ModKind::Peak && m.input == i && outputs > 0 {
                 let l = layout.output_offset(0);
                 let r = layout.output_offset(1.min(outputs - 1));
-                m.peak.accumulate(self.frame, &io.buffer[l..l + n], &io.buffer[r..r + n], &m.params);
+                m.peak.accumulate(self.frame, &io.buffer[l..l + n], &io.buffer[r..r + n]);
             }
         }
         self.program.nodes[i as usize].io = Some(io);
