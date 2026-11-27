@@ -122,8 +122,10 @@ struct Grain {
     phase: f64,
 }
 
-/// The most grains alive at once that are kept without allocating (the density's top, with the overlap of a fade)
-const GRAIN_ROOM: usize = 64;
+/// The most grains alive at once, and the room kept for them: a new grain past it is not started, so the list never
+/// allocates on the audio thread and the work per sample has a ceiling, whatever the knobs. Inside their ranges at
+/// most 2 x density (16) = 32 are alive, 64 at the shortest random waits (twitch 1 halves a wait): never reached
+const GRAIN_ROOM: usize = 128;
 
 /// The Granular Pitch Shifter
 #[derive(Clone, Debug)]
@@ -231,7 +233,7 @@ impl GranularPitchShifter {
         }
         // Between equal gain (1) and equal power (2)
         let shape_k = -6.0026608 + s.shape * (6.8773512 - 1.5838104 * s.shape);
-        let size_samples = (sr / s.size) as i32;
+        let size_samples = ((sr / s.size) as i32).max(1);
         let wait_mult = size_samples as f32 / (s.density * 2.0);
         let n = frames.len();
 
@@ -304,12 +306,14 @@ impl GranularPitchShifter {
                     f64::from(at)
                 });
                 let phase_inc = 1.0 / f64::from(size_samples);
-                self.grains.push(Grain {
-                    read,
-                    phase_speed: [phase_inc; 2],
-                    speed: [grain_speed * self.speed[0], grain_speed * self.speed[1]],
-                    phase: 0.0,
-                });
+                if self.grains.len() < GRAIN_ROOM {
+                    self.grains.push(Grain {
+                        read,
+                        phase_speed: [phase_inc; 2],
+                        speed: [grain_speed * self.speed[0], grain_speed * self.speed[1]],
+                        phase: 0.0,
+                    });
+                }
             }
 
             let mut i = 0;

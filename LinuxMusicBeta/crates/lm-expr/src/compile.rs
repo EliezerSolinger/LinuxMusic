@@ -218,6 +218,22 @@ mod tests {
         s
     }
 
+    /// The deepest tree the parser admits (a left-deep chain of the most tokens) compiles, runs and drops on the
+    /// stack of a plain spawned thread (2 MiB), like the one a compile `Operation` runs on
+    #[test]
+    fn the_deepest_admitted_chain_fits_a_worker_stack() {
+        let source = vec!["t"; 3999].join("+");
+        let result = std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(move || Expr::compile(&source, &table()).map(|e| e.len()))
+            .expect("thread")
+            .join()
+            .expect("no stack overflow");
+        assert!(result.is_ok());
+        let too_long = vec!["t"; 4100].join("+");
+        assert_eq!(Expr::compile(&too_long, &table()).unwrap_err().label.key, crate::error::key::TOO_DEEP);
+    }
+
     #[test]
     fn constants_fold_to_one_instruction() {
         let e = Expr::compile("1 + 2 * 3", &table()).unwrap();
