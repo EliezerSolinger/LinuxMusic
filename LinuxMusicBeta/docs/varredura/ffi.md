@@ -280,5 +280,12 @@ Só `cargo check` (macOS). Os trechos só de Linux (`lm-sys-linux/src/crash.rs`,
 | MÉDIO `pcm_hints` nulo, `PcmPoll::new` (`got > count`), `Instant` em seq | confirmado e corrigido (sem `cargo check`; sem teste, exige ALSA) | lm-sys-alsa |
 | MÉDIO clap `stream_write` | confirmado e corrigido (64 MiB), com teste | lm-sys-clap |
 | MÉDIO lilv `state::store` (limite) e `wait_idle` (worker morto) | confirmado e corrigido; sem teste (exige plugin LV2) | lm-sys-lilv |
-| MÉDIO jack `port_name`/`latency` com índice | confirmado e não corrigido: `Port` só nasce no próprio cliente; só erro de uso entre clientes | - |
-| MÉDIO guitarix/sid (`panic!` em `make`/`Clone`), shim.cpp, linux mem/rt, crash `Probe`, x11 `Sync`, `PcmPoll::wait` | não verificados nesta rodada | - |
+| MÉDIO jack `port_name`/`latency` com índice | corrigido na rodada de desenho: `Port` carrega o id do cliente; porta alheia dá vazio/zero | rodada de desenho (lm-sys-jack) |
+| MÉDIO guitarix `make` (`panic!`), shim.cpp (exceções) | corrigido na rodada de desenho: `make`/`start`/`update` fallíveis, `catch (...)` no shim | rodada de desenho (lm-sys-guitarix) |
+| MÉDIO sid `Clone` (`panic!`) | corrigido na rodada de desenho: `Sid::try_clone`, `Clone` aborta como falta de memória | rodada de desenho (lm-sys-resid) |
+| MÉDIO linux `prefault_stack`, `RealtimeGuard::drop`, rtkit sem reverter | corrigido na rodada de desenho (sem `cargo check`, só Linux) | rodada de desenho (lm-sys-linux) |
+| MÉDIO crash `Probe`, `write_all` | `Probe` corrigido na rodada de desenho: tabela de atômicos (`write_all` já na primeira) | rodada de desenho (lm-sys-linux, lm-render, lm-session) |
+| MÉDIO x11 `Sync` | corrigido na rodada de desenho: só a thread dona recebe a conexão (sem `cargo check`, só Linux) | rodada de desenho (lm-sys-gui) |
+| MÉDIO `PcmPoll::wait` | corrigido na rodada de desenho: conjunto diferente é erro em release (sem `cargo check`, só Linux) | rodada de desenho (lm-sys-alsa) |
+| ALTO vst3 `catch_unwind` nos métodos COM | corrigido na rodada de desenho: `guard` em todos os 40 métodos de `host.rs`; jack e coreaudio passaram a cobrir o corpo inteiro | rodada de desenho (lm-sys-vst3, jack, coreaudio) |
+| BAIXOS (jack hooks, samplerate, rubberband, nam, crash `arm`, lilv `schedule_work`/`max_block`, reserve, vst3 CC, x11 `CLOSED`, clap `deinit`) | corrigidos na rodada de desenho; o resto (bus `release`, mmap `?`, `unique_name`, `setString`) mantido com motivo em `decisoes-autonomas.md` | rodada de desenho |

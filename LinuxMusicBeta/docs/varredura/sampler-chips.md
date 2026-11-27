@@ -321,6 +321,6 @@ Confirmação por leitura do código; nada foi executado (só `cargo check`). Co
 | M1 saída depende do bloco do host | confirmado e não corrigido: alinhar os sub-blocos ao quadro absoluto muda o som e exige rever o motor e seus testes | n/a |
 | M4 SF2 chunk truncado | falso na prática: a amostra além do chunk já dá `a sample past the data`; o resto é descartado sem efeito sonoro | n/a |
 | M5 GIG busca linear | não tratado: custo só em arquivos grandes, sem risco de falha | n/a |
-| M6 arquivo temporário Ogg | não tratado: precisa de criação exclusiva e mudança de interface do decodificador | n/a |
+| M6 arquivo temporário Ogg | corrigido na rodada de desenho: arquivo exclusivo, 0600, nome imprevisível, desvinculado na hora (`Reader::from_file`) | rodada de desenho (lm-plugins-sampler, lm-sys-sndfile) |
 | M7 bank/program fora de intervalo | não tratado: o esquema do plugin já limita o campo | n/a |
 | SID | sem achado | n/a |

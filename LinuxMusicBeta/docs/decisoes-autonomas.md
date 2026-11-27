@@ -2148,3 +2148,52 @@ dá a mesma saída.
   responde `port.browse.unknown_entry` e a interface lista o pai de novo. No laço ALSA o `expect` virou `match`.
 - **Pedidos de pico em voo (gui.md).** `RemotePort::peaks` devolve o `Waiting` do pedido já em voo para a mesma chave, em vez
   de abrir outro no servidor. O `Core` ignorar `Finished::Peaks` continua com o agente de lm-gui.
+
+## Rodada de desenho (27/11): fronteira FFI
+
+- **Pânico atravessando a fronteira (todo callback `extern "C"`/`extern "system"`).** Regra: cada callback ou prova que
+  não pode entrar em pânico (só constante, ou uma verificação de nulo e uma chamada da libc) ou roda o corpo inteiro
+  sob `catch_unwind` e devolve o código de erro. Um helper `guard(default, f)` por crate: `lm-sys-clap` (já tinha),
+  `lm-sys-jack` (os trampolins só cobriam o handler; agora o corpo todo, inclusive `clear_outputs` e a cópia de
+  nomes), `lm-sys-coreaudio` (idem), `lm-sys-vst3` (`host.rs`: os 40 métodos COM da aplicação, mensagens, listas
+  de atributos, handler, filas, eventos, stream e frame; padrão `kInternalError`, ponteiro nulo ou 0).
+  `lm-sys-lilv` já usava `catch_unwind` em tudo que pode falhar; `map_path`/`free_path` só chamam a libc. O
+  tratador de sinal de `lm-sys-linux` NÃO usa `catch_unwind` (o pânico alocaria o payload dentro do tratador): foi
+  revisado para ser incapaz de entrar em pânico (índices limitados, sem alocação) e isso está escrito na função.
+  `lm-sys-ladspa` não define callbacks. O plugin de teste de `lm-sys-vst3/src/testing.rs` não é fronteira do host.
+- **Guitarix: `make`/`start`/`update` falham sem derrubar.** Antes `lmgx_make` nulo virava `panic!` e um
+  `std::bad_alloc` dentro de `extern "C"` terminava o processo. Agora o `shim.cpp` captura tudo em `make`, `register`,
+  `start` e `update` (nulo/-1), e em Rust `Instance::make` devolve `Result` (`guitarix.unit.cannot_make`), e
+  `Instance::start`/`update` devolvem `Result<()>` (`guitarix.unit.cannot_start`; o bloco volta a 0, então o
+  processamento é recusado até um `start` bom). Uma unidade que não deu para sondar em `units()` fica na lista sem
+  parâmetros (os índices valem). Interfaces: `Instance::start` e `update` agora retornam `Result`.
+- **reSID: `Clone` do `Sid` sem pânico.** O trait `Synth` exige `Clone` infalível, então o `Clone` ficou, mas aborta
+  como toda falta de memória do Rust (`handle_alloc_error`), em vez de `panic!`; novo `Sid::try_clone() -> Result`
+  para quem pode tratar. As taxas já foram aceitas, então a memória é a única causa possível.
+- **Tratador de crash sem closure.** `Probe` (`Box<dyn Fn>` chamada dentro do tratador de sinal) virou
+  `Arc<[AtomicU32]>`: a tabela "slot + 1, 0 = nenhum" por thread de render, que o tratador só lê. É a própria tabela do
+  `lm_render::Watch` (agora `Arc<[AtomicU32]>` com `Watch::table()`); `lm-session` passa `watch.table()`.
+- **Linux, tempo real e memória.** `RealtimeGuard::drop` não ignora mais a falha de sair do tempo real em release:
+  escreve em stderr; `RealtimeGuard::release(self) -> Result` devolve `linux.realtime.not_left`. Se o rtkit "concede"
+  mas a política não é FIFO/RR, a thread é devolvida à política anterior. `prefault_stack` limita `bytes` à metade da
+  pilha (256 KiB se os limites são desconhecidos). `arm` recusa `name` com `/`, NUL, vazio, `.` ou `..`.
+- **X11.** `Connection` continua `Sync` para o `static`, mas só se entrega a `&Connection` à thread que a criou
+  (`gui.wrong_thread` nas outras); a promessa deixou de ser só convenção. A lista de janelas fechadas perde a entrada no
+  `Drop` de `Native` (o servidor reaproveita ids) e não repete.
+- **ALSA `PcmPoll::wait`.** O conjunto de PCMs diferente do de `new` é erro em release (`EINVAL`), não só
+  `debug_assert`.
+- **JACK `Port`.** `Port` carrega o id do cliente que o criou; `port_name`/`latency` de uma porta alheia devolvem
+  vazio/zero (sem pânico) e `Cycle` a ignora, em vez de indexar a lista do outro cliente. As assinaturas não mudaram
+  (não valia mexer em `lm-io`). Os ganchos de mensagem globais do JACK se instalam uma vez.
+- **Sampler: arquivo temporário do Ogg do `.sf3`.** O nome previsível em `/tmp` (symlink plantado) foi trocado por um
+  arquivo criado de forma exclusiva (`O_EXCL`, 0600), com nome do hasher semeado pelo SO, e removido da pasta
+  imediatamente (some com o descritor, mesmo em crash). `lm_sys_sndfile::Reader::from_file(File, label)` lê um arquivo
+  já aberto, então não há mais caminho para reabrir. `Sf3Decoder::decode` mantém a assinatura; o `rate` do cabeçalho
+  continua sem uso (vale a taxa do próprio Ogg, como antes).
+- **Baixos tratados.** `lm-sys-samplerate`: contagens de `src_process` limitadas ao oferecido e `MAX_CHANNELS = 64`;
+  `lm-sys-rubberband`: `retrieve` limitado ao pedido; `lm-sys-nam`: JSON nulo; `lm-sys-lilv`: `scheduled` conta antes do
+  push (desfeito se falha) e `max_block <= 1 << 20`; `ReserveDevice`: objeto já existente é erro; `lm-sys-vst3`: byte de
+  CC >= 128 é descartado; `Library::drop` do CLAP documenta a exigência da thread principal.
+- **Não mudados.** jack `Client::open` global e `unique_name`: aceitáveis. `Worker::release` (bus): sem repetição a
+  fazer, a conexão que some libera o nome sozinha. `mmap_commit` com `?`: o PCM recupera o xrun. `setString` do VST3:
+  já limitado a 65 536. `instance.run` e `Instance::new` do lilv: só registro de invariante (comentários).
