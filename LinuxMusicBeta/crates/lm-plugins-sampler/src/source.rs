@@ -159,7 +159,13 @@ pub fn build(state: &Value, cx: &BuildContext<'_>) -> Result<Built> {
                 return Err(Error::new("plugin.state.choice").arg("key", "kit").arg("value", key));
             }
         }
-        Format::Gig => gig::import(&[], 0, 0)?,
+        Format::Gig => {
+            let Some(r) = s.resource("gig")? else { return Ok(empty(source)) };
+            let bytes = read_bytes(cx, r)?;
+            let bank = u16::try_from(s.int("bank")?).unwrap_or(0);
+            let program = u16::try_from(s.int("program")?).unwrap_or(0);
+            gig::import(&bytes, bank, program)?
+        }
     };
     Ok(Built { instrument: Arc::new(instrument), source })
 }

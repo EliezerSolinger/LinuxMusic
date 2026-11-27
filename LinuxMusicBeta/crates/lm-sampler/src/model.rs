@@ -191,6 +191,10 @@ pub struct Zone {
     pub random: Option<(f32, f32)>,
     /// The index of its output group in [`Instrument::outputs`]
     pub output: u8,
+    /// The zone plays only while the sustain pedal is down (`Some(true)`) or up (`Some(false)`): GIG's pedal dimension
+    pub pedal: Option<bool>,
+    /// The level for each MIDI velocity, replacing `vel_track` and `vel_curve` (GIG's velocity response curves)
+    pub vel_table: Option<Arc<[f32; 128]>>,
 }
 
 impl Zone {
@@ -227,6 +231,8 @@ impl Zone {
             sequence: None,
             random: None,
             output: 0,
+            pedal: None,
+            vel_table: None,
         }
     }
 

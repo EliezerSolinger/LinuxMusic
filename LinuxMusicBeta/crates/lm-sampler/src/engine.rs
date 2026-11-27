@@ -416,6 +416,11 @@ impl Engine {
         {
             return false;
         }
+        if let Some(p) = z.pedal
+            && p != self.sustain
+        {
+            return false;
+        }
         if let Some(s) = z.sequence {
             let len = u32::from(s.length.max(1));
             let turn = self.turns.get(usize::from(s.group)).copied().unwrap_or(0);
@@ -496,7 +501,9 @@ impl Engine {
                 at = last;
             }
         }
-        let vel_gain = {
+        let vel_gain = if let Some(t) = &z.vel_table {
+            t[((velocity * 127.0 + 0.5) as usize).min(127)]
+        } else {
             let c = match z.vel_curve {
                 VelCurve::Linear => velocity,
                 VelCurve::Concave => velocity * velocity,

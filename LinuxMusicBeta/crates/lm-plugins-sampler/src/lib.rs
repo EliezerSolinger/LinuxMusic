@@ -4,8 +4,8 @@
 //! until the new one is ready).
 //!
 //! State, version 1:
-//! - `format`: `none`, `sf2`, `sfz`, `pat`, `audio`, `kit` or `gig` (not implemented: the build fails with
-//!   `sampler.gig.todo`);
+//! - `format`: `none`, `sf2`, `sfz`, `pat`, `audio`, `kit` or `gig` (a `.gig` file read in pure Rust; `bank` and `program` choose the
+//!   instrument; a compressed sample fails the build with `sampler.gig.compressed`);
 //! - the source, one nullable resource field for each format: `soundfont` (`.sf2`, `.sf3`), `sfz`, `patch` (`.pat`),
 //!   `sample` (an audio file) and `gig`; `kit` is one of the shipped kits (the AVL drum kits and the DrumMachines'),
 //!   program data and not a resource;

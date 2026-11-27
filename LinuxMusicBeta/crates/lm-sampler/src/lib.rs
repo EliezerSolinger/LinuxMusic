@@ -8,7 +8,7 @@
 //!   ([`interp`]);
 //! - [`import`]: what reads a format into the model, away from the audio thread: SF2, SFZ, PAT, a single audio file
 //!   (the AudioFileProcessor's start, end, loop, reverse and stutter), drum kits (the AVL kits, and the DrumMachines'
-//!   `.ds` rendered by `lm_dsp::drumsynth`). GIG is a marked TODO.
+//!   `.ds` rendered by `lm_dsp::drumsynth`), GIG (a pure-Rust RIFF/DLS reader).
 //!
 //! The plugin (`lm-plugins-sampler`) reads the resources, calls an importer in its build and plays the engine.
 

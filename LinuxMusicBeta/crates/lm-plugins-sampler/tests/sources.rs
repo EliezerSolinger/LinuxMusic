@@ -108,7 +108,7 @@ fn a_patch_sounds_on_the_keys_it_covers() {
 }
 
 #[test]
-fn a_gig_fails_with_the_marked_todo() {
+fn a_file_that_is_not_a_gig_fails_with_a_clear_key() {
     let registry = registry();
     let r = resource("gig", 3);
     let state = registry
@@ -120,8 +120,8 @@ fn a_gig_fails_with_the_marked_todo() {
     let view = ResourceView::new().with(r, Loaded::Bytes(Arc::from(vec![0u8; 4].into_boxed_slice())));
     let spec = ProcessSpec { sample_rate: RATE, max_block: 256 };
     let cx = BuildContext { spec, resources: &view, channels: 0 };
-    let e = registry.build("sampler", &state, &cx).expect_err("not implemented");
-    assert_eq!(e.key(), "sampler.gig.todo");
+    let e = registry.build("sampler", &state, &cx).expect_err("not a gig");
+    assert_eq!(e.key(), "sampler.gig.invalid");
 }
 
 #[test]
