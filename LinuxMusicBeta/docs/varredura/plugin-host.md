@@ -206,15 +206,15 @@ Commits: `f56190a83` (proxy), `bdc71e9f8` e `1d1952299` (host), o do documento e
 | A-3 escrita bloqueante no stdin sob mutex | Confirmado e corrigido: thread escritora com fila limitada (`try_send`); `send` e `Hosted::drop` nunca bloqueiam | f56190a83 |
 | A-4 fila de mensagens sem limite | Confirmado e corrigido: `sync_channel` de 256, o leitor descarta com `try_send` | f56190a83 |
 | A-5 mensagens da varredura sem limite | Confirmado e corrigido: teto de 100 000 mensagens, o helper é morto (`plugin_host.flood`); campos de texto, chaves (160 B), parâmetros (2048) e faixas (±1e9, finitas) limitados em `scanned_from` | f56190a83 |
-| A-6 thread de áudio e controle disputam o `Mutex` do plugin | corrigido na rodada de desenho: a thread de áudio só tenta pegar o plugin (sem esperar; ocupado, silêncio) e a principal espera a vez e segura o plugin; ver decisoes-autonomas.md | 177be238e |
+| A-6 thread de áudio e controle disputam o `Mutex` do plugin | corrigido na rodada de desenho: a thread de áudio só tenta pegar o plugin (sem esperar; ocupado, silêncio) e a principal espera a vez e segura o plugin; ver decisoes-autonomas.md | c56e371bd |
 | A-7 `max_id + 1` com ids do arquivo | Confirmado e corrigido: `first_free` recusa o arquivo com `doc.id.exhausted` se o contador não couber em 2^53-1 (cobre também M-11) | 362f80836 |
 | M-1 leitor do controle morre e o helper segue vivo | Confirmado e corrigido: ao sair o leitor, o helper é morto | f56190a83 |
 | M-2 `try_wait` com erro abandona o helper | Confirmado e corrigido: mata, recolhe e junta a leitora | f56190a83 |
-| M-3 helper órfão sem `PDEATHSIG` | corrigido na rodada de desenho, sem `PDEATHSIG` (dispara com a morte da thread que criou o filho): o helper sai com o fim do stdin (e `_exit` após 3 s) e vigia o pai por `getppid` | 177be238e |
-| M-4 eventos descartados, inclusive note-off | corrigido na rodada de desenho: o proxy divide o bloco em pedaços e nenhum evento se perde (além da reserva de note-off do helper, de antes) | 177be238e |
+| M-3 helper órfão sem `PDEATHSIG` | corrigido na rodada de desenho, sem `PDEATHSIG` (dispara com a morte da thread que criou o filho): o helper sai com o fim do stdin (e `_exit` após 3 s) e vigia o pai por `getppid` | c56e371bd |
+| M-4 eventos descartados, inclusive note-off | corrigido na rodada de desenho: o proxy divide o bloco em pedaços e nenhum evento se perde (além da reserva de note-off do helper, de antes) | c56e371bd |
 | M-5 restore pela metade no dual mono | Confirmado e corrigido: a esquerda volta ao estado anterior se a direita recusar; teste | bdc71e9f8 |
 | M-6 chaves internadas sem limite | Confirmado e corrigido na fronteira: teto de comprimento e de quantidade por plugin em `scanned_from` (o interner em si é de `lm-base`, não alterado) | f56190a83 |
-| M-7 bloqueio permanente por timeout | corrigido na rodada de desenho: queda bloqueia na hora; timeout conta (2 para bloquear), é tentado de novo, e `plugin.unblock` desfaz | 2a1efecbe |
+| M-7 bloqueio permanente por timeout | corrigido na rodada de desenho: queda bloqueia na hora; timeout conta (2 para bloquear), é tentado de novo, e `plugin.unblock` desfaz | 3239130c5 |
 | M-8, M-9 (`lm-base` operation) | Corrigido na rodada de desenho: recuperação do envenenamento; o `Drop` do pool termina a fila como cancelada sem rodar; B-5 junto (pool sem threads falha a operação) | rodada de desenho (31f5ae9ba) |
 | M-10 escritor JSON sem profundidade | Corrigido na rodada de desenho: o escritor recusa `state.json.too_deep` na profundidade do leitor | rodada de desenho (31f5ae9ba) |
 | M-11 contador acima de 2^53 | Confirmado e corrigido junto com A-7 | 362f80836 |
