@@ -272,7 +272,7 @@ a ação contam como parcial.
 | F-REC-008 | Gravar seco | feito |  | lm-io/src/record.rs,lm-session/src/session.rs |
 | F-REC-009 | Medidor de entrada no cabeçalho | feito |  | lm-gui/src/pages/composition.rs,lm-port/src/lib.rs |
 | F-REC-010 | Desligar plugins com latência na faixa armada | feito | chave "Monitoramento de baixa latência" nas configurações de áudio (preferência lowLatencyMonitoring) | lm-compile/src/core.rs,lm-gui/src/screens/settings.rs |
-| F-REC-011 | Efeitos de entrada gravados, gravar a saída, entrada com mai | parcial | aberto: P-10 respondido; só entradas com N canais existem; faltam "gravar com os efeitos" por faixa e gravar a saída de uma faixa (reamostrar) | lm-session/src/session.rs |
+| F-REC-011 | Efeitos de entrada gravados, gravar a saída, entrada com mai | parcial | gravar a saída de uma faixa existe: ação track.resample e item "Gravar a saída da faixa" no menu da faixa (render offline da faixa, importado numa faixa nova); falta gravar AO VIVO com os efeitos de entrada: exige copiar o buffer pós-efeitos da faixa para o gravador na thread de áudio (tomada nova no renderer e canais virtuais no lm-io), não feito | lm-session/src/resample.rs,lm-gui/src/pages/composition/edit.rs |
 | F-REC-020 | Gravar parado | feito |  | lm-session/src/session.rs,lm-render/src/renderer.rs |
 | F-REC-021 | Punch-in e punch-out manuais | feito |  | lm-session/src/session.rs,lm-gui/src/pages/transport.rs |
 | F-REC-022 | Auto-punch (por região de tempo) | feito |  | lm-render/src/renderer.rs,lm-session/src/session.rs |
