@@ -2024,9 +2024,7 @@ impl Session {
                     cancel.check()?;
                     faults.check(std::fs::metadata(from).map(|m| m.len()).unwrap_or(0))?;
                     let tmp = dest.with_extension("save_as.tmp");
-                    std::fs::copy(from, &tmp).map_err(|e| crate::folder::io_error("session.save_as.copy", &tmp, &e))?;
-                    std::fs::rename(&tmp, dest)
-                        .map_err(|e| crate::folder::io_error("session.save_as.copy", dest, &e))?;
+                    crate::folder::copy_via_tmp(from, &tmp, dest, "session.save_as.copy")?;
                     progress.set((i + 1) as f32 / copies.len() as f32);
                 }
                 Ok(Value::NULL)
@@ -2869,10 +2867,7 @@ impl Session {
                         let dest = audio.join(name);
                         let tmp = dest.with_extension("paste.tmp");
                         faults.check(std::fs::metadata(&source).map(|m| m.len()).unwrap_or(0))?;
-                        std::fs::copy(&source, &tmp)
-                            .map_err(|e| crate::folder::io_error("session.paste.copy", &tmp, &e))?;
-                        std::fs::rename(&tmp, &dest)
-                            .map_err(|e| crate::folder::io_error("session.paste.copy", &dest, &e))?;
+                        crate::folder::copy_via_tmp(&source, &tmp, &dest, "session.paste.copy")?;
                         // The peaks go along (they are by hash too)
                         let peaks = source.with_extension("peaks");
                         if peaks.exists() {

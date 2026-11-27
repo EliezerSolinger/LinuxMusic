@@ -562,8 +562,7 @@ fn adopt(project: &Path, kind: &str, key: &str, source: &Path, faults: &crate::f
     }
     let tmp = dir.join(format!("{key}.{ext}.tmp"));
     faults.check(std::fs::metadata(source).map(|m| m.len()).unwrap_or(0))?;
-    std::fs::copy(source, &tmp).map_err(|e| io_err("session.locate.copy", &tmp, &e))?;
-    std::fs::rename(&tmp, &dest).map_err(|e| io_err("session.locate.copy", &dest, &e))
+    crate::folder::copy_via_tmp(source, &tmp, &dest, "session.locate.copy")
 }
 
 /// A device on the Dummy backend started with the renderer (when nothing else opens)

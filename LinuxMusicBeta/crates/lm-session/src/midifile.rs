@@ -404,8 +404,10 @@ impl crate::session::Session {
             "midi_export",
             move |_, _| {
                 let bytes = write_smf_of(&root, only, item);
-                let tmp = path.with_extension("mid.tmp");
+                // A name of its own (two exports at once do not collide), removed if anything fails
+                let tmp = path.with_extension(format!("{}.mid.tmp", lm_doc::new_uuid()));
                 std::fs::write(&tmp, &bytes).and_then(|_| std::fs::rename(&tmp, &path)).map_err(|e| {
+                    let _ = std::fs::remove_file(&tmp);
                     Error::new("session.midi.write")
                         .arg("file", path.display().to_string())
                         .arg("problem", e.to_string())

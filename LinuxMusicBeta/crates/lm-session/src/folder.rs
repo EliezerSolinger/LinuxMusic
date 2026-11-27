@@ -185,6 +185,17 @@ pub fn write_atomic(path: &Path, bytes: &[u8], faults: &DiskFaults) -> Result<()
     result
 }
 
+/// Copies `from` to `dest` through `tmp`: on any failure the `.tmp` is removed, never left behind
+pub fn copy_via_tmp(from: &Path, tmp: &Path, dest: &Path, key: &'static str) -> Result<()> {
+    let result = fs::copy(from, tmp)
+        .map_err(|e| io_error(key, tmp, &e))
+        .and_then(|_| fs::rename(tmp, dest).map_err(|e| io_error(key, dest, &e)));
+    if result.is_err() {
+        let _ = fs::remove_file(tmp);
+    }
+    result
+}
+
 /// Appends a line and syncs it (the journal)
 pub fn append_line(file: &mut File, line: &str, path: &Path, faults: &DiskFaults) -> Result<()> {
     faults.check(line.len() as u64 + 1)?;
@@ -197,4 +208,24 @@ pub fn append_line(file: &mut File, line: &str, path: &Path, faults: &DiskFaults
 /// Opens a file for appending, made if absent
 pub fn open_append(path: &Path) -> Result<File> {
     OpenOptions::new().create(true).append(true).open(path).map_err(|e| io_error("session.file.open", path, &e))
+}
+
+#[cfg(test)]
+mod copy_tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_copy_leaves_no_tmp() {
+        let dir = std::env::temp_dir().join(format!("lm-copy-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("a.wav");
+        fs::write(&src, b"x").unwrap();
+        let tmp = dir.join("a.tmp");
+        // The destination is a non-empty directory: the rename fails after the copy made the tmp
+        let dest = dir.join("d");
+        fs::create_dir_all(dest.join("inner")).unwrap();
+        assert!(copy_via_tmp(&src, &tmp, &dest, "session.test").is_err());
+        assert!(!tmp.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
