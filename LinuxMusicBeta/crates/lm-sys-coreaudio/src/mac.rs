@@ -516,15 +516,19 @@ impl std::fmt::Debug for Watch {
 impl Drop for Watch {
     fn drop(&mut self) {
         // SAFETY: the same arguments as the registration; after the removal CoreAudio does not call us again, so
-        // the closure can be freed. (A device that is already gone returns an error: nothing to do.)
+        // the closure can be freed. A device that is already gone returns an error and has no listeners left.
         unsafe {
-            let _ = AudioObjectRemovePropertyListener(
+            let status = AudioObjectRemovePropertyListener(
                 self.device.0,
                 &self.address,
                 listener_trampoline,
                 self.client.cast(),
             );
-            drop(Box::from_raw(self.client));
+            let gone = check("AudioObjectRemovePropertyListener", status).is_err_and(|e| e.is_disconnected());
+            // Any other failure: the listener may still be called, so the closure is leaked rather than freed
+            if status == 0 || gone {
+                drop(Box::from_raw(self.client));
+            }
         }
     }
 }
@@ -801,11 +805,16 @@ impl Io {
 
 impl Drop for Io {
     fn drop(&mut self) {
-        let _ = self.stop();
-        // SAFETY: stopped above, so the proc will not run again; the state is freed once, after the proc is gone.
+        let stopped = self.stop().is_ok();
+        // SAFETY: the state is freed only when the proc is certainly gone: stopped and destroyed.
         unsafe {
-            let _ = AudioDeviceDestroyIOProcID(self.device.0, self.id);
-            drop(Box::from_raw(self.state));
+            // Never destroy a proc that may still run
+            let destroyed = stopped && AudioDeviceDestroyIOProcID(self.device.0, self.id) == 0;
+            if destroyed {
+                drop(Box::from_raw(self.state));
+            }
+            // else: the proc may still be called from the real-time thread, so the state is leaked on purpose
+            // (a few bytes) rather than freed under it
         }
     }
 }
