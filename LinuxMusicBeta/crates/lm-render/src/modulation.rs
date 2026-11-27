@@ -296,13 +296,10 @@ impl Default for Envelope {
     }
 }
 
-/// The legacy peak controller's measurement (`PeakControllerEffect::process`) of one block of a stereo signal:
-/// the RMS (with `abs`, the sum of squares; without, signed squares), the threshold, then
-/// `clamp(amount * rms, 0, 1)` with `amount` the gain parameter
-pub fn peak_measure(left: &[f32], right: &[f32], p: &[f32; MOD_PARAMS]) -> f32 {
-    let frames = left.len().max(1);
+/// The sum the legacy peak controller measures over a stretch of a stereo signal (`PeakControllerEffect::process`):
+/// the sum of squares with `abs`, signed squares without
+pub fn peak_sum(left: &[f32], right: &[f32], absolute: bool) -> f64 {
     let mut sum = 0.0f64;
-    let absolute = p[P_ABS] >= 0.5;
     for (l, r) in left.iter().zip(right) {
         if absolute {
             sum += f64::from(l * l + r * r);
@@ -310,11 +307,151 @@ pub fn peak_measure(left: &[f32], right: &[f32], p: &[f32; MOD_PARAMS]) -> f32 {
             sum += f64::from(l * l.abs() + r * r.abs());
         }
     }
-    let v = sum / frames as f64;
+    sum
+}
+
+/// The rest of the measurement for `frames` frames summing to `sum`: the RMS, the threshold, then
+/// `clamp(amount * rms, 0, 1)` with `amount` the gain parameter
+pub fn peak_finish(sum: f64, frames: usize, p: &[f32; MOD_PARAMS]) -> f32 {
+    let v = sum / frames.max(1) as f64;
     // sqrt_neg
     let rms = if v < 0.0 { -libm::sqrt(-v) } else { libm::sqrt(v) } as f32;
     let rms = if rms.abs() < p[P_THRESHOLD] { 0.0 } else { rms };
     (p[P_GAIN] * rms).clamp(0.0, 1.0)
+}
+
+/// The legacy measurement of one block of a stereo signal
+pub fn peak_measure(left: &[f32], right: &[f32], p: &[f32; MOD_PARAMS]) -> f32 {
+    peak_finish(peak_sum(left, right, p[P_ABS] >= 0.5), left.len(), p)
+}
+
+/// How far behind the signal the peak follower reads, in frames. A window of the measured node is only complete
+/// after the pass that renders it, and the modulation of a pass is computed before the pass renders, so a reading
+/// that is the same for every slicing of the stream must come from a window older than the longest pass: this is
+/// that margin, a constant of the program, never of the device (any `max_block` up to it gives the same output)
+pub const PEAK_LAG_FRAMES: u64 = 4096;
+
+/// The grid cells of [`PEAK_LAG_FRAMES`]
+const PEAK_LAG_CELLS: u64 = PEAK_LAG_FRAMES / crate::AUTOMATION_GRID;
+
+/// The measurement and smoothing of one peak follower, a function of the frame number alone (R-1). The measured
+/// node's output is cut in windows of one grid cell ([`crate::AUTOMATION_GRID`] frames, aligned to frame 0); the
+/// sum of a window grows in an accumulator that survives passes, so where the host cuts the stream does not change
+/// it. The follower then moves one whole cell at a time toward the window `PEAK_LAG_FRAMES` older, and every step
+/// of a cell reads the value at the cell's start
+#[derive(Debug)]
+pub struct PeakTracker {
+    follower: PeakFollower,
+    /// The cell whose start `follower.current` is, `u64::MAX` before the first step
+    cell: u64,
+    /// The window in progress: its sum, its frames, whether it began on its cell's first frame and the next frame
+    /// it expects (a gap or a late start drops the window rather than measuring part of it)
+    acc: f64,
+    acc_frames: u32,
+    valid: bool,
+    next_frame: u64,
+    /// The closed windows, by cell number modulo the ring (`ring_cell` tells which cell a slot holds)
+    ring_cell: Box<[u64]>,
+    ring_value: Box<[f32]>,
+    first_closed: u64,
+    newest: f32,
+}
+
+impl PeakTracker {
+    /// `max_block` is the largest pass: the ring holds the lag, that pass and some slack
+    pub fn new(max_block: usize) -> Self {
+        let cells = PEAK_LAG_CELLS as usize + max_block / crate::AUTOMATION_GRID as usize + 8;
+        Self {
+            follower: PeakFollower::new(),
+            cell: u64::MAX,
+            acc: 0.0,
+            acc_frames: 0,
+            valid: false,
+            next_frame: 0,
+            ring_cell: vec![u64::MAX; cells].into_boxed_slice(),
+            ring_value: vec![0.0; cells].into_boxed_slice(),
+            first_closed: u64::MAX,
+            newest: 0.0,
+        }
+    }
+
+    /// The node rendered `left.len()` frames starting at engine frame `frame`
+    pub fn accumulate(&mut self, frame: u64, left: &[f32], right: &[f32], p: &[f32; MOD_PARAMS]) {
+        let grid = crate::AUTOMATION_GRID;
+        let absolute = p[P_ABS] >= 0.5;
+        let n = left.len().min(right.len());
+        let mut i = 0;
+        if frame != self.next_frame {
+            self.valid = false;
+            self.acc_frames = 0;
+        }
+        while i < n {
+            let f = frame + i as u64;
+            let into = f % grid;
+            if into == 0 {
+                self.valid = true;
+                self.acc = 0.0;
+                self.acc_frames = 0;
+            } else if self.acc_frames == 0 {
+                self.valid = false;
+            }
+            let take = ((grid - into) as usize).min(n - i);
+            if self.valid {
+                self.acc += peak_sum(&left[i..i + take], &right[i..i + take], absolute);
+                self.acc_frames += take as u32;
+            }
+            i += take;
+            if into + take as u64 == grid {
+                if self.valid && u64::from(self.acc_frames) == grid {
+                    let w = f / grid;
+                    let v = peak_finish(self.acc, grid as usize, p);
+                    let slot = (w % self.ring_cell.len() as u64) as usize;
+                    self.ring_cell[slot] = w;
+                    self.ring_value[slot] = v;
+                    self.first_closed = self.first_closed.min(w);
+                    self.newest = v;
+                }
+                self.acc_frames = 0;
+                self.valid = false;
+            }
+        }
+        self.next_frame = frame + n as u64;
+    }
+
+    /// The window `cell` was measured from, or the nearest honest answer: silence before the first window ever
+    /// measured, the newest one when the pass is longer than the lag
+    fn window(&self, cell: i64) -> f32 {
+        if cell < 0 {
+            return 0.0;
+        }
+        let cell = cell as u64;
+        let slot = (cell % self.ring_cell.len() as u64) as usize;
+        if self.ring_cell[slot] == cell {
+            self.ring_value[slot]
+        } else if self.first_closed == u64::MAX || cell < self.first_closed {
+            0.0
+        } else {
+            self.newest
+        }
+    }
+
+    /// The follower's value for a step that starts in `cell`: it first moves, a whole cell at a time, to the start
+    /// of that cell
+    pub fn value_at(&mut self, cell: u64, p: &[f32; MOD_PARAMS], sample_rate: u32) -> f32 {
+        if self.cell == u64::MAX {
+            self.cell = cell;
+        }
+        // A gap this long (never in a running engine) is settled already
+        if cell.saturating_sub(self.cell) > 4096 {
+            self.cell = cell - 4096;
+        }
+        while self.cell < cell {
+            self.follower.target = self.window(self.cell as i64 - PEAK_LAG_CELLS as i64);
+            self.follower.advance(p, sample_rate, crate::AUTOMATION_GRID as u32);
+            self.cell += 1;
+        }
+        self.follower.current
+    }
 }
 
 /// The peak follower's smoothing (`PeakController::updateValueBuffer`): per frame, the value goes to the measured

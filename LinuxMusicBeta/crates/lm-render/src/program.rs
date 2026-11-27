@@ -33,7 +33,7 @@ use crate::automation::Curve;
 use crate::event::{EventList, NoteOut};
 use crate::ids::{NodeIndex, ParamSlot, PortIndex, ProgramGen};
 use crate::midimap::ParamRange;
-use crate::modulation::{Envelope, MOD_PARAMS, ModKind, ModulatorSpec, PeakFollower};
+use crate::modulation::{Envelope, MOD_PARAMS, ModKind, ModulatorSpec, PeakTracker};
 use crate::processor::BufferLayout;
 use crate::sample::SampleData;
 use crate::spec::{Limits, ProcessSpec};
@@ -726,7 +726,7 @@ pub(crate) struct PModulator {
     pub(crate) input: u32,
     pub(crate) trigger: u32,
     pub(crate) envelope: Envelope,
-    pub(crate) follower: PeakFollower,
+    pub(crate) peak: PeakTracker,
     /// A gate change of the pass: its offset and state (the last change wins; the first offset counts)
     pub(crate) gate: Option<(u32, bool)>,
     /// `b` on each step of the pass's grid
@@ -1342,7 +1342,7 @@ impl ProgramBuilder {
                 input,
                 trigger,
                 envelope: Envelope::new(),
-                follower: PeakFollower::new(),
+                peak: PeakTracker::new(max_block),
                 gate: None,
                 values: vec![0.0; grid_steps].into_boxed_slice(),
             });

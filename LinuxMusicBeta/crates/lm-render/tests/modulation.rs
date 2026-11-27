@@ -87,3 +87,48 @@ fn an_lfo_is_the_same_for_any_block_size() {
     assert!(a.iter().all(|(f, v)| (2.9..=7.1).contains(v) && f % 32 == 0), "{a:?}");
     assert_eq!(a, b);
 }
+
+/// R-1: the peak follower measures windows of the grid, so what it reads does not depend on how the host cuts the
+/// stream into blocks
+#[test]
+fn a_peak_follower_is_the_same_for_any_block_size() {
+    let run_peak = |size: usize| {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        {
+            let (mut control, mut dummy) = make(0);
+            let mut b = ProgramBuilder::new(ProgramGen(1), common::spec(), &limits(0), tempo(120));
+            let m = master(&mut b);
+            b.node(NodeDesc::processor(n(1), 0, 1));
+            b.node(NodeDesc::processor(n(2), 0, 1));
+            b.feed(lm_render::Feed::new(n(2), m, 1).mix(lm_render::ChannelMix::UpMix { to: 2 }));
+            b.param(ParamSlot(1), n(1), 0, ParamInfo { rate: Rate::Block, discrete: false, initial: 5.0 }, None);
+            let mut spec = ModulatorSpec::new(ModKind::Peak, 3);
+            spec.input = Some(n(2));
+            spec.targets.push(ModTarget {
+                slot: ParamSlot(1),
+                range: ParamRange::linear(0.0, 10.0),
+                amount: 1.0,
+                min: 0.0,
+                max: 1.0,
+            });
+            b.modulator(spec);
+            let mut i = Install::new(b.build().expect("program"));
+            i.add(n(1), core(ParamLog(log.clone(), Vec::with_capacity(8192))));
+            i.add(n(2), core(Sine::new(1000.0, 0.8)));
+            install(&mut control, i);
+            control.commands().send(Command::Play).expect("play");
+            render(&mut dummy, 16384, size);
+        }
+        let got = log.lock().expect("log").clone();
+        got
+    };
+    let a = run_peak(64);
+    let b = run_peak(1000);
+    let c = run_peak(512);
+    assert!(a.len() > 20, "it moves: {a:?}");
+    assert!(a.last().is_some_and(|(_, v)| *v > 5.5), "it follows the signal: {:?}", a.last());
+    // The reading leaves the start only after the lag (a window is read once it is older than the longest pass)
+    assert!(a.iter().filter(|(f, _)| *f < 4096).all(|(_, v)| *v == 5.0), "{a:?}");
+    assert_eq!(a, b);
+    assert_eq!(a, c);
+}

@@ -2083,3 +2083,12 @@ dá a mesma saída.
   corte duro de 2 s do renderer passou a cair no quadro exato (antes, no fim do bloco que o cruzava), então o trecho
   audível da cauda não depende do bloco. Caudas restauradas de uma tabela (`from_table`) nascem "sem carimbo" e levam o
   relógio da primeira observação.
+- **R-1, seguidor de pico dependia do bloco.** O pico era medido sobre cada passagem do renderer, e o alvo mudava quando o
+  host cortava o fluxo em outros blocos. Decidido: o nó medido entra num acumulador por janela da grade
+  (`AUTOMATION_GRID` quadros, alinhada ao quadro 0, `PeakTracker` em `modulation.rs`); a soma sobrevive às passagens, então
+  a janela depende só do número do quadro. O seguidor anda uma célula inteira por vez e cada passo lê o valor do começo
+  da sua célula. Como a modulação de uma passagem é calculada antes de a passagem ser renderizada, a leitura só pode vir
+  de uma janela mais velha que a passagem mais longa: o seguidor lê a janela de `PEAK_LAG_FRAMES` (4096 quadros, cerca
+  de 85 ms a 48 kHz) atrás, uma constante do programa e não do dispositivo. Efeito audível: o seguidor de pico responde
+  com esse atraso fixo (a atenuação de ataque/decaimento do legado continua por cima); é a correção, o preço de ser
+  idêntico em qualquer `max_block` até 4096.

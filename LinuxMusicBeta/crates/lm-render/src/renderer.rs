@@ -1947,9 +1947,8 @@ impl Renderer {
                         v
                     }
                     ModKind::Peak => {
-                        let v = md.follower.current;
-                        md.follower.advance(&p, rate, len);
-                        v
+                        let cell = (frame0 + off as u64) / AUTOMATION_GRID;
+                        md.peak.value_at(cell, &p, rate)
                     }
                 };
                 md.values[k] = if b.is_finite() { b } else { 0.0 };
@@ -2573,8 +2572,7 @@ impl Renderer {
             if m.kind == ModKind::Peak && m.input == i && outputs > 0 {
                 let l = layout.output_offset(0);
                 let r = layout.output_offset(1.min(outputs - 1));
-                m.follower.target =
-                    crate::modulation::peak_measure(&io.buffer[l..l + n], &io.buffer[r..r + n], &m.params);
+                m.peak.accumulate(self.frame, &io.buffer[l..l + n], &io.buffer[r..r + n], &m.params);
             }
         }
         self.program.nodes[i as usize].io = Some(io);
