@@ -148,14 +148,14 @@ a ação contam como parcial.
 | F-ARR-004 | Apagar e selecionar | feito |  | lm-gui/src/pages/composition/edit.rs,lm-gui/src/actions.rs |
 | F-ARR-005 | Dividir no cursor | feito |  | lm-session/src/arrange.rs,lm-gui/src/pages/composition/edit.rs |
 | F-ARR-006 | Copiar, cortar, colar, duplicar | feito |  | lm-session/src/arrange.rs,lm-gui/src/pages/composition/edit.rs |
-| F-ARR-007 | Roda estilo REAPER | parcial | Ctrl+0 para voltar o zoom não existe; roda, Ctrl+roda e Alt/Shift+roda existem | lm-gui/src/pages/composition.rs,lm-gui/src/view.rs |
-| F-ARR-008 | Zoom | parcial | o zoom (ticks por pixel) não é lembrado entre sessões e os limites não são os de 4 a 400 px por compasso | lm-gui/src/view.rs,lm-gui/src/pages/composition.rs |
-| F-ARR-009 | Grade | parcial | falta a grade proporcional que acompanha o zoom; a grade fixa de 8 compassos a 1/16 pelo mapa de andamentos existe | lm-gui/src/pages/composition/edit.rs |
-| F-ARR-010 | Criar faixas | parcial | só botões de faixa de instrumento e de áudio; não há como criar pasta na interface (a faixa de automação vive no dono do parâmetro) | lm-gui/src/pages/composition.rs |
+| F-ARR-007 | Roda estilo REAPER | feito | Ctrl+0 (arrange.zoom_reset) volta o zoom padrão | lm-gui/src/pages/composition.rs,lm-gui/src/view.rs |
+| F-ARR-008 | Zoom | feito | o zoom é lembrado no documento da interface; limites de 4 a 400 px por compasso | lm-gui/src/view.rs,lm-gui/src/pages/composition.rs |
+| F-ARR-009 | Grade | feito | grade proporcional que acompanha o zoom | lm-gui/src/pages/composition/edit.rs |
+| F-ARR-010 | Criar faixas | feito | botões de faixa de instrumento, de áudio e de pasta (a faixa de automação vive no dono do parâmetro) | lm-gui/src/pages/composition.rs |
 | F-ARR-011 | Soltar arquivos no arranjo | parcial | arquivos do sistema: áudio vira faixa de áudio nova, MIDI importa e projeto abre; não há o limite áudio longo/curto com sampler, nem soltar do navegador interno (amostra, instrumento, preset, SoundFont, VST, patch) | lm-gui/src/screens/files.rs,lm-gui/src/pages/composition.rs |
 | F-ARR-012 | Faixa selecionada | feito |  | lm-gui/src/pages/composition.rs |
-| F-ARR-013 | Depois de abrir um projeto | falta | nada traz o arranjo para frente e rola ao início depois de abrir um projeto |  |
-| F-ARR-014 | Grade de fundo | falta | o fundo só tem os separadores horizontais das faixas; sem faixas alternadas a cada 4 compassos nem linhas de compasso e de grade na área dos clipes (só marcas na régua) | lm-gui/src/pages/composition.rs |
+| F-ARR-013 | Depois de abrir um projeto | feito |  |  |
+| F-ARR-014 | Grade de fundo | feito |  | lm-gui/src/pages/composition.rs |
 
 ## F-REG: Régua, marcadores e andamentos
 
@@ -213,7 +213,7 @@ a ação contam como parcial.
 | F-TRK-025 | Terceira linha (faixa alta) | feito |  | lm-gui/src/pages/composition/edit.rs |
 | F-TRK-026 | Medidor do canal na borda | feito |  | lm-gui/src/pages/composition.rs |
 | F-TRK-027 | Clique no nome | falta | o nome no cabeçalho não tem clique: não abre a janela do instrumento nem de efeitos, sem renomear no lugar, sem soltar preset no nome | lm-gui/src/pages/composition.rs |
-| F-TRK-028 | Indicador de atividade | falta | o cabeçalho não tem indicador de atividade (pisca com notas, vermelho em áudio corrompido, clique toca a nota) | lm-gui/src/pages/composition.rs |
+| F-TRK-028 | Indicador de atividade | feito | lâmpada no cabeçalho: verde com som na saída, vermelha com efeito do canal silenciado (áudio corrompido); o clique toca o dó central na faixa de instrumento | lm-gui/src/pages/composition.rs |
 | F-TRK-029 | Mover e copiar faixas | parcial | só entrar/sair da pasta pelo menu da faixa; faltam arrastar para mover (EditOp::Move existe no núcleo mas a faixa não o usa) e copiar com Ctrl | lm-gui/src/pages/composition/edit.rs |
 | F-TRK-030 | Altura e largura | parcial | Shift+clique volta a altura e Ctrl/Shift+Alt+roda mudam; faltam arrastar a borda de baixo, a largura do cabeçalho e a altura por faixa (é um valor global) | lm-gui/src/pages/composition.rs |
 | F-TRK-031 | Menu da faixa | parcial | clonar, remover (com não perguntar), limpar, exportar MIDI e pasta existem; faltam exportar a faixa como áudio e o submenu Cor (mudar, padrão, sortear, zerar cores dos clipes) e ligar/desligar a gravação da automação | lm-gui/src/pages/composition/edit.rs,lm-session/src/clips.rs |

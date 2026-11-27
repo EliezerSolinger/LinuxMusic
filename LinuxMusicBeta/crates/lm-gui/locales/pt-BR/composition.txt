@@ -31,3 +31,7 @@ Loop start here = Início do loop aqui
 Loop end here = Fim do loop aqui
 Fit to the notes = Ajustar às notas
 Default name = Nome padrão
++ Instrument track = + Faixa de instrumento
++ Audio track = + Faixa de áudio
++ Folder = + Pasta
+Folder {0} = Pasta {0}

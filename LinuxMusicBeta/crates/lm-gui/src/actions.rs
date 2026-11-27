@@ -66,6 +66,7 @@ actions!(
         OpenItem,
         ZoomIn,
         ZoomOut,
+        ZoomReset,
         AddMarker,
         AddRegion,
         TempoHere,
@@ -341,6 +342,7 @@ pub const REGISTRY: &[ActionDef] = &[
     a("arrange.tool_select", "composition::ToolSelect", "Select tool", "Arrange", &["v"], Some("Composition")),
     a("arrange.zoom_in", "composition::ZoomIn", "Zoom in", "Arrange", &["="], Some("Composition")),
     a("arrange.zoom_out", "composition::ZoomOut", "Zoom out", "Arrange", &["-"], Some("Composition")),
+    a("arrange.zoom_reset", "composition::ZoomReset", "Reset the zoom", "Arrange", &["ctrl-0"], Some("Composition")),
     a(
         "marks.add_marker",
         "composition::AddMarker",

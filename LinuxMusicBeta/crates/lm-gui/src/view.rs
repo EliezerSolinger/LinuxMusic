@@ -12,8 +12,9 @@ pub const RULER_H: f32 = 22.0;
 pub const TRACK_H: f32 = 70.0;
 pub const HEADER_W: f32 = 300.0;
 
-pub const MIN_TPP: f64 = 0.25;
-pub const MAX_TPP: f64 = 4096.0;
+/// 400 and 4 pixels per bar (3840 ticks): the zoom's limits (F-ARR-008)
+pub const MIN_TPP: f64 = 9.6;
+pub const MAX_TPP: f64 = 960.0;
 
 /// The timeline's scroll and zoom, in ticks (the interface's document would hold it, I-3.8)
 #[derive(Debug, Clone, Copy)]

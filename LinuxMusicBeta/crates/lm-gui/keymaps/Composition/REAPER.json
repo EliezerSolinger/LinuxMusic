@@ -41,6 +41,9 @@
     "arrange.zoom_out": [
       "-"
     ],
+    "arrange.zoom_reset": [
+      "ctrl-0"
+    ],
     "marks.add_marker": [
       "m"
     ],

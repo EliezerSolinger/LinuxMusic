@@ -22,7 +22,7 @@ use lm_time::TempoMap;
 
 use crate::actions::{
     ArrCopy, ArrCut, ArrPaste, BarLeft, BarRight, DeleteItem, Duplicate, EmptyItem, Glue, InsertBar, OpenItem,
-    RemoveBar, SelectAllItems, SelectNoItems, Split, TempoHere, ToolDraw, ToolKnife, ToolSelect, ZoomIn, ZoomOut,
+    RemoveBar, SelectAllItems, SelectNoItems, Split, TempoHere, ToolDraw, ToolKnife, ToolSelect, ZoomIn, ZoomOut, ZoomReset,
 };
 use crate::core::Core;
 use crate::model::{self, ItemView, TrackView};
@@ -448,6 +448,16 @@ impl CompositionPage {
         cx.notify();
     }
 
+    /// Ctrl+0 (F-ARR-007): the default zoom, around the middle of the view
+    fn zoom_reset(&mut self, cx: &mut Context<Self>) {
+        let w = self.timeline_bounds.borrow().size.width.as_f32() as f64 / 2.0;
+        let tick = self.view.tick_at(w as f32);
+        self.view.ticks_per_px = view::TimelineView::default().ticks_per_px;
+        self.view.scroll_ticks = (tick - w * self.view.ticks_per_px).max(0.0);
+        self.remember_zoom(cx);
+        cx.notify();
+    }
+
     /// A click on the ruler moves the cursor there
     fn on_ruler(&mut self, ev: &MouseDownEvent, cx: &mut Context<Self>) {
         // Ctrl+drag selects the items of every track in that stretch (F-REG-008)
@@ -613,6 +623,7 @@ impl Render for CompositionPage {
             .on_action(cx.listener(|p, _: &TempoHere, window, cx| p.tempo_here(window, cx)))
             .on_action(cx.listener(|p, _: &ZoomIn, _, cx| p.zoom(-40.0, cx)))
             .on_action(cx.listener(|p, _: &ZoomOut, _, cx| p.zoom(40.0, cx)))
+            .on_action(cx.listener(|p, _: &ZoomReset, _, cx| p.zoom_reset(cx)))
             .map(|d| marks::actions(d, cx))
             .on_mouse_move(cx.listener(|p, ev: &MouseMoveEvent, _, cx| {
                 p.drag_knob(ev, cx);
@@ -879,6 +890,11 @@ impl CompositionPage {
                         button("add-audio-track", tr("+ Audio track"), false, 0)
                             .debug_selector(|| "add-audio-track".into())
                             .on_click(cx.listener(|p, _, _, cx| p.add_track(false, cx))),
+                    )
+                    .child(
+                        button("add-folder-track", tr("+ Folder"), false, 0)
+                            .debug_selector(|| "add-folder-track".into())
+                            .on_click(cx.listener(|p, _, _, cx| p.add_folder(cx))),
                     ),
             )
     }
@@ -929,6 +945,20 @@ impl CompositionPage {
 
     /// A new track at the end: an instrument track with the TripleOscillator, as the legacy's default, or an
     /// audio track; its main output goes to the master (I-3.9)
+    /// A new empty folder track at the end (F-ARR-010); tracks go into it from their menu or by dragging
+    fn add_folder(&mut self, cx: &mut Context<Self>) {
+        let n = self.tracks(cx).len();
+        let node = Value::object([
+            ("name", Value::text(trf("Folder {0}", &[&(n + 1)]))),
+            ("folder", Value::bool(true)),
+        ]);
+        self.apply(
+            "Add folder",
+            vec![EditOp::Insert { temp: 0, parent: Ref::Id(lm_port::ROOT), list: "tracks".into(), index: n, node }],
+            cx,
+        );
+    }
+
     fn add_track(&mut self, instrument: bool, cx: &mut Context<Self>) {
         let n = self.tracks(cx).len();
         let node = if instrument {
@@ -1065,6 +1095,7 @@ impl CompositionPage {
             .when(armed && t.instrument.is_none() && t.input.is_empty(), |d| {
                 d.child(div().text_size(px(11.)).text_color(c(THEME.yellow)).child("⚠"))
             })
+            .child(self.activity_lamp(t, main_out, main_to, core, cx))
             .child(name)
             .child(mute_b)
             .child(solo_b);
@@ -1304,6 +1335,68 @@ impl CompositionPage {
             self.apply("Rename track", vec![EditOp::set(id, &["name"], Value::text(name))], cx);
         }
         cx.notify();
+    }
+
+    /// The track's activity lamp (F-TRK-028): green while its output carries sound, red when an effect of its channel
+    /// was silenced (corrupt audio). Pressing it plays middle C on an instrument track, as long as it is held
+    fn activity_lamp(
+        &self,
+        t: &TrackView,
+        main_out: Option<NodeId>,
+        main_to: Option<NodeId>,
+        core: &Core,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let (id, i) = (t.id, t.index);
+        let meters = &core.port().telemetry().meters;
+        let dead = main_to.is_some_and(|ch| {
+            model::at(core.port().root(), &["mixer", "channels"])
+                .into_iter()
+                .flat_map(|l| l.items())
+                .filter(|c| model::id_of(c) == Some(ch))
+                .flat_map(|c| model::list(c, "inserts"))
+                .any(|ins| model::id_of(ins).is_some_and(|n| meters.get(&n).is_some_and(|m| m.dead)))
+        });
+        let lit = main_out.is_some_and(|o| core.meter(o) > 0.02);
+        let colour = if dead {
+            THEME.red
+        } else if lit {
+            THEME.green
+        } else {
+            THEME.bg3
+        };
+        let play = t.instrument.is_some();
+        div()
+            .id(("act", i))
+            .debug_selector(move || format!("activity-{i}"))
+            .size(px(8.))
+            .flex_none()
+            .rounded(px(4.))
+            .bg(c(colour))
+            .when(play, |d| {
+                d.cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |p, _: &MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            p.ed.track = Some(id);
+                            p.core.update(cx, |core, _| core.port_mut().note_on(id, 60, 100));
+                        }),
+                    )
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |p, _: &MouseUpEvent, _, cx| {
+                            p.core.update(cx, |core, _| core.port_mut().note_off(id, 60));
+                        }),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Left,
+                        cx.listener(move |p, _: &MouseUpEvent, _, cx| {
+                            p.core.update(cx, |core, _| core.port_mut().note_off(id, 60));
+                        }),
+                    )
+            })
+            .into_any_element()
     }
 
     fn take_header(&self, it: &ItemView, l: usize, r: &Row) -> AnyElement {
