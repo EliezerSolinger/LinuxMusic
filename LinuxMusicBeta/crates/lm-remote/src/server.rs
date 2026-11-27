@@ -13,8 +13,8 @@ use std::net::{SocketAddr, TcpListener};
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -86,7 +86,7 @@ impl ServerConfig {
 }
 
 enum Event {
-    Open { conn: u64, out: Sender<Out>, stream: Stream, local: bool, busy: Arc<AtomicBool> },
+    Open { conn: u64, out: SyncSender<Out>, stream: Stream, local: bool, busy: Arc<AtomicBool>, ready: Arc<AtomicBool> },
     Frame { conn: u64, frame: Frame },
     Closed { conn: u64 },
 }
@@ -105,7 +105,11 @@ enum Stage {
 }
 
 struct Conn {
-    out: Sender<Out>,
+    out: SyncSender<Out>,
+    /// When it connected: a connection that never says hello is closed (`HELLO_TIMEOUT`)
+    opened: Instant,
+    /// Set after the handshake: the reader accepts big frames only from then on
+    ready: Arc<AtomicBool>,
     stream: Stream,
     local: bool,
     stage: Stage,
@@ -125,10 +129,20 @@ struct Conn {
 }
 
 impl Conn {
+    /// A client that does not read its answers must not make the memory grow: its queue is bounded and a full
+    /// one closes the connection
+    fn queue(&self, o: Out) {
+        match self.out.try_send(o) {
+            Ok(()) => {}
+            Err(TrySendError::Full(_)) => self.stream.shutdown(),
+            Err(TrySendError::Disconnected(_)) => {}
+        }
+    }
+
     fn send_json(&self, v: &Value) {
         match wire::json(v) {
             Ok(p) => {
-                let _ = self.out.send(Out { kind: KIND_JSON, payload: p, continuous: false });
+                self.queue(Out { kind: KIND_JSON, payload: p, continuous: false });
             }
             Err(e) => self.send_raw_error(&e),
         }
@@ -137,7 +151,7 @@ impl Conn {
     fn send_raw_error(&self, e: &Error) {
         let v = Value::object([("t", Value::text("error")), ("error", c::error_to(e))]);
         if let Ok(p) = wire::json(&v) {
-            let _ = self.out.send(Out { kind: KIND_JSON, payload: p, continuous: false });
+            self.queue(Out { kind: KIND_JSON, payload: p, continuous: false });
         }
     }
 
@@ -206,27 +220,34 @@ fn io_error(e: &std::io::Error) -> Error {
     Error::new("remote.io").arg("error", e.to_string())
 }
 
-fn spawn_conn(conn: u64, stream: Stream, local: bool, max_frame: usize, events: Sender<Event>) -> Result<()> {
-    let (out_tx, out_rx) = channel::<Out>();
+/// The longest a connection may stay without a valid hello
+const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
+/// Connections open at once (each costs two threads)
+const MAX_CONNECTIONS: usize = 128;
+/// Replies waiting to be written, per connection
+const OUT_QUEUE: usize = 4096;
+/// Events waiting for the pump, all connections together
+const EVENT_QUEUE: usize = 8192;
+/// The largest frame before the handshake: a hello is tiny
+const MAX_FRAME_BEFORE_HELLO: usize = 64 << 10;
+
+fn spawn_conn(
+    conn: u64,
+    stream: Stream,
+    local: bool,
+    max_frame: usize,
+    events: SyncSender<Event>,
+    live: Arc<AtomicUsize>,
+) -> Result<()> {
+    // Both threads exist before the connection is announced: a half-made connection is never registered
+    let (out_tx, out_rx) = sync_channel::<Out>(OUT_QUEUE);
     let busy = Arc::new(AtomicBool::new(false));
+    let ready = Arc::new(AtomicBool::new(false));
     let mut reader = stream.try_clone()?;
     let mut writer = stream.try_clone()?;
-    let _ = events.send(Event::Open { conn, out: out_tx, stream, local, busy: busy.clone() });
-    let ev = events.clone();
-    std::thread::Builder::new()
-        .name("lm-remote-in".into())
-        .spawn(move || {
-            while let Ok(frame) = wire::read_frame(&mut reader, max_frame) {
-                if ev.send(Event::Frame { conn, frame }).is_err() {
-                    break;
-                }
-            }
-            let _ = ev.send(Event::Closed { conn });
-        })
-        .map_err(|e| io_error(&e))?;
-    std::thread::Builder::new()
-        .name("lm-remote-out".into())
-        .spawn(move || {
+    let writer_thread = std::thread::Builder::new().name("lm-remote-out".into()).spawn({
+        let busy = busy.clone();
+        move || {
             while let Ok(o) = out_rx.recv() {
                 if wire::write_frame(&mut writer, o.kind, &o.payload).is_err() {
                     writer.shutdown();
@@ -236,15 +257,41 @@ fn spawn_conn(conn: u64, stream: Stream, local: bool, max_frame: usize, events: 
                     busy.store(false, Ordering::Release);
                 }
             }
-        })
-        .map_err(|e| io_error(&e))?;
+        }
+    });
+    if let Err(e) = writer_thread {
+        stream.shutdown();
+        return Err(io_error(&e));
+    }
+    let _ = events.send(Event::Open { conn, out: out_tx, stream, local, busy, ready: ready.clone() });
+    let ev = events.clone();
+    live.fetch_add(1, Ordering::AcqRel);
+    let live_reader = live.clone();
+    let reader_thread = std::thread::Builder::new().name("lm-remote-in".into()).spawn(move || {
+        loop {
+            let max = if ready.load(Ordering::Acquire) { max_frame } else { max_frame.min(MAX_FRAME_BEFORE_HELLO) };
+            let Ok(frame) = wire::read_frame(&mut reader, max) else { break };
+            if ev.send(Event::Frame { conn, frame }).is_err() {
+                break;
+            }
+        }
+        live_reader.fetch_sub(1, Ordering::AcqRel);
+        let _ = ev.send(Event::Closed { conn });
+    });
+    if let Err(e) = reader_thread {
+        // The connection was announced: closing it removes it, and the writer ends with its queue
+        live.fetch_sub(1, Ordering::AcqRel);
+        let _ = events.send(Event::Closed { conn });
+        return Err(io_error(&e));
+    }
     Ok(())
 }
 
 impl Server {
     /// Starts listening. The network threads only move frames; the session is touched in `pump` alone
     pub fn start(config: ServerConfig) -> Result<Server> {
-        let (tx, rx) = channel::<Event>();
+        let (tx, rx) = sync_channel::<Event>(EVENT_QUEUE);
+        let live = Arc::new(AtomicUsize::new(0));
         let stop = Arc::new(AtomicBool::new(false));
         let mut threads = Vec::new();
         let next = Arc::new(std::sync::atomic::AtomicU64::new(1));
@@ -263,7 +310,7 @@ impl Server {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(|e| io_error(&e))?;
             listener.set_nonblocking(true).map_err(|e| io_error(&e))?;
-            let (tx, stop, next) = (tx.clone(), stop.clone(), next.clone());
+            let (tx, stop, next, live) = (tx.clone(), stop.clone(), next.clone(), live.clone());
             threads.push(
                 std::thread::Builder::new()
                     .name("lm-remote-unix".into())
@@ -273,7 +320,11 @@ impl Server {
                                 Ok((s, _)) => {
                                     let _ = s.set_nonblocking(false);
                                     let conn = next.fetch_add(1, Ordering::Relaxed);
-                                    let _ = spawn_conn(conn, Stream::Unix(s), true, max_frame, tx.clone());
+                                    if live.load(Ordering::Acquire) >= MAX_CONNECTIONS {
+                                        Stream::Unix(s).shutdown();
+                                        continue;
+                                    }
+                                    let _ = spawn_conn(conn, Stream::Unix(s), true, max_frame, tx.clone(), live.clone());
                                 }
                                 Err(_) => std::thread::sleep(Duration::from_millis(20)),
                             }
@@ -286,7 +337,7 @@ impl Server {
             let listener = TcpListener::bind(addr).map_err(|e| io_error(&e))?;
             local_addr = listener.local_addr().ok();
             listener.set_nonblocking(true).map_err(|e| io_error(&e))?;
-            let (tx, stop, next) = (tx.clone(), stop.clone(), next.clone());
+            let (tx, stop, next, live) = (tx.clone(), stop.clone(), next.clone(), live.clone());
             threads.push(
                 std::thread::Builder::new()
                     .name("lm-remote-tcp".into())
@@ -297,7 +348,11 @@ impl Server {
                                     let _ = s.set_nonblocking(false);
                                     let _ = s.set_nodelay(true);
                                     let conn = next.fetch_add(1, Ordering::Relaxed);
-                                    let _ = spawn_conn(conn, Stream::Tcp(s), false, max_frame, tx.clone());
+                                    if live.load(Ordering::Acquire) >= MAX_CONNECTIONS {
+                                        Stream::Tcp(s).shutdown();
+                                        continue;
+                                    }
+                                    let _ = spawn_conn(conn, Stream::Tcp(s), false, max_frame, tx.clone(), live.clone());
                                 }
                                 Err(_) => std::thread::sleep(Duration::from_millis(20)),
                             }
@@ -368,18 +423,27 @@ impl Server {
         self.sync(port);
         self.broadcast_state(port);
         self.continuous(port);
+        // A connection that does not say hello in time is closed
+        for c in self.conns.values_mut() {
+            if c.stage == Stage::Hello && !c.closing && c.opened.elapsed() > HELLO_TIMEOUT {
+                c.stream.shutdown();
+                c.closing = true;
+            }
+        }
         self.conns.retain(|_, c| !c.closing);
         did
     }
 
     fn event(&mut self, port: &mut dyn CorePort, ev: Event) {
         match ev {
-            Event::Open { conn, out, stream, local, busy } => {
+            Event::Open { conn, out, stream, local, busy, ready } => {
                 let now = Instant::now();
                 self.conns.insert(
                     conn,
                     Conn {
                         out,
+                        opened: now,
+                        ready,
                         stream,
                         local,
                         stage: Stage::Hello,
@@ -503,6 +567,7 @@ impl Server {
                 let snapshot = self.snapshot(port);
                 let c = self.conns.get_mut(&conn).expect("present");
                 c.stage = Stage::Ready;
+                c.ready.store(true, Ordering::Release);
                 c.mode = mode;
                 c.role = role;
                 c.name = if name.is_empty() { format!("client {conn}") } else { name };
@@ -560,7 +625,7 @@ impl Server {
         match msg.and_then(|m| wire::json(&m)) {
             Ok(payload) => {
                 for c in self.conns.values().filter(|c| c.stage == Stage::Ready && c.mode == Mode::Gui) {
-                    let _ = c.out.send(Out { kind: KIND_JSON, payload: payload.clone(), continuous: false });
+                    c.queue(Out { kind: KIND_JSON, payload: payload.clone(), continuous: false });
                 }
             }
             Err(e) => {
@@ -718,13 +783,13 @@ impl Server {
                 c.busy.store(true, Ordering::Release);
                 c.last_telemetry = Instant::now();
                 let payload = wire::telemetry_to(port.telemetry(), only.as_deref());
-                let _ = c.out.send(Out { kind: KIND_TELEMETRY, payload, continuous: true });
+                c.queue(Out { kind: KIND_TELEMETRY, payload, continuous: true });
             }
             if !c.displays.is_empty() && c.last_display.elapsed() >= Duration::from_millis(33) {
                 c.last_display = Instant::now();
                 for n in &c.displays {
                     if let Some(d) = port.display(*n) {
-                        let _ = c.out.send(Out {
+                        c.queue(Out {
                             kind: KIND_DISPLAY,
                             payload: wire::display_to(*n, &d),
                             continuous: false,
@@ -742,7 +807,7 @@ impl Server {
         let Some(c) = self.conns.get(&f.conn) else { return };
         match fin {
             Finished::Peaks(Ok(p)) => {
-                let _ = c.out.send(Out { kind: KIND_PEAKS, payload: wire::peaks_to(f.id, &p), continuous: false });
+                c.queue(Out { kind: KIND_PEAKS, payload: wire::peaks_to(f.id, &p), continuous: false });
             }
             other => c.reply(f.id, finished_value(other)),
         }
@@ -876,7 +941,7 @@ impl Server {
                 match port.peaks(&r, level, uint(msg, "from")?, uint(msg, "to")?) {
                     Pending::Ready(Ok(p)) => {
                         let c = &self.conns[&conn];
-                        let _ = c.out.send(Out {
+                        c.queue(Out {
                             kind: KIND_PEAKS,
                             payload: wire::peaks_to(request, &p),
                             continuous: false,
@@ -1297,5 +1362,43 @@ impl Drop for Server {
         if let Some(p) = &self.config.socket {
             let _ = std::fs::remove_file(p);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::net::TcpListener;
+    use std::sync::mpsc::RecvTimeoutError;
+
+    fn pair() -> (std::net::TcpStream, std::net::TcpStream) {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = std::net::TcpStream::connect(l.local_addr().unwrap()).unwrap();
+        (client, l.accept().unwrap().0)
+    }
+
+    #[test]
+    fn a_big_frame_before_the_hello_closes_the_connection() {
+        let (mut client, server) = pair();
+        let (tx, rx) = sync_channel(16);
+        let live = Arc::new(AtomicUsize::new(0));
+        spawn_conn(1, Stream::Tcp(server), false, wire::MAX_FRAME_FROM_CLIENT, tx, live.clone()).unwrap();
+        // The header of a 1 MiB frame: far over what a hello needs
+        client.write_all(&(1u32 << 20).to_le_bytes()).unwrap();
+        client.write_all(&[wire::KIND_JSON]).unwrap();
+        let mut closed = false;
+        loop {
+            match rx.recv_timeout(Duration::from_secs(5)) {
+                Ok(Event::Closed { .. }) => {
+                    closed = true;
+                    break;
+                }
+                Ok(_) => {}
+                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        assert!(closed);
+        assert_eq!(live.load(Ordering::Acquire), 0);
     }
 }
