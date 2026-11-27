@@ -141,28 +141,89 @@ impl Processor for Proxy {
             self.miss(cx);
             return;
         }
+        // A block with more events than the shared block holds is run as consecutive pieces, each cut where the
+        // events that do not fit begin, so none is dropped (a lost note-off would leave a note hanging). The
+        // helper sees the pieces as ordinary blocks, with the transport moved on by the frames already done
         let frames = cx.frames.min(self.layout.max_block);
+        let max = self.layout.max_events;
+        let (mut start, mut next) = (0usize, 0usize);
+        loop {
+            let (end, upto) = piece(cx.events, next, start, frames, max);
+            if !self.block(cx, start, end, next, upto) {
+                return;
+            }
+            start = end;
+            next = upto;
+            // Events left at or past the block's end are not played
+            if start >= frames {
+                break;
+            }
+        }
+    }
+
+    fn reset(&mut self) {
+        // The panic command reaches the plugin as an event in its next block (AllSoundOff)
+    }
+
+    fn latency(&self) -> u32 {
+        self.latency
+    }
+
+    fn adopt(&mut self, _old: &mut dyn Processor) -> Adopted {
+        // A third-party plugin's voices cannot move between instances (U32)
+        Adopted::No
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+/// Where the piece of a block that starts at frame `start` and takes events from `next` ends: `(end frame, end
+/// event index)`. The events are in time order. A piece holds at most `max` events and ends at the offset of the
+/// first one it leaves out; at least one frame long (more than `max` events at one offset go on in the next piece,
+/// one frame late, which is better than lost). The last piece ends at `frames`
+fn piece(events: &[lm_render::Event], next: usize, start: usize, frames: usize, max: usize) -> (usize, usize) {
+    let left = events.len() - next;
+    // Nothing left to cut by (events at or past the block's end are not the plugin's to play): the rest is one piece
+    if left <= max || start + 1 > frames {
+        return (frames, events.len());
+    }
+    let cut = (events[next + max].offset as usize).clamp(start + 1, frames.max(start + 1));
+    let mut upto = next;
+    while upto < events.len() && upto - next < max && (events[upto].offset as usize) < cut {
+        upto += 1;
+    }
+    (cut, upto)
+}
+
+impl Proxy {
+    /// One round trip with the helper: frames `start..end` of the block and `cx.events[first..last]`, the offsets
+    /// counted from `start`. `false`: the block was missed (silence for all of it) or the helper is gone
+    fn block(&mut self, cx: &mut ProcessContext<'_>, start: usize, end: usize, first: usize, last: usize) -> bool {
+        let words = self.shm.words();
         let l = self.layout;
+        let frames = end - start;
         {
             let (ins, mut outs, side) = cx.buffers.split();
             if ins.is_empty() {
                 // In place: the outputs hold the input
                 for ch in 0..l.inputs.min(outs.len()) {
-                    put(words, l.input(ch), &outs.get_mut(ch)[..frames]);
+                    put(words, l.input(ch), &outs.get_mut(ch)[start..end]);
                 }
             } else {
                 for ch in 0..l.inputs.min(ins.len()) {
-                    put(words, l.input(ch), &ins.get(ch)[..frames]);
+                    put(words, l.input(ch), &ins.get(ch)[start..end]);
                 }
             }
             for ch in 0..l.sidechain.min(side.len()) {
-                put(words, l.sidechain(ch), &side.get(ch)[..frames]);
+                put(words, l.sidechain(ch), &side.get(ch)[start..end]);
             }
         }
         let mut n = 0usize;
         let base = l.events();
-        for e in cx.events.iter().take(l.max_events) {
-            if let Some(x) = encode(e.offset, &e.kind) {
+        for e in cx.events[first..last].iter().take(l.max_events) {
+            if let Some(x) = encode((e.offset as usize).saturating_sub(start) as u32, &e.kind) {
                 for (k, v) in x.iter().enumerate() {
                     words[base + n * EVENT_WORDS + k].store(*v, Ordering::Relaxed);
                 }
@@ -170,13 +231,25 @@ impl Processor for Proxy {
             }
         }
         let t = cx.transport;
+        // The transport at the piece's first frame
+        let (position, tick) = if start == 0 {
+            (t.position, t.tick)
+        } else {
+            let advance = if t.playing { start as i64 } else { 0 };
+            let ticks = if t.playing && t.sample_rate > 0 {
+                (start as f64 / f64::from(t.sample_rate) * t.bpm / 60.0 * f64::from(t.ppq)).round() as i64
+            } else {
+                0
+            };
+            (t.position.saturating_add(advance), t.tick.saturating_add(ticks))
+        };
         words[w::FRAMES].store(frames as u32, Ordering::Relaxed);
         words[w::EVENTS].store(n as u32, Ordering::Relaxed);
         words[w::FLAGS].store(u32::from(t.playing) | (u32::from(t.recording) << 1), Ordering::Relaxed);
-        words[w::POSITION_LO].store(t.position as u32, Ordering::Relaxed);
-        words[w::POSITION_HI].store((t.position >> 32) as u32, Ordering::Relaxed);
-        words[w::TICK_LO].store(t.tick as u32, Ordering::Relaxed);
-        words[w::TICK_HI].store((t.tick >> 32) as u32, Ordering::Relaxed);
+        words[w::POSITION_LO].store(position as u32, Ordering::Relaxed);
+        words[w::POSITION_HI].store((position >> 32) as u32, Ordering::Relaxed);
+        words[w::TICK_LO].store(tick as u32, Ordering::Relaxed);
+        words[w::TICK_HI].store((tick >> 32) as u32, Ordering::Relaxed);
         words[w::BPM].store((t.bpm as f32).to_bits(), Ordering::Relaxed);
         words[w::PPQ].store(t.ppq, Ordering::Relaxed);
         let sig = (u32::from(t.time_signature.numerator()) << 8) | u32::from(t.time_signature.denominator());
@@ -186,7 +259,7 @@ impl Processor for Proxy {
         words[w::REQUEST].store(self.seq, Ordering::Release);
         lm_sys_ipc::wake(&words[w::REQUEST], 1);
         // Wait for it, bounded by the deadline
-        let start = Instant::now();
+        let started = Instant::now();
         let budget = match self.deadline {
             Deadline::Live(f) => {
                 // `from_secs_f64` panics on a negative or non-finite number
@@ -203,7 +276,7 @@ impl Processor for Proxy {
             }
             if self.state.dead.load(Ordering::Acquire) {
                 Self::silence(cx);
-                return;
+                return false;
             }
             // A short spin first: a fast plugin answers within microseconds, cheaper than sleeping
             if spins < 64 {
@@ -213,17 +286,17 @@ impl Processor for Proxy {
             }
             match budget {
                 Some(b) => {
-                    let spent = start.elapsed();
+                    let spent = started.elapsed();
                     if spent >= b {
                         self.miss(cx);
-                        return;
+                        return false;
                     }
                     lm_sys_ipc::wait(&words[w::DONE], done, Some(b - spent));
                 }
                 None => {
-                    if start.elapsed() >= WAIT_LIMIT {
+                    if started.elapsed() >= WAIT_LIMIT {
                         self.miss(cx);
-                        return;
+                        return false;
                     }
                     lm_sys_ipc::wait(&words[w::DONE], done, Some(Duration::from_millis(20)));
                 }
@@ -233,12 +306,12 @@ impl Processor for Proxy {
         {
             let (_, mut outs, _) = cx.buffers.split();
             for ch in 0..l.outputs.min(outs.len()) {
-                let out = &mut outs.get_mut(ch)[..frames];
+                let out = &mut outs.get_mut(ch)[start..end];
                 get(words, l.output(ch), out);
                 scrub(out);
             }
             for ch in l.outputs..outs.len() {
-                outs.get_mut(ch)[..frames].fill(0.0);
+                outs.get_mut(ch)[start..end].fill(0.0);
             }
         }
         // What the plugin says back: its latency, its own parameter changes (its window, a preset)
@@ -275,22 +348,73 @@ impl Processor for Proxy {
         if words[w::STATE].swap(0, Ordering::AcqRel) != 0 {
             cx.host.request(PluginRequest::StateChanged);
         }
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_render::{Event, EventKind};
+
+    fn at(offsets: impl IntoIterator<Item = u32>) -> Vec<Event> {
+        offsets.into_iter().map(|offset| Event { offset, kind: EventKind::AllNotesRelease }).collect()
     }
 
-    fn reset(&mut self) {
-        // The panic command reaches the plugin as an event in its next block (AllSoundOff)
+    /// Runs `piece` over the whole block and returns the pieces `(start, end, first, last)`
+    fn pieces(events: &[Event], frames: usize, max: usize) -> Vec<(usize, usize, usize, usize)> {
+        let (mut start, mut next, mut out) = (0, 0, Vec::new());
+        loop {
+            let (end, upto) = piece(events, next, start, frames, max);
+            out.push((start, end, next, upto));
+            start = end;
+            next = upto;
+            if start >= frames {
+                return out;
+            }
+            assert!(out.len() < 10_000, "no progress");
+        }
     }
 
-    fn latency(&self) -> u32 {
-        self.latency
+    #[test]
+    fn a_block_with_few_events_is_one_piece() {
+        let e = at([0, 5, 9]);
+        assert_eq!(pieces(&e, 64, 4096), [(0, 64, 0, 3)]);
+        assert_eq!(pieces(&[], 64, 4096), [(0, 64, 0, 0)]);
     }
 
-    fn adopt(&mut self, _old: &mut dyn Processor) -> Adopted {
-        // A third-party plugin's voices cannot move between instances (U32)
-        Adopted::No
+    #[test]
+    fn too_many_events_are_split_over_pieces_and_none_is_lost() {
+        // 10 events a frame apart, room for 4 per piece
+        let e = at(0..10);
+        let p = pieces(&e, 16, 4);
+        let mut seen = 0;
+        let mut at_frame = 0;
+        for (start, end, first, last) in &p {
+            assert_eq!(*start, at_frame, "pieces follow each other");
+            assert!(end > start && last - first <= 4);
+            // Every event of a piece falls inside it
+            assert!(e[*first..*last].iter().all(|x| (*start..*end).contains(&(x.offset as usize))));
+            seen += last - first;
+            at_frame = *end;
+        }
+        assert_eq!(seen, 10);
+        assert_eq!(at_frame, 16);
+        assert!(p.len() >= 3);
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+    #[test]
+    fn many_events_at_one_offset_move_on_instead_of_getting_lost() {
+        let e = at(std::iter::repeat_n(3, 20));
+        let p = pieces(&e, 8, 8);
+        assert_eq!(p.iter().map(|(_, _, f, l)| l - f).sum::<usize>(), 20);
+        assert!(p.iter().all(|(s, e, f, l)| e > s && l - f <= 8));
+    }
+
+    #[test]
+    fn events_past_the_end_do_not_panic() {
+        let e = at(std::iter::repeat_n(100, 10));
+        let p = pieces(&e, 4, 3);
+        assert!(p.iter().all(|(_, end, _, _)| *end <= 4));
     }
 }

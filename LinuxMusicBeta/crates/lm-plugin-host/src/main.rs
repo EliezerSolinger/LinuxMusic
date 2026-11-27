@@ -1,10 +1,12 @@
 //! `lm-plugin-host`: the helper process that hosts one third-party plugin out of the core (interfaces.md, I-9.6).
 //!
-//! - `lm-plugin-host run`: hosts one instance. The core sends `load` on the standard input (the format, the plugin,
-//!   the shared block's name, the saved state and parameters); the helper answers `ready` and then processes a
-//!   block every time the core asks through the shared block (a thread waiting on its `REQUEST` word), while the main
-//!   thread answers `save`, `gui` and `quit` on the control channel. The end of the standard input (the core is gone)
-//!   ends it.
+//! - `lm-plugin-host run`: hosts one instance. The core sends the shared block's descriptor on the socket it started
+//!   the helper with (descriptor 3: the helper never opens a block by name, and the sealed object cannot be resized
+//!   under it) and then `load` on the standard input (the format, the plugin, the saved state and parameters); the
+//!   helper answers `ready` and then processes a block every time the core asks through the shared block (a thread
+//!   waiting on its `REQUEST` word), while the main thread answers `save`, `gui` and `quit` on the control channel.
+//!   The helper ends by itself when the core is gone: the end of the standard input, or a parent that changed
+//!   (checked from a thread of its own, for a main thread stuck inside a plugin).
 //! - `lm-plugin-host files <format> [--path P]...`: for the formats whose listing runs plugin code (CLAP, VST3,
 //!   LADSPA), the files to list, found without running any; the scan lists each file in a helper of its own.
 //! - `lm-plugin-host list <format> [--path P]... [--file F]`: the plugins of a format (or of one file).
@@ -26,13 +28,14 @@ mod dual;
 mod expressions;
 mod ladspa;
 mod lv2;
+mod shared;
 mod test_plugins;
 mod vst3;
 
 use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 use std::time::Duration;
 
 use lm_base::{Error, Result};
@@ -42,8 +45,9 @@ use lm_plugin_proxy::layout::{
 use lm_plugin_proxy::protocol::{PROTOCOL, error_to, hex, read_message, unhex, write_message};
 use lm_render::EventKind;
 use lm_state::Value;
-use lm_sys_ipc::SharedMemory;
+use lm_sys_ipc::{FdChannel, SharedMemory};
 
+use crate::shared::Shared;
 use crate::backend::{Listed, Plugin, Transport, WindowRequest, WindowState, unknown_format};
 
 /// The most channels a plugin gets per direction
@@ -56,6 +60,14 @@ const AUDIO_PRIORITY: u32 = 40;
 const RTKIT_TIMEOUT: Duration = Duration::from_secs(2);
 /// How often the plugin's main thread gets its turn
 const IDLE: Duration = Duration::from_millis(10);
+/// How long the main thread waits for the audio thread's block to end before a turn of its own is skipped (`idle`)
+const IDLE_WAIT: Duration = Duration::from_millis(2);
+/// How long a request (state, window) waits for the plugin before it is answered `plugin_host.busy`
+const CONTROL_WAIT: Duration = Duration::from_secs(3);
+/// How long the descriptor that goes before a `load` may take to arrive (it was sent already)
+const FD_WAIT: Duration = Duration::from_secs(5);
+/// After the control channel closes, the longest the helper takes to end by itself before it is ended
+const EXIT_GRACE: Duration = Duration::from_secs(3);
 
 fn say(v: &Value) {
     let mut out = std::io::stdout().lock();
@@ -161,7 +173,7 @@ fn realtime() -> Option<lm_sys_linux::RealtimeGuard> {
 }
 
 /// The audio side: waits for a block, processes it, answers
-fn audio_loop(shm: Arc<SharedMemory>, layout: Layout, plugin: Arc<Mutex<Box<dyn Plugin>>>, quit: Arc<AtomicBool>) {
+fn audio_loop(shm: Arc<SharedMemory>, layout: Layout, plugin: Arc<Shared>, quit: Arc<AtomicBool>) {
     lm_sys_clap::set_thread_role(lm_sys_clap::ThreadRole::Audio);
     // `LM_PLUGIN_HOST_NO_RT` turns it off
     #[cfg(target_os = "linux")]
@@ -218,8 +230,9 @@ fn audio_loop(shm: Arc<SharedMemory>, layout: Layout, plugin: Arc<Mutex<Box<dyn 
         let latency;
         changes.clear();
         gestures.clear();
-        {
-            let mut p = plugin.lock().unwrap_or_else(PoisonError::into_inner);
+        // The audio thread never waits for the plugin: when the main thread holds it (state, window, a restart) this
+        // block is silence and the loop goes on (see `shared`)
+        if let Some(mut p) = plugin.audio() {
             // The channel lists the plugin gets, on the stack (no allocation per block)
             let mut iref: [&[f32]; MAX_CHANNELS] = [&[]; MAX_CHANNELS];
             let mut oref: [&mut [f32]; MAX_CHANNELS] = std::array::from_fn(|_| <&mut [f32]>::default());
@@ -236,6 +249,11 @@ fn audio_loop(shm: Arc<SharedMemory>, layout: Layout, plugin: Arc<Mutex<Box<dyn 
             if p.state_changed() {
                 words[w::STATE].store(1, Ordering::Release);
             }
+        } else {
+            for b in outs.iter_mut() {
+                b[..frames].fill(0.0);
+            }
+            latency = words[w::LATENCY].load(Ordering::Relaxed);
         }
         for (ch, b) in outs.iter().enumerate() {
             put(words, layout.output(ch), &b[..frames]);
@@ -286,7 +304,7 @@ fn gui_reply(state: &WindowState) -> Value {
 
 /// One plugin instance the helper runs: its plugin, its shared block and its audio thread
 struct Slot {
-    plugin: Arc<Mutex<Box<dyn Plugin>>>,
+    plugin: Arc<Shared>,
     shm: Arc<SharedMemory>,
     quit: Arc<AtomicBool>,
     audio: Option<std::thread::JoinHandle<()>>,
@@ -311,13 +329,19 @@ impl Slot {
 }
 
 /// Loads the plugin a `load` message names, starts its audio thread; returns the slot and the `ready` answer
-fn load_slot(load: &Value, paths: &[PathBuf]) -> Result<(Slot, Value)> {
+fn load_slot(load: &Value, id: i64, paths: &[PathBuf], fds: &FdChannel) -> Result<(Slot, Value)> {
     let text = |k: &str| lm_plugin_proxy::protocol::text(load, k);
     let format = text("format")?.to_owned();
     let uri = text("uri")?.to_owned();
     let file = load.get("file").and_then(Value::as_text).map(PathBuf::from);
     let words = lm_plugin_proxy::protocol::int(load, "words")?;
-    let shm = SharedMemory::open(text("shm")?, usize::try_from(words).map_err(|_| Error::new("plugin_host.message"))?)?;
+    // The block came over the socket before this message, tagged with the instance's number; the core made it, sized
+    // it and (on Linux) sealed it, and `from_fd` checks all that
+    let (fd, tag) = fds.recv(FD_WAIT)?;
+    if tag != id as u64 {
+        return Err(Error::new("plugin_host.block"));
+    }
+    let shm = SharedMemory::from_fd(fd, usize::try_from(words).map_err(|_| Error::new("plugin_host.message"))?)?;
     let layout = Layout::read_header(shm.words()).ok_or_else(|| Error::new("plugin_host.block"))?;
     let rate = shm.words()[w::RATE].load(Ordering::Relaxed);
     let mut plugin = open(&format, &uri, file.as_deref(), paths, rate, layout.max_block)?;
@@ -352,7 +376,7 @@ fn load_slot(load: &Value, paths: &[PathBuf]) -> Result<(Slot, Value)> {
     shm.words()[w::LATENCY].store(plugin.latency(), Ordering::Release);
     shm.words()[w::STATUS].store(STATUS_READY, Ordering::Release);
     let shm = Arc::new(shm);
-    let plugin = Arc::new(Mutex::new(plugin));
+    let plugin = Arc::new(Shared::new(plugin));
     let quit = Arc::new(AtomicBool::new(false));
     let audio = {
         let (shm, plugin, quit) = (Arc::clone(&shm), Arc::clone(&plugin), Arc::clone(&quit));
@@ -369,7 +393,10 @@ fn answer(slot: &Slot, m: &Value, gui_used: &mut bool) -> Option<Value> {
     let plugin = &slot.plugin;
     Some(match m.get("t").and_then(Value::as_text) {
         Some("save") => {
-            let mut p = plugin.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut p = match plugin.main(CONTROL_WAIT) {
+                Ok(p) => p,
+                Err(e) => return Some(error(&e)),
+            };
             match p.save() {
                 Ok(c) => Value::object([
                     ("t", Value::text("state")),
@@ -385,7 +412,7 @@ fn answer(slot: &Slot, m: &Value, gui_used: &mut bool) -> Option<Value> {
                 .and_then(Value::as_text)
                 .ok_or_else(|| Error::new("plugin_host.message"))
                 .and_then(unhex)
-                .and_then(|c| plugin.lock().unwrap_or_else(PoisonError::into_inner).restore(&c));
+                .and_then(|c| plugin.main(CONTROL_WAIT)?.restore(&c));
             match r {
                 Ok(()) => Value::object([("t", Value::text("restored"))]),
                 Err(e) => error(&e),
@@ -404,7 +431,7 @@ fn answer(slot: &Slot, m: &Value, gui_used: &mut bool) -> Option<Value> {
                 (Some(true), None) => WindowRequest::Show,
                 _ => WindowRequest::Hide,
             };
-            match plugin.lock().unwrap_or_else(PoisonError::into_inner).window(request) {
+            match plugin.main(CONTROL_WAIT).and_then(|mut p| p.window(request)) {
                 Ok(state) => gui_reply(&state),
                 Err(e) => error(&e),
             }
@@ -427,6 +454,8 @@ fn tagged(v: Value, id: Option<i64>) -> Value {
 /// the core chose, every later message and answer about an instance carries its `"i"`, `quit` with an `"i"` ends that
 /// instance only, and the end of the standard input ends all. The main thread is every plugin's main thread
 fn run(paths: &[PathBuf], group: bool) -> Result<()> {
+    // The socket the shared blocks' descriptors arrive on (the core started the helper with it)
+    let fds = FdChannel::inherited()?;
     say(&Value::object([
         ("t", Value::text("hello")),
         ("protocol", Value::int(PROTOCOL)),
@@ -444,13 +473,17 @@ fn run(paths: &[PathBuf], group: bool) -> Result<()> {
                     break;
                 }
             }
+            // The control channel closed (the core is gone, or sent what cannot be read): the main loop ends the
+            // helper in order, and if the main thread is stuck inside a plugin the helper ends anyway
+            std::thread::sleep(EXIT_GRACE);
+            lm_sys_ipc::exit_now(0);
         })
         .map_err(|e| Error::new("plugin_host.thread").arg("error", e.to_string()))?;
     let mut slots: std::collections::BTreeMap<i64, Slot> = std::collections::BTreeMap::new();
     // Alone, the one instance is loaded before anything else, and a failure ends the helper
     if !group {
         let Ok(load) = rx.recv() else { return Ok(()) };
-        let (slot, ready) = load_slot(&load, paths)?;
+        let (slot, ready) = load_slot(&load, 0, paths, &fds)?;
         slots.insert(0, slot);
         say(&ready);
     }
@@ -475,7 +508,8 @@ fn run(paths: &[PathBuf], group: bool) -> Result<()> {
             Ok(m) => m,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 for (id, slot) in &slots {
-                    let mut p = slot.plugin.lock().unwrap_or_else(PoisonError::into_inner);
+                    // A plugin the audio thread is still processing keeps its turn: this one is skipped
+                    let Some(mut p) = slot.plugin.main_for(IDLE_WAIT) else { continue };
                     p.idle();
                     // The user closed a window: the core is told, so its button shows the truth
                     if p.window_closed() {
@@ -494,7 +528,7 @@ fn run(paths: &[PathBuf], group: bool) -> Result<()> {
         };
         let reply_id = group.then_some(id);
         if group && m.get("t").and_then(Value::as_text) == Some("load") {
-            let reply = match load_slot(&m, paths) {
+            let reply = match load_slot(&m, id, paths, &fds) {
                 Ok((slot, ready)) => {
                     slots.insert(id, slot);
                     ready
@@ -526,6 +560,8 @@ fn run(paths: &[PathBuf], group: bool) -> Result<()> {
 }
 
 fn main() {
+    // Whatever the helper was asked to do, it does not outlive the core that started it
+    lm_sys_ipc::exit_when_parent_dies();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("run") => run(&paths(&args), args.iter().any(|a| a == "--group")),

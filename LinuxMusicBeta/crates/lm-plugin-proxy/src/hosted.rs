@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use lm_base::{Error, Result};
 use lm_state::Value;
-use lm_sys_ipc::SharedMemory;
+use lm_sys_ipc::{FdChannel, HELPER_FD, SharedMemory};
 
 use crate::layout::{Layout, clamp_latency, w};
 use crate::protocol::{PROTOCOL, encode_message, error_from, hex, read_message, unhex};
@@ -192,6 +192,10 @@ pub struct Process {
     routes: Routes,
     group: bool,
     next: AtomicI64,
+    /// The way the shared blocks' descriptors reach the helper (the helper never opens anything by name)
+    fds: FdChannel,
+    /// Held while a block's descriptor and its `load` are sent, so a group's helper receives them in the same order
+    load_order: Mutex<()>,
 }
 
 impl Process {
@@ -204,12 +208,16 @@ impl Process {
         for p in &config.paths {
             command.arg("--path").arg(p);
         }
+        let (fds, helper_end) = FdChannel::pair()?;
+        lm_sys_ipc::pass_to_child(&mut command, &helper_end, HELPER_FD);
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
             .map_err(|e| io("plugin_host.spawn", &e).arg("program", config.binary.display().to_string()))?;
+        // The helper has its end now (and only it: the core's copy would keep the socket open after the helper died)
+        drop(helper_end);
         let stdin = child.stdin.take().ok_or_else(|| Error::new("plugin_host.spawn"))?;
         let stdout = child.stdout.take().ok_or_else(|| Error::new("plugin_host.spawn"))?;
         let routes: Routes = Arc::new(Mutex::new(BTreeMap::new()));
@@ -264,6 +272,8 @@ impl Process {
             routes,
             group,
             next: AtomicI64::new(if group { 1 } else { 0 }),
+            fds,
+            load_order: Mutex::new(()),
         });
         let hello = wait_reply(&hello_rx, until, &["hello"]).and_then(|h| {
             if h.get("protocol").and_then(Value::as_int) == Some(PROTOCOL) {
@@ -364,7 +374,7 @@ pub fn start(config: &HostConfig, req: &LoadRequest) -> Result<(Proxy, Arc<Hoste
 /// [`start`], in the helper of a group when there is one (several instances in one process)
 pub fn start_in(config: &HostConfig, req: &LoadRequest, group: Option<&Group>) -> Result<(Proxy, Arc<Hosted>)> {
     let layout = Layout::new(req.max_block, req.inputs, req.outputs, req.sidechain);
-    let mut shm = SharedMemory::create(&lm_sys_ipc::unique_name(), layout.words())?;
+    let mut shm = SharedMemory::create(layout.words())?;
     layout.write_header(shm.words(), req.rate);
     let until = Instant::now() + config.load_timeout;
     let process = match group {
@@ -393,20 +403,27 @@ pub fn start_in(config: &HostConfig, req: &LoadRequest, group: Option<&Group>) -
         ("format", Value::text(req.format.as_str())),
         ("uri", Value::text(req.uri.as_str())),
         ("file", req.file.as_deref().map_or(Value::NULL, Value::text)),
-        ("shm", Value::text(shm.name())),
         ("words", Value::int(layout.words() as i64)),
         ("chunk", req.chunk.as_ref().map_or(Value::NULL, |c| Value::text(hex(c)))),
         ("params", params),
     ]);
-    if let Err(e) = process.send(&load, id) {
-        return Err(fail(&process, e));
+    // The block's descriptor goes first, then the `load` that tells the helper to take it (the same order for a
+    // group's helper, whatever the instances' threads do). The core's copy of the descriptor is closed at once
+    {
+        let _order = process.load_order.lock().unwrap_or_else(PoisonError::into_inner);
+        let sent = match shm.fd() {
+            Some(fd) => process.fds.send(fd, id as u64),
+            None => Err(Error::new("ipc.shm.create")),
+        };
+        if let Err(e) = sent.and_then(|()| process.send(&load, id)) {
+            return Err(fail(&process, e));
+        }
     }
+    shm.close_fd();
     let ready = match wait_reply(&rx, until, &["ready"]) {
         Ok(r) => r,
         Err(e) => return Err(fail(&process, e)),
     };
-    // The helper has it mapped: the name can go
-    shm.unlink();
     // What the helper says is the plugin's own number: limited here, once, before anything allocates by it
     let latency = clamp_latency(ready.get("latency").and_then(Value::as_int).unwrap_or(0).clamp(0, i64::from(u32::MAX)) as u32);
     shm.words()[w::LATENCY].store(latency, Ordering::Release);
