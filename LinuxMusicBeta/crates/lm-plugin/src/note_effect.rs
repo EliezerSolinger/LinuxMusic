@@ -186,7 +186,7 @@ impl<E: NoteEffect> Processor for NoteFx<E> {
 /// starts with the same values, and a later expression moves the notes already made. Fixed capacity
 #[derive(Clone, Debug)]
 pub struct Expressions {
-    bases: Vec<(NoteId, [f32; 2])>,
+    bases: Vec<(NoteId, [f32; EXPRESSION_COUNT])>,
 }
 
 impl Expressions {
@@ -202,7 +202,7 @@ impl Expressions {
     /// A note began (all its expressions at 0)
     pub fn begin(&mut self, note: NoteId) {
         if self.bases.len() < self.bases.capacity() && !self.bases.iter().any(|(n, _)| *n == note) {
-            self.bases.push((note, [0.0; 2]));
+            self.bases.push((note, [0.0; EXPRESSION_COUNT]));
         }
     }
 
@@ -235,12 +235,17 @@ impl Expressions {
     }
 }
 
-const EXPRESSIONS: [Expression; 2] = [Expression::Pan, Expression::Tuning];
+/// Every note expression, in the order [`Expressions`] keeps their values
+const EXPRESSIONS: [Expression; EXPRESSION_COUNT] =
+    [Expression::Pan, Expression::Tuning, Expression::Pressure, Expression::Timbre];
+const EXPRESSION_COUNT: usize = 4;
 
 fn slot(e: Expression) -> usize {
     match e {
         Expression::Pan => 0,
         Expression::Tuning => 1,
+        Expression::Pressure => 2,
+        Expression::Timbre => 3,
     }
 }
 
