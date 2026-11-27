@@ -118,9 +118,14 @@ impl Wrap {
     }
 }
 
+/// The largest position, in frames, that [`read`] indexes with
+const POSITION_LIMIT: f64 = 1.0e15;
+
 /// The frame at `position` (frames, fractional) of `pcm`
 #[inline]
 pub fn read(pcm: &Pcm, position: f64, quality: Quality, wrap: Wrap, table: &SincTable) -> [f32; 2] {
+    // A position that is not finite or beyond any sample would overflow the integer indices below
+    let position = if position.is_finite() { position.clamp(-POSITION_LIMIT, POSITION_LIMIT) } else { 0.0 };
     let i = position.floor();
     let frac = (position - i) as f32;
     let i = i as i64;
@@ -172,6 +177,17 @@ mod tests {
 
     fn ramp() -> Pcm {
         Pcm::mono(1000, (0..64).map(|i| i as f32).collect())
+    }
+
+    #[test]
+    fn absurd_positions_do_not_overflow() {
+        let table = SincTable::new();
+        let p = ramp();
+        for q in [Quality::Linear, Quality::Cubic, Quality::Sinc] {
+            for pos in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN, 1.0e300, -1.0e300, 9.3e18] {
+                let _ = read(&p, pos, q, Wrap::NONE, &table);
+            }
+        }
     }
 
     #[test]

@@ -460,6 +460,10 @@ impl GuitarixProcessor {
                 let (Some(&desc), Some(spec)) = (self.plan.param_desc.get(index), self.plan.params.get(index)) else {
                     return;
                 };
+                if !value.is_finite() {
+                    // (NaN would pass the clamp and silence the unit until the parameter moved again)
+                    return;
+                }
                 let value = value.clamp(spec.min as f32, spec.max as f32);
                 self.params[index] = value;
                 // (a logarithmic one glides there, piece by piece)

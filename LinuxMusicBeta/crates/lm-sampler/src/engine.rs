@@ -880,6 +880,8 @@ fn render_sub(
         let step = v.glide_rate * left.len() as f32 / rate;
         v.glide = if v.glide > 0.0 { (v.glide - step).max(0.0) } else { (v.glide + step).min(0.0) };
     }
+    // (a note expression or a host value may be anything: ten octaves either way is more than any pitch needs)
+    let cents = if cents.is_finite() { cents.clamp(-12_000.0, 12_000.0) } else { 0.0 };
     let step = v.ratio * f64::from(libm::exp2f(cents / 1200.0));
     if let Some(f) = &zone.filter {
         let mut c = 1200.0 * libm::log2f((f.cutoff / 440.0).max(1.0e-3)) + 6900.0;

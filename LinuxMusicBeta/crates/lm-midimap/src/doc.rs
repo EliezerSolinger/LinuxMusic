@@ -273,6 +273,17 @@ impl Mapping {
             takeover: Takeover::from_name(name("takeover", "pickup")).ok_or_else(|| bad("transform.takeover"))?,
             button: Button::from_name(name("button", "toggle")).ok_or_else(|| bad("transform.button"))?,
         };
+        // (a value past f32 range became infinite in the cast, and an infinite range gives NaN in the transform)
+        for (value, field) in [
+            (transform.min, "transform.min"),
+            (transform.max, "transform.max"),
+            (transform.curve, "transform.curve"),
+            (transform.step, "transform.step"),
+        ] {
+            if !value.is_finite() {
+                return Err(bad(field));
+            }
+        }
         let feedback_to = match v.get("feedbackTo") {
             Some(f) if !f.is_null() => {
                 let s = DocSource::from_value(f)?;
@@ -350,6 +361,24 @@ impl Mapping {
 mod tests {
     use super::*;
     use crate::transform::Encoding;
+
+    #[test]
+    fn a_transform_that_overflows_f32_is_refused() {
+        let m = Mapping {
+            id: None,
+            source: DocSource { port: Arc::from(""), channel: None, message: Message::Cc { number: 1 } },
+            touch: None,
+            target: MapTarget::Param { node: NodeRef::Id(NodeId::parse("k:3").unwrap()), key: "volume".into() },
+            transform: Transform::default(),
+            feedback: true,
+            consume: false,
+            feedback_to: None,
+        };
+        let node = m.to_value();
+        assert!(Mapping::from_value(&node).is_ok());
+        let bad_transform = Value::object([("max", Value::real(1.0e39).unwrap())]);
+        assert!(Mapping::from_value(&node.with("transform", bad_transform)).is_err());
+    }
 
     #[test]
     fn round_trip() {

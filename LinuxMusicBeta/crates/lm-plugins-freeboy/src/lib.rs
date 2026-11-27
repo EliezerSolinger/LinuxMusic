@@ -262,6 +262,10 @@ fn envelope(volume: f32, direction: f32, steps: f32) -> u8 {
 impl FreeBoySynth {
     /// The synth of a complete state at `rate` Hz (it makes the fresh unit: build time only)
     pub fn from_state(state: &Value, rate: u32) -> Result<Self> {
+        // (the blip buffer divides by the rate, and its clock factor rounds to zero at a very low one)
+        if !(8_000..=768_000).contains(&rate) {
+            return Err(lm_base::Error::new("plugin.freeboy.rate").arg("rate", i64::from(rate)));
+        }
         let s = StateView::new(state);
         let mut knobs = [0.0f32; PARAMS];
         for (k, key) in knobs.iter_mut().zip(&KEYS[..PARAMS]) {
@@ -365,6 +369,12 @@ impl FreeBoySynth {
             if voice.apu.buf.frames_avail() <= 0 {
                 voice.time = 0;
                 voice.apu.end_frame(FRAME_LENGTH);
+                if voice.apu.buf.frames_avail() <= 0 {
+                    // The frame made nothing: silence rather than spinning on the audio thread
+                    left[done..].fill(0.0);
+                    right[done..].fill(0.0);
+                    break;
+                }
             }
             let want = (left.len() - done).min(voice.samples.len());
             let got = voice.apu.buf.read(&mut voice.samples[..want]);
@@ -442,4 +452,17 @@ fn build(state: &Value, cx: &BuildContext<'_>) -> Result<Box<dyn Processor>> {
     let params = &DESCRIPTOR.schema().params;
     let instrument = Instrument::new(synth, &s, params, &cx.spec, cx.resources, VOICES)?;
     Ok(Box::new(instrument))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_rate_of_zero_or_absurd_is_an_error_not_a_panic() {
+        let state = Value::object(Vec::<(&str, Value)>::new());
+        assert!(FreeBoySynth::from_state(&state, 0).is_err());
+        assert!(FreeBoySynth::from_state(&state, 10).is_err());
+        assert!(FreeBoySynth::from_state(&state, u32::MAX).is_err());
+    }
 }

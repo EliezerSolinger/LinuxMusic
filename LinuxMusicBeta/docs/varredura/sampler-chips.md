@@ -292,3 +292,35 @@ Correção: em `Mapping::from_value`, recusar valores não finitos com `midimap.
 - Estes achados vêm de leitura. Nenhum foi reproduzido com teste ou build. Os de maior prioridade (C1, C2, C3, C4, C6, C7) merecem teste de regressão com ficheiro malformado ou caso limite.
 - Em `dev` o perfil tem overflow checks ligado, então os overflows de A1 e A3 viram pânico em debug; em `release` (overflow checks desligado) viram wrap silencioso. Ambos os casos são errados.
 - Nos plugins, `catch_unwind` converte pânico de build em erro e pânico de `process` em nó morto (silêncio). Isso contém o crash, mas não corrige o caso: o instrumento fica mudo.
+
+## Resultado da confirmação
+
+Confirmação por leitura do código; nada foi executado (só `cargo check`). Commit 1: `1d27b88c1`; commit 2: o seguinte, "Sampler chips: ..." (ver o relatório final).
+
+| Achado | Veredito | Commit |
+|---|---|---|
+| C1 SF2 índices de bag fora de ordem | confirmado e corrigido: `validate_indices` no `parse` recusa índices decrescentes | 1d27b88c1 |
+| C2 SF2 amostra de tamanho zero | confirmado e corrigido: `decode` recusa `end <= start` e SF3 vazio | 1d27b88c1 |
+| C3 SFZ WAV vazio | confirmado e corrigido: `sampler.sfz.empty_sample` ao carregar | 1d27b88c1 |
+| C4 GIG explosão de combinações | confirmado e corrigido: `zones` limitado a `1 << bits` na leitura (total de bits já ≤ 8) | 1d27b88c1 |
+| C5 alocação pelo cabeçalho em `decode_file` | confirmado e corrigido: leitura em blocos com teto de 2^28 amostras | 1d27b88c1 |
+| C6 OpulenZ tabela de taxas | confirmado e corrigido: tabelas com 76 entradas (60 + 15 + 1) | 1d27b88c1 |
+| C7 ampandir taxa do `.nam` | confirmado e corrigido (por outro agente, commit 257375caa, antes do meu): `checked_model_rate` | 257375caa |
+| A1 interp posição enorme | confirmado e corrigido na raiz: `read` limita a posição a 1e15 e trata não finito; cents limitados a ±12000 no passo da voz | segundo commit |
+| A2 SFZ `#include` sem orçamento | confirmado e corrigido: máximo de 64 inclusões no total | 1d27b88c1 |
+| A3 SFZ overflow inteiro | confirmado e corrigido: `parse_key` com `checked_*`, `saturating_add` em `end` e `loop_end` | 1d27b88c1 |
+| A4 GIG zona de velocidade | confirmado e corrigido: `.min(zones - 1)` | 1d27b88c1 |
+| M2 SFZ ordem do `#define` | confirmado e corrigido: `BTreeMap` | 1d27b88c1 |
+| M3 `sample_frames` quadrático | confirmado e corrigido: `HashSet` | segundo commit |
+| M8 freeboy taxa 0 | confirmado e corrigido: `from_state` recusa taxa fora de 8 kHz a 768 kHz | segundo commit |
+| M9 freeboy ciclo no audio thread | confirmado e corrigido: silêncio se o quadro não produz amostras | segundo commit |
+| M10 guitarix parâmetro NaN | confirmado e corrigido: não finito é ignorado antes do clamp | segundo commit |
+| M11 ampandir loudness | confirmado e corrigido: loudness não finito vira ganho 1 | segundo commit |
+| M12 stk banded_wg | confirmado e corrigido: guarda `min_len <= 0` e `modes.max(1)` | segundo commit |
+| M13 midimap valores não finitos | confirmado e corrigido: `Mapping::from_value` recusa min, max, curve, step não finitos | segundo commit |
+| M1 saída depende do bloco do host | confirmado e não corrigido: alinhar os sub-blocos ao quadro absoluto muda o som e exige rever o motor e seus testes | n/a |
+| M4 SF2 chunk truncado | falso na prática: a amostra além do chunk já dá `a sample past the data`; o resto é descartado sem efeito sonoro | n/a |
+| M5 GIG busca linear | não tratado: custo só em arquivos grandes, sem risco de falha | n/a |
+| M6 arquivo temporário Ogg | não tratado: precisa de criação exclusiva e mudança de interface do decodificador | n/a |
+| M7 bank/program fora de intervalo | não tratado: o esquema do plugin já limita o campo | n/a |
+| SID | sem achado | n/a |

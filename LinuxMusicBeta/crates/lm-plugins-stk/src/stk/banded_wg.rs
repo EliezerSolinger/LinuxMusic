@@ -312,6 +312,10 @@ impl BandedWG {
         }
         // (the pulse is as long in time as the library's at 44.1 kHz)
         let min_len = self.delay[self.modes - 1].reference;
+        if min_len <= 0.0 {
+            // (a line that could not be set: the ratio below would be infinite)
+            return;
+        }
         for i in 0..self.modes {
             let n = (self.delay[i].reference / min_len) as i32;
             let n = if self.rate.is_reference() { n } else { (f64::from(n) / self.rate.k).round() as i32 };
@@ -396,7 +400,7 @@ impl BandedWG {
             }
             input = self.bow_velocity - self.velocity_input;
             input *= self.bow_table.tick(input);
-            input /= self.modes as f64;
+            input /= self.modes.max(1) as f64;
         }
         let mut data = 0.0;
         for k in 0..self.modes {
@@ -405,5 +409,22 @@ impl BandedWG {
             data += self.bandpass[k].last_out();
         }
         data * 4.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_line_without_length_and_no_modes_do_not_spin_or_give_nan() {
+        let mut wg = BandedWG::new(Rate::new(44_100.0));
+        let last = wg.modes - 1;
+        wg.delay[last].reference = 0.0;
+        wg.pluck(1.0);
+        wg.modes = 0;
+        wg.track_velocity = false;
+        wg.do_pluck = false;
+        assert!(wg.tick().is_finite());
     }
 }

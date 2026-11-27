@@ -112,7 +112,7 @@ impl Amp {
             _ => checked_model_rate(rate, rate)?,
         };
         let resampled = (model_rate - rate).abs() > 0.5;
-        let gain = model.loudness().map_or(1.0, |l| 10f64.powf((TARGET_LOUDNESS - l) / 20.0) as f32);
+        let gain = model.loudness().filter(|l| l.is_finite()).map_or(1.0, |l| 10f64.powf((TARGET_LOUDNESS - l) / 20.0) as f32);
         let model_frames = (MAX_FRAMES as f64 * model_rate / rate).ceil() as usize + 64;
         model.reset(model_rate, model_frames)?;
         let mut latency = 0;

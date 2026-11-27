@@ -320,12 +320,11 @@ impl Instrument {
 
     /// Frames of sample data the zones hold (shared samples counted once, by address)
     pub fn sample_frames(&self) -> usize {
-        let mut seen: Vec<*const Pcm> = Vec::new();
+        let mut seen: std::collections::HashSet<*const Pcm> = std::collections::HashSet::new();
         let mut total = 0;
         for z in &self.zones {
             let p = Arc::as_ptr(&z.sample);
-            if !seen.contains(&p) {
-                seen.push(p);
+            if seen.insert(p) {
                 total += z.sample.frames();
             }
         }
