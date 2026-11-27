@@ -184,3 +184,26 @@ fn garbage_is_refused() {
     assert!(SoundFont::parse(b"RIFF....WAVE").is_err());
     assert!(SoundFont::parse(&[]).is_err());
 }
+
+/// The offset of a chunk's body in the font's bytes
+fn body_of(bytes: &[u8], id: &[u8; 4]) -> usize {
+    bytes.windows(4).position(|w| w == id).expect("the chunk is there") + 8
+}
+
+#[test]
+fn bag_indices_that_go_backwards_are_refused() {
+    let mut bytes = test_font();
+    // The second instrument bag starts its generators after the third one
+    let at = body_of(&bytes, b"ibag") + 4;
+    bytes[at..at + 2].copy_from_slice(&20u16.to_le_bytes());
+    assert!(SoundFont::parse(&bytes).is_err());
+}
+
+#[test]
+fn a_sample_of_no_frames_is_an_error() {
+    let mut bytes = test_font();
+    // end = start
+    let at = body_of(&bytes, b"shdr") + 24;
+    bytes[at..at + 4].copy_from_slice(&0u32.to_le_bytes());
+    assert!(import(&bytes, 0, 5, None).is_err());
+}

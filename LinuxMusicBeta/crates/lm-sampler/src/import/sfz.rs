@@ -10,7 +10,7 @@
 //! `hirand`, `seq_length`, `seq_position`, `rt_decay` and `output`. The keyswitches, the controller conditions, the
 //! LFOs and the effects are skipped.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -52,14 +52,22 @@ pub fn parse_key(text: &str) -> Option<u8> {
         _ => {}
     }
     let octave: i32 = t.get(i..)?.parse().ok()?;
-    let n = (octave + 1) * 12 + semis;
+    let n = octave.checked_add(1)?.checked_mul(12)?.checked_add(semis)?;
     (0..=127).contains(&n).then_some(n as u8)
 }
 
 /// Splits the text into (header, opcodes) in order. `#define`s are applied, comments (`//`, `/* */`) dropped
 /// and `#include` lines read through `include`
-fn tokenize(text: &str, include: &mut dyn FnMut(&str) -> Option<String>, depth: usize) -> Vec<(String, Opcodes)> {
-    let mut defines: HashMap<String, String> = HashMap::new();
+/// The most `#include`s one file may expand to in total, so a file that includes itself cannot multiply forever
+const MAX_INCLUDES: usize = 64;
+
+fn tokenize(
+    text: &str,
+    include: &mut dyn FnMut(&str) -> Option<String>,
+    depth: usize,
+    budget: &mut usize,
+) -> Vec<(String, Opcodes)> {
+    let mut defines: BTreeMap<String, String> = BTreeMap::new();
     let mut out: Vec<(String, Opcodes)> = Vec::new();
     let text = strip_comments(text);
     let mut current: Option<(String, Opcodes)> = None;
@@ -76,10 +84,11 @@ fn tokenize(text: &str, include: &mut dyn FnMut(&str) -> Option<String>, depth: 
             continue;
         }
         if let Some(rest) = line.strip_prefix("#include") {
-            if depth < 8 {
+            if depth < 8 && *budget > 0 {
+                *budget -= 1;
                 let name = rest.trim().trim_matches('"');
                 if let Some(inner) = include(name) {
-                    let sub = tokenize(&inner, include, depth + 1);
+                    let sub = tokenize(&inner, include, depth + 1, budget);
                     out.extend(current.take());
                     out.extend(sub);
                 }
@@ -207,7 +216,7 @@ fn int(ops: &Opcodes, key: &str) -> Option<i64> {
 /// What reads an SFZ: its text, its folder (for the samples and `#include`) and the loader of the samples
 pub fn import(text: &str, folder: &Path, loader: &mut dyn SampleLoader) -> Result<Instrument> {
     let mut include = |name: &str| std::fs::read_to_string(folder.join(name.replace('\\', "/"))).ok();
-    let tokens = tokenize(text, &mut include, 0);
+    let tokens = tokenize(text, &mut include, 0, &mut MAX_INCLUDES.clone());
     let mut control: Opcodes = Opcodes::new();
     let mut global: Opcodes = Opcodes::new();
     let mut master: Opcodes = Opcodes::new();
@@ -254,6 +263,9 @@ pub fn import(text: &str, folder: &Path, loader: &mut dyn SampleLoader) -> Resul
             Some(p) => Arc::clone(p),
             None => {
                 let p = Arc::new(loader.load(&path)?);
+                if p.frames() == 0 {
+                    return Err(Error::new("sampler.sfz.empty_sample").arg("path", path.display().to_string()));
+                }
                 cache.insert(path.clone(), Arc::clone(&p));
                 p
             }
@@ -303,10 +315,10 @@ fn region(r: &Opcodes, pcm: Arc<Pcm>) -> Zone {
     let frames = z.sample.frames() as i64;
     z.start = int(r, "offset").unwrap_or(0).clamp(0, frames - 1) as u32;
     // `end` is the last frame played (inclusive); -1 silences the region in the format: not supported, plays whole
-    z.end = int(r, "end").filter(|e| *e >= 0).map_or(0, |e| (e + 1).clamp(1, frames) as u32);
+    z.end = int(r, "end").filter(|e| *e >= 0).map_or(0, |e| e.saturating_add(1).clamp(1, frames) as u32);
     z.loop_start = int(r, "loop_start").unwrap_or(0).clamp(0, frames) as u32;
     // `loop_end` is the last frame of the loop (inclusive)
-    z.loop_end = int(r, "loop_end").map_or(0, |e| (e + 1).clamp(0, frames) as u32);
+    z.loop_end = int(r, "loop_end").map_or(0, |e| e.saturating_add(1).clamp(0, frames) as u32);
     z.loop_mode = match r.get("loop_mode").or_else(|| r.get("loopmode")).map(String::as_str) {
         Some("no_loop") => LoopMode::Off,
         Some("one_shot") => LoopMode::OneShot,

@@ -186,6 +186,9 @@ struct Channel {
     keyon: u8,
 }
 
+/// The rate tables are indexed by a rate (at most 15 << 2 = 60) plus the key scale (a key code of at most 15)
+const RATE_TABLE: usize = 60 + 15 + 1;
+
 /// One YM3812
 #[derive(Clone, Debug)]
 pub struct Opl {
@@ -195,8 +198,8 @@ pub struct Opl {
     mode: u32,
     ch: [Channel; CHANNELS],
     rythm: u8,
-    ar_table: [i32; 75],
-    dr_table: [i32; 75],
+    ar_table: [i32; RATE_TABLE],
+    dr_table: [i32; RATE_TABLE],
     fn_table: [u32; 1024],
     ams_table: usize,
     vib_table: usize,
@@ -218,8 +221,8 @@ impl Opl {
             mode: 0,
             ch: [Channel::default(); CHANNELS],
             rythm: 0,
-            ar_table: [0; 75],
-            dr_table: [0; 75],
+            ar_table: [0; RATE_TABLE],
+            dr_table: [0; RATE_TABLE],
             fn_table: [0; 1024],
             ams_table: 0,
             vib_table: 0,
@@ -251,7 +254,7 @@ impl Opl {
             self.ar_table[i] = (rate / OPL_ARRATE) as i32;
             self.dr_table[i] = (rate / OPL_DRRATE) as i32;
         }
-        for i in 60..75 {
+        for i in 60..RATE_TABLE {
             self.ar_table[i] = EG_AED - 1;
             self.dr_table[i] = self.dr_table[60];
         }
@@ -578,5 +581,26 @@ fn calc_ch(t: &Tables, ch: &mut Channel, ams: i32, vib: i32, outd: &mut i32) {
     if env_out < EG_ENT as u32 - 1 {
         advance(&mut ch.slot[1], vib);
         *outd = outd.wrapping_add(op_out(t, &ch.slot[1], env_out, feedback2));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_highest_rate_with_key_scaling_stays_inside_the_tables() {
+        let mut opl = Opl::new(3_579_545, 44_100);
+        // Operator 1 of channel 0: key scaling on, the fastest attack, decay and release
+        opl.write(0x20, 0x10);
+        opl.write(0x60, 0xff);
+        opl.write(0x80, 0xff);
+        // Block 7, the top fnum bits: key code 15
+        opl.write(0xa0, 0xff);
+        opl.write(0xb0, 0x3f);
+        let mut buf = [0i16; 256];
+        opl.update(&mut buf);
+        opl.write(0xb0, 0x1f);
+        opl.update(&mut buf);
     }
 }

@@ -9,16 +9,24 @@ use lm_sampler::import::sf2::Sf3Decoder;
 use lm_sampler::{Pcm, SampleLoader, read_wav};
 use lm_sys_sndfile::Reader;
 
+/// The most samples (frames times channels) a decoded file may hold: 1 GiB of floats
+const MAX_SAMPLES: usize = 1 << 28;
+/// How many frames are read per step
+const CHUNK_FRAMES: usize = 1 << 16;
+
 /// A file's frames as a [`Pcm`] by libsndfile (FLAC, Ogg, AIFF, MP3, WAVE of any depth)
 pub fn decode_file(path: &Path) -> Result<Pcm> {
     let mut reader = Reader::open(path)?;
     let info = *reader.info();
     let channels = info.channels.max(1);
-    let total = usize::try_from(info.frames).unwrap_or(0);
-    let mut data = vec![0.0f32; total * channels];
+    // The frame count is the header's claim: the buffer grows with what is really read, up to a ceiling
+    let ceiling = usize::try_from(info.frames).unwrap_or(0).min(MAX_SAMPLES / channels).saturating_mul(channels);
+    let mut data: Vec<f32> = Vec::new();
     let mut at = 0;
-    while at < data.len() {
-        let got = reader.read_f32(&mut data[at..])?;
+    while at < ceiling {
+        let end = (at + CHUNK_FRAMES * channels).min(ceiling);
+        data.resize(end, 0.0);
+        let got = reader.read_f32(&mut data[at..end])?;
         if got == 0 {
             break;
         }
@@ -67,5 +75,53 @@ impl Sf3Decoder for OggDecoder {
         let pcm = decoded?;
         let _ = rate;
         Ok(pcm.left().to_vec())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A mono 16-bit WAVE of `frames` frames whose header claims `claimed` bytes of data
+    fn wav(frames: usize, claimed: u32) -> Vec<u8> {
+        let mut v = b"RIFF".to_vec();
+        v.extend_from_slice(&(36 + claimed).to_le_bytes());
+        v.extend_from_slice(b"WAVEfmt ");
+        v.extend_from_slice(&16u32.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes());
+        v.extend_from_slice(&44_100u32.to_le_bytes());
+        v.extend_from_slice(&88_200u32.to_le_bytes());
+        v.extend_from_slice(&2u16.to_le_bytes());
+        v.extend_from_slice(&16u16.to_le_bytes());
+        v.extend_from_slice(b"data");
+        v.extend_from_slice(&claimed.to_le_bytes());
+        v.extend((0..frames).flat_map(|i| ((i % 1000) as i16).to_le_bytes()));
+        v
+    }
+
+    fn file(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("lm-load-test-{}-{name}.wav", std::process::id()));
+        std::fs::write(&path, bytes).expect("writes");
+        path
+    }
+
+    #[test]
+    fn a_file_longer_than_one_chunk_reads_whole() {
+        let frames = CHUNK_FRAMES * 2 + 17;
+        let path = file("long", &wav(frames, (frames * 2) as u32));
+        let pcm = decode_file(&path).expect("decodes");
+        std::fs::remove_file(&path).ok();
+        assert_eq!(pcm.frames(), frames);
+    }
+
+    #[test]
+    fn a_header_that_claims_more_than_the_file_holds_gives_what_is_there() {
+        let path = file("lying", &wav(100, u32::MAX - 100));
+        let pcm = decode_file(&path);
+        std::fs::remove_file(&path).ok();
+        if let Ok(p) = pcm {
+            assert!(p.frames() <= 100);
+        }
     }
 }

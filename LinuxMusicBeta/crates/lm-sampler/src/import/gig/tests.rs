@@ -355,3 +355,22 @@ fn only_the_chosen_instruments_samples_are_decoded() {
     assert!(import(&file, 0, 0).is_ok());
     assert!(import(&file, 0, 1).is_err());
 }
+
+#[test]
+fn zones_beyond_the_dimensions_bits_do_not_explode() {
+    // Five one-bit dimensions that claim 255 zones each: 255^5 combinations if believed
+    let dim = DimSpec { kind: DIM_LAYER, bits: 1, zones: 255 };
+    let file = write_gig(&two_waves(), &[one("Many", 0, vec![region(vec![dim; 5], vec![SlotSpec::new(0)])])]);
+    let i = import(&file, 0, 0).expect("import");
+    assert!(i.zones.len() <= 256 * 127);
+}
+
+#[test]
+fn the_last_velocity_zone_takes_the_top_velocities() {
+    // Three zones of 42 on two bits: velocities 126 and 127 would be zone 3 without the clamp
+    let dim = DimSpec { kind: 0x82, bits: 2, zones: 3 };
+    let slots = vec![SlotSpec::new(0), SlotSpec::new(1), SlotSpec::new(0)];
+    let file = write_gig(&two_waves(), &[one("Vel3", 0, vec![region(vec![dim], slots)])]);
+    let i = import(&file, 0, 0).expect("import");
+    assert!(i.zones.iter().any(|z| z.vels.1 == 127));
+}

@@ -616,7 +616,7 @@ fn velocity_zone(region: &Region, veldim: usize, base: usize, vel_bit: u32, v: u
         }
         return zones - 1;
     }
-    usize::from(v) / d.zone_size() as usize
+    (usize::from(v) / d.zone_size() as usize).min(zones - 1)
 }
 
 fn sample_attenuation(gain: i32) -> f32 {
@@ -674,7 +674,9 @@ fn read_region(rgn: &Ck<'_>, v3: bool, wave_of: &dyn Fn(u32) -> Option<usize>) -
         }
         let bits = u32::from(u8_at(lnk.data, at + 1)).min(8);
         let zones = u32::from(u8_at(lnk.data, at + 4));
-        dims.push(Dim { kind, bits, zones: if zones == 0 { 1 << bits } else { zones } });
+        // A dimension cannot have more zones than its bits address: the combinations of the dimensions stay within the
+        // 256 slots, whatever the file says
+        dims.push(Dim { kind, bits, zones: if zones == 0 { 1 << bits } else { zones.min(1 << bits) } });
     }
     let total_bits: u32 = dims.iter().map(|d| d.bits).sum();
     if total_bits > 8 {

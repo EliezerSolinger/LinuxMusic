@@ -271,6 +271,7 @@ impl<'a> SoundFont<'a> {
         if font.presets.len() < 2 || font.insts.len() < 2 {
             return Err(fail("no presets"));
         }
+        font.validate_indices()?;
         Ok(font)
     }
 
@@ -280,6 +281,26 @@ impl<'a> SoundFont<'a> {
             .iter()
             .map(|p| PresetInfo { bank: p.bank, program: p.program, name: p.name.clone() })
             .collect()
+    }
+
+    /// The bag, generator and modulator indices must never decrease, or the slices built from them would be
+    /// reversed. Checked once here so the import can trust them.
+    fn validate_indices(&self) -> Result<()> {
+        fn rising(it: impl Iterator<Item = usize>) -> bool {
+            let mut last = 0;
+            it.into_iter().all(|v| {
+                let ok = v >= last;
+                last = v;
+                ok
+            })
+        }
+        let ok = rising(self.presets.iter().map(|p| p.bag))
+            && rising(self.insts.iter().map(|i| i.bag))
+            && rising(self.pbag.iter().map(|b| b.first_gen))
+            && rising(self.pbag.iter().map(|b| b.modulator))
+            && rising(self.ibag.iter().map(|b| b.first_gen))
+            && rising(self.ibag.iter().map(|b| b.modulator));
+        if ok { Ok(()) } else { Err(fail("bag indices that go backwards")) }
     }
 
     fn bag_range(&self, bags: &[Bag], from: usize, to: usize) -> Vec<(usize, usize, usize, usize)> {
@@ -443,7 +464,7 @@ impl<'a> SoundFont<'a> {
 
     /// A sample's frames from the data chunks
     fn decode(&self, h: &SampleHeader, sf3: &mut Option<&mut dyn Sf3Decoder>) -> Result<Pcm> {
-        if h.end < h.start || h.rate == 0 {
+        if h.end <= h.start || h.rate == 0 {
             return Err(fail("a sample header"));
         }
         let rate = h.rate;
@@ -452,7 +473,11 @@ impl<'a> SoundFont<'a> {
             let bytes =
                 self.smpl.get(h.start as usize..h.end as usize).ok_or_else(|| fail("a sample past the data"))?;
             let decoder = sf3.as_deref_mut().ok_or_else(|| Error::new("sampler.sf2.compressed"))?;
-            return Ok(Pcm::mono(rate, decoder.decode(bytes, rate)?));
+            let frames = decoder.decode(bytes, rate)?;
+            if frames.is_empty() {
+                return Err(fail("an empty sample"));
+            }
+            return Ok(Pcm::mono(rate, frames));
         }
         let (a, b) = (h.start as usize, h.end as usize);
         let data = self.smpl.get(a * 2..b * 2).ok_or_else(|| fail("a sample past the data"))?;

@@ -91,3 +91,37 @@ fn a_filter_and_pan() {
 fn no_sample_regions_is_an_error() {
     assert!(import("<region> key=60", Path::new("/x"), &mut Fake).is_err());
 }
+
+struct Empty;
+
+impl SampleLoader for Empty {
+    fn load(&mut self, _: &Path) -> Result<Pcm> {
+        Ok(Pcm::mono(44100, Vec::new()))
+    }
+}
+
+#[test]
+fn an_empty_sample_is_an_error_not_a_panic() {
+    let text = "<region> sample=a.wav offset=5 end=10";
+    assert!(import(text, Path::new("/x"), &mut Empty).is_err());
+}
+
+#[test]
+fn huge_values_do_not_overflow() {
+    assert_eq!(parse_key("c2000000000"), None);
+    let text = "<region> sample=a.wav end=9223372036854775807 loop_end=9223372036854775807";
+    let i = import(text, Path::new("/x"), &mut Fake).expect("imports");
+    assert_eq!(i.zones[0].end, 100);
+}
+
+#[test]
+fn a_file_that_includes_itself_stops() {
+    let mut reads = 0;
+    let mut include = |_: &str| {
+        reads += 1;
+        Some("#include \"a.sfz\"\n#include \"a.sfz\"\n".to_owned())
+    };
+    let mut budget = MAX_INCLUDES;
+    tokenize("#include \"a.sfz\"", &mut include, 0, &mut budget);
+    assert!(reads <= MAX_INCLUDES);
+}
