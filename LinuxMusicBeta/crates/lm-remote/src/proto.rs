@@ -52,7 +52,8 @@ impl Role {
 
 /// The actions that manage the session rather than the music: they need `Admin`
 pub fn admin_action(action: &str) -> bool {
-    ["project.", "session.", "app.", "device.", "preferences."].iter().any(|p| action.starts_with(p))
+    // `browser.` opens a path with the server's desktop: it has no meaning for a remote control
+    ["project.", "session.", "app.", "device.", "preferences.", "browser."].iter().any(|p| action.starts_with(p))
 }
 
 /// Which client is connecting

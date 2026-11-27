@@ -152,10 +152,25 @@ pub(crate) fn inside_projects(projects: &str, folder: &str) -> bool {
 pub(crate) fn inside_tree(projects: &str, path: &str) -> bool {
     let Ok(dir) = projects_dir(projects) else { return false };
     let p = Path::new(path);
-    p.is_absolute()
+    if !(p.is_absolute()
         && p.components().all(|c| !matches!(c, Component::ParentDir | Component::CurDir))
         && p.starts_with(&dir)
-        && p != dir
+        && p != dir)
+    {
+        return false;
+    }
+    // A symbolic link inside the folder must not lead out of it: resolve the deepest part that exists
+    let Ok(root) = dir.canonicalize() else { return true };
+    let mut probe = p;
+    loop {
+        if let Ok(real) = probe.canonicalize() {
+            return real.starts_with(&root);
+        }
+        match probe.parent() {
+            Some(up) => probe = up,
+            None => return false,
+        }
+    }
 }
 
 /// The projects in the projects folder (folders holding a `projeto.json`), by name, sorted; on a thread
@@ -189,6 +204,26 @@ pub(crate) fn list_projects(projects: &str) -> Receiver<Result<Vec<String>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_out_of_the_tree_is_outside() {
+        let base = std::env::temp_dir().join(format!("lm-tree-{}", std::process::id()));
+        let (proj, out) = (base.join("projects"), base.join("elsewhere"));
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::create_dir_all(&out).unwrap();
+        std::os::unix::fs::symlink(&out, proj.join("link")).unwrap();
+        let p = proj.to_str().unwrap();
+        assert!(inside_tree(p, proj.join("song/a.mid").to_str().unwrap()));
+        assert!(!inside_tree(p, proj.join("link/a.mid").to_str().unwrap()));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn browser_actions_are_admin_only() {
+        assert!(crate::proto::admin_action("browser.reveal"));
+        assert!(!crate::proto::admin_action("midi.export"));
+    }
 
     #[test]
     fn names_stay_inside() {

@@ -815,10 +815,15 @@ impl Server {
                 {
                     return Err(Error::new("remote.project.outside").arg("path", folder));
                 }
-                if let Some(file) = params.get("file").and_then(Value::as_text)
-                    && !files::inside_tree(&projects, file)
-                {
-                    return Err(Error::new("remote.project.outside").arg("path", file));
+                // `file` for everyone; every other key that carries a path too, unless the client is an admin
+                // (an unchecked `path` is a write or read anywhere the server's user can reach)
+                let tree_keys: &[&str] = if role >= Role::Admin { &["file"] } else { &["file", "path", "dir", "directory"] };
+                for key in tree_keys {
+                    if let Some(file) = params.get(key).and_then(Value::as_text)
+                        && !files::inside_tree(&projects, file)
+                    {
+                        return Err(Error::new("remote.project.outside").arg("path", file));
+                    }
                 }
                 let p = port.run_action(ActionId::from(action), params);
                 self.pending(port, conn, rid()?, p, |()| Ok(Value::NULL))
