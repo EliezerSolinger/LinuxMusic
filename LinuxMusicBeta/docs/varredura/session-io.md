@@ -160,14 +160,18 @@ Os 5 piores:
 | C1 caminho arbitrário em ação remota | confirmado e corrigido: `run_action` valida `path`/`file`/`dir` dentro da árvore de projetos para quem não é Admin, `inside_tree` resolve links simbólicos (cobre M8 para `inside_tree`), `browser.*` virou admin | 6c71941ee |
 | C2 erro do log MIDI engolido | confirmado e corrigido: `sync` devolve o erro, o log é fechado (linha parcial corromperia nova tentativa), aviso `midi.record.log_failed`; os eventos continuam em memória e entram na árvore. Os eventos não somem do take, só a proteção contra queda | 3e3fb0e44 |
 | A1 backend derrubado se a thread vigia não nasce | confirmado e corrigido (backend compartilhado, `mem::forget` no erro). Sem teste: não há como simular falha de `spawn` | commit "lm-io: a failed watcher thread..." |
-| A2 `panic!` em `Device::start` | confirmado e não corrigido: a assinatura devolve `(Error, Renderer)` e o renderer não existe nesse caso; exige mudar a interface do device | |
+| A2 `panic!` em `Device::start` | corrigido na rodada de desenho: `start` devolve `StartError` (`Refused` com o renderer, `Lost` quando o backend ficou com a callback: o device é abandonado, sem pânico) | 79d9d6aa1 |
 | A3 `sleep` no laço ALSA em suspensão | falso na prática: sem áudio fluindo durante a suspensão, o sleep de 10 ms é o ritmo do laço (sem ele o poll giraria sem parar) | |
 | A4 conexão meio-aberta | confirmado e corrigido (threads antes do `Open`; teste `a_big_frame_before_the_hello...`) | commit "lm-remote server: register a connection..." |
 | A5 filas ilimitadas | confirmado e corrigido: `sync_channel` de saída (fila cheia fecha a conexão) e de eventos, quadro antes do hello limitado a 64 KiB | idem |
-| A6 limites de conexão | parcialmente corrigido: máx. 128 conexões, timeout de 10 s para o hello. Cota global de upload/disco não feita (muda `ClientLimits` público e política) | idem |
-| A7 devices abandonados acumulam | confirmado e não corrigido: exige política de recusa e novo aviso em `notices` | |
+| A6 limites de conexão | corrigido na rodada de desenho (resto): `ServerConfig::quota` (`UploadQuota`): bytes pendentes de todos os clientes, total da pasta, espaço livre mínimo, `.part` parado há 7 dias é removido; recusa `remote.upload.quota` agora responde o import (o `upload_begin` leva o `id`) | f0d35be06 |
+| A7 devices abandonados acumulam | corrigido na rodada de desenho: contador de abandonados ainda presos, teto de 3, `open` de hardware recusado acima (`io.device.too_many_abandoned`), aviso `session.device.abandoned_limit` | 79d9d6aa1 |
 | M1 sync/append de take ignorados | confirmado e corrigido (`record_error` sticky, `WriteFailed`). Sem teste: depende do harness de falhas de disco do `disk.rs` | 4c62a8e29 |
 | M2 cabeçalho do log MIDI | confirmado e corrigido (junto com C2) | 3e3fb0e44 |
 | M3 `.tmp` que sobram | confirmado e corrigido (`copy_via_tmp`, `.mid.tmp` único e removido; teste em `folder.rs`) | bd662b211 |
-| M4, M5, M6, M7, M9 | não analisados/corrigidos nesta passada | |
+| M4 threads com `.ok()` | confirmado e corrigido na rodada de desenho: relógio e thread de disco que não nascem falham a abertura da sessão (`session.thread.failed`); watchdog ausente vira aviso e a sessão segue degradada. Sem teste: não há como simular falha de `spawn` | 9b26763ae |
+| M5 `expect` no laço ALSA | confirmado (inalcançável porque `open` exige um stream) e corrigido na rodada de desenho: `match` sem `expect`; B3 (`saturating`) junto. Linux, sem `cargo check` aqui | 4150c5ef5 |
+| M6 upload antigo após reconexão | confirmado e corrigido na rodada de desenho: geração por tentativa no `UploadJob` (substitui `stop`) | 2706a5618 |
+| M7 reconexão morre se o spawn falha | confirmado e corrigido na rodada de desenho: o erro vai para o estado `Reconnecting` e o `pump` tenta de novo em 1 s | 2706a5618 |
+| M9 cache do navegador cresce | confirmado e corrigido na rodada de desenho: teto de 40000 entradas, o quarto mais antigo sai | d380852e3 |
 | M8 links simbólicos | corrigido para `inside_tree` (teste); `inside_projects` já canonicalizava o pai | 6c71941ee |

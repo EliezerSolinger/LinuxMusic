@@ -92,7 +92,7 @@ Nenhum `unsafe` fora de `lm-sys-*`. Todos os crates têm `#![forbid(unsafe_code)
 | CRÍTICO panel.rs `wave_zoom` clamp | confirmado e corrigido: `start`/`end` limitados a 0..1 (NaN vira 0) e `fit_between` sem pânico | ff9402c5a |
 | Mesmo padrão em outros painéis (graph, schemas de plugin, `Range::fit`, fader, lomm, graphs, instrument) | confirmado e corrigido: `fit_between` / `max().min()`, limites de schema podem vir invertidos ou NaN | ff9402c5a |
 | ALTO tiles.rs cache de blocos sem limite | confirmado e corrigido: teto de 16384 blocos (16 MB); `names` não limpo (só cresce com recursos distintos, sem limpeza) | commit seguinte |
-| ALTO `Finished::Peaks` descartado, repetição por quadro | parcialmente corrigido: `retry` agora só repete blocos ainda visíveis e a animação para; deduplicação de pedidos em voo fica no `RemotePort` (lm-remote, outra área) | commit seguinte |
+| ALTO `Finished::Peaks` descartado, repetição por quadro | parcialmente corrigido: `retry` agora só repete blocos ainda visíveis e a animação para; deduplicação de pedidos em voo no `RemotePort` corrigida na rodada de desenho (`peaks` devolve `Waiting` com o id do pedido já em voo); o `Core` ignorar `Finished::Peaks` fica com o agente de lm-gui | f0d35be06 |
 | MÉDIO marks.rs:385 clamp | confirmado e corrigido | ff9402c5a |
 | MÉDIO piano_roll.rs:909/918 clamp com `length < 0` | confirmado e corrigido | ff9402c5a |
 | Novos achados do mesmo padrão: export.rs bars, edit.rs TrimStart, piano_roll.rs:980 cast | confirmado e corrigido | ff9402c5a / commit seguinte |

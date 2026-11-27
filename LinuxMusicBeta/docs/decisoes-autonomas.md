@@ -2122,3 +2122,29 @@ dá a mesma saída.
   do upgrade passou a ser erro explícito (`state.json.too_deep`). B-9 (diário sem teto) fica: um teto descartaria
   operações que a recuperação de falha precisa, e a sessão o esvazia em três pontos.
 - **`dynamics::solve()` por amostra:** mantido (custo de CPU, mudar altera o som).
+
+## Rodada de desenho (27/11): dispositivos, sessão e remoto
+
+- **`Device::start` sem `panic!` (A2).** O erro `(Error, Renderer)` não cobria o caso em que o backend falha e fica com a
+  callback. Agora `start` devolve `StartError`: `Refused` (o renderer volta, em `Box`) ou `Lost` (o device é abandonado como
+  num `stop` que estoura, D11, e o erro é `io.device.start_lost` com a causa). A sessão trata `start_lost` como device
+  travado: troca o motor e cai no Dummy. Os backends não mudaram (nenhum usava o tipo antigo).
+- **Política de devices abandonados (A7).** Cada abandonado prende uma thread, um renderer e, em hardware, o cartão.
+  Há um contador dos que ainda estão presos (o vigia o decrementa quando a callback volta) e um teto de 3
+  (`MAX_STUCK_DEVICES`). Com 3 presos, `Device::open` de hardware é recusado com `io.device.too_many_abandoned` (o usuário
+  vê o erro) e a sessão avisa antes com `session.device.abandoned_limit`. O Dummy nunca é recusado: é a saída da sessão.
+- **Cota global de upload e disco (A6).** `ClientLimits` limita um cliente; 128 conexões × 8 uploads × 16 GiB enchem
+  qualquer disco. `ServerConfig::quota` (`UploadQuota`) vale para todos juntos: 32 GiB ainda por chegar, 64 GiB na pasta de
+  uploads, 1 GiB de espaço livre que sobra depois do upload (statvfs); `.part` sem alteração há 7 dias é apagado (exceto os
+  abertos). A recusa é `remote.upload.quota` com `what`. Para a recusa chegar ao usuário, o `upload_begin` agora leva o
+  `id` do pedido: antes qualquer recusa (tamanho, limite, cota) deixava o import esperando para sempre.
+- **Threads que não nascem (M4).** Relógio (`lm-clock`) e disco (`lm-disk`) são indispensáveis: sem eles a interface
+  congela ou nada é salvo, então falhar o spawn falha a abertura (`session.thread.failed`, nome e causa). O watchdog é rede
+  de segurança: a sessão segue sem ele e mostra o erro como notice.
+- **Upload por geração (M6) e reconexão que insiste (M7).** O `stop: bool` do `UploadJob` dava corrida entre a thread antiga
+  e a nova; agora cada tentativa tem um número e só roda enquanto o do job for o seu. Se a thread de reconexão não nasce, o
+  erro vai para `Reconnecting.last` e o `pump` tenta de novo a cada 1 s.
+- **Cache do navegador (M9) e ALSA (M5).** O cache de entradas tem teto de 40000 e solta o quarto mais antigo; o id esquecido
+  responde `port.browse.unknown_entry` e a interface lista o pai de novo. No laço ALSA o `expect` virou `match`.
+- **Pedidos de pico em voo (gui.md).** `RemotePort::peaks` devolve o `Waiting` do pedido já em voo para a mesma chave, em vez
+  de abrir outro no servidor. O `Core` ignorar `Finished::Peaks` continua com o agente de lm-gui.

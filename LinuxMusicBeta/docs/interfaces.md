@@ -889,6 +889,10 @@ impl Drop for Device {
 - **Se o `stop` estourar o tempo:** o `Renderer` fica preso na callback travada. A `Session` descarta o
   `EngineControl` velho, cria um par novo com `engine()`, recompila a partir da árvore e avisa o usuário. O
   dispositivo travado é abandonado, não morto (D11).
+- **`Device::start` devolve `StartError`:** `Refused { error, renderer }` (o renderer volta) ou `Lost { error }` (o
+  backend falhou e ficou com a callback: o device é abandonado como num `stop` travado, chave `io.device.start_lost`).
+  `Device::open` de hardware é recusado (`io.device.too_many_abandoned`) enquanto `MAX_STUCK_DEVICES` (3) devices
+  abandonados ainda estiverem presos; o Dummy nunca é recusado.
 - O `CallbackHandle` é a única forma de o backend chamar o render, e conta a entrada e a saída.
 - O tamanho máximo de bloco vem do período **negociado** com o dispositivo, não do pedido (C7).
 
