@@ -143,6 +143,8 @@ unsafe fn copy_str(p: *const c_char) -> String {
     unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
 }
 
+static HOOKS: std::sync::Once = std::sync::Once::new();
+
 /// JACK's own messages go to the program's log, not to stderr
 unsafe extern "C" fn silent(_msg: *const c_char) {}
 
@@ -153,11 +155,14 @@ impl Client {
     pub fn open(name: &str, server: Option<&str>) -> Result<Client> {
         let cname = cstring(name, "client")?;
         let mut status: ffi::jack_status_t = 0;
-        // SAFETY: setting the global message hooks to a function that does nothing; JACK calls them from any thread
-        unsafe {
-            ffi::jack_set_error_function(Some(silent));
-            ffi::jack_set_info_function(Some(silent));
-        }
+        // The hooks are process-global: set once, not at every open
+        HOOKS.call_once(|| {
+            // SAFETY: setting the global message hooks to a function that does nothing; JACK calls them from any thread
+            unsafe {
+                ffi::jack_set_error_function(Some(silent));
+                ffi::jack_set_info_function(Some(silent));
+            }
+        });
         let raw = match server {
             Some(server) => {
                 let cserver = cstring(server, "server")?;

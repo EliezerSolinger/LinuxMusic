@@ -84,3 +84,12 @@ fn a_native_crash_leaves_the_node_it_was_in() {
     assert!(!status.success());
     assert_eq!(note, None);
 }
+
+#[test]
+fn a_name_that_leaves_the_folder_is_refused() {
+    let dir = std::env::temp_dir();
+    for name in ["", ".", "..", "a/b", "../x", "a\0b"] {
+        let e = arm(&dir, name).expect_err(name);
+        assert_eq!(e.key(), "linux.invalid_argument", "{name:?}");
+    }
+}

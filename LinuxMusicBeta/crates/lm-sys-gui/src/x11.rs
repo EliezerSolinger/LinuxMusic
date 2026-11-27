@@ -145,7 +145,9 @@ pub fn pump(timeout: Duration) {
             // SAFETY: an open display and a window of ours
             unsafe { (c.x.unmap)(c.display, window) };
             if let Ok(mut closed) = CLOSED.lock() {
-                closed.push(window);
+                if !closed.contains(&window) {
+                    closed.push(window);
+                }
             }
         }
     }
@@ -224,6 +226,11 @@ impl Native {
 
 impl Drop for Native {
     fn drop(&mut self) {
+        // A close nobody asked about must not outlive the window: the server reuses window ids, and the next window
+        // with this id would start out "closed"
+        if let Ok(mut closed) = CLOSED.lock() {
+            closed.retain(|w| *w != self.window);
+        }
         if let Ok(c) = connection() {
             // SAFETY: an open display and a window of ours, destroyed once
             unsafe {

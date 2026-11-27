@@ -241,6 +241,8 @@ impl Library {
     }
 }
 
+/// CLAP asks for `deinit` on the main thread. It runs on the thread that drops the last `Arc`, so the owners must drop
+/// their instances and the library on the main thread, never from the audio callback
 impl Drop for Library {
     fn drop(&mut self) {
         // SAFETY: the entry stays valid until dlclose; deinit once, after every instance is gone (they hold the Arc)

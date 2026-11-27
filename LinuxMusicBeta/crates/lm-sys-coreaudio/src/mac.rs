@@ -182,6 +182,7 @@ fn get_vec<T: Copy>(id: u32, selector: u32, scope: u32, call: &'static str) -> R
     check(call, unsafe { AudioObjectGetPropertyDataSize(id, &a, 0, null(), &mut size) })?;
     let n = size as usize / size_of::<T>();
     let mut v: Vec<T> = Vec::with_capacity(n);
+    // n * size_of::<T>() <= size, which came as a u32: the cast cannot truncate
     let mut size = (n * size_of::<T>()) as u32;
     // SAFETY: the vector has room for `size` bytes; the length is set to what CoreAudio wrote, in whole elements.
     unsafe {

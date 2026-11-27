@@ -131,9 +131,12 @@ fn check_rates(from_rate: u32, to_rate: u32) -> Result<f64> {
     Ok(ratio)
 }
 
+/// The most channels a converter takes (a probe buffer is allocated per channel)
+pub const MAX_CHANNELS: usize = 64;
+
 fn check_channels(channels: usize) -> Result<c_int> {
     match c_int::try_from(channels) {
-        Ok(c) if c > 0 => Ok(c),
+        Ok(c) if c > 0 && channels <= MAX_CHANNELS => Ok(c),
         _ => Err(Error::new("samplerate.bad_channels").arg("channels", channels as i64)),
     }
 }
@@ -377,8 +380,9 @@ impl Resampler {
             return Err(Error::new("samplerate.process_failed"));
         }
         Ok(Processed {
-            input_frames: usize::try_from(data.input_frames_used).unwrap_or(0),
-            output_frames: usize::try_from(data.output_frames_gen).unwrap_or(0),
+            // Never more than was offered, whatever the library says (the callers slice by these counts)
+            input_frames: usize::try_from(data.input_frames_used).unwrap_or(0).min(in_frames),
+            output_frames: usize::try_from(data.output_frames_gen).unwrap_or(0).min(out_frames),
         })
     }
 }

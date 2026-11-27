@@ -182,6 +182,10 @@ unsafe impl Send for CrashFile {}
 /// The last one armed is the one written (one project per process in the program; tests run several sessions).
 /// Errors: `linux.crash.open_failed`, `linux.crash.install_failed`, `linux.invalid_argument`
 pub fn arm(dir: &Path, name: &str) -> Result<CrashFile> {
+    // A name is one file name in `dir`: a separator or a dot name would put the note elsewhere
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) {
+        return Err(Error::new("linux.invalid_argument").arg("argument", "name"));
+    }
     install_handlers()?;
     let dest = dir.join(name);
     let tmp = dir.join(format!(".{name}.crash"));
@@ -196,11 +200,9 @@ pub fn arm(dir: &Path, name: &str) -> Result<CrashFile> {
             .arg("error", std::io::Error::last_os_error().to_string()));
     }
     let armed = Box::into_raw(Box::new(Armed { fd, tmp, dest, notes: AtomicPtr::new(std::ptr::null_mut()) }));
-    let old = ARMED.swap(armed, Ordering::AcqRel);
-    if !old.is_null() {
-        // Another file was armed (another session): it stays alive in its CrashFile, which only frees it if it is
-        // still the armed one; nothing to do here
-    }
+    // Another file may have been armed (another session): it stays alive in its own CrashFile, which frees it only
+    // if it is still the armed one
+    ARMED.store(armed, Ordering::Release);
     Ok(CrashFile { armed })
 }
 

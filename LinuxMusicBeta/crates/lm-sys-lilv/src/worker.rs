@@ -217,11 +217,14 @@ pub(crate) unsafe extern "C" fn schedule_work(handle: *mut c_void, size: u32, da
                     };
                     let bytes =
                         if size == 0 { &[][..] } else { std::slice::from_raw_parts(data.cast::<u8>(), size as usize) };
-                    if !push_message(ring, bytes) {
-                        return ffi::LV2_WORKER_ERR_NO_SPACE;
-                    }
+                    // Counted before the push: a quick `work` may finish (and count `done`) before this returns, and
+                    // `wait_idle` must never see `done` ahead of `scheduled`
                     let shared: &Shared = &(*ctx).shared;
                     shared.scheduled.fetch_add(1, Ordering::AcqRel);
+                    if !push_message(ring, bytes) {
+                        shared.scheduled.fetch_sub(1, Ordering::AcqRel);
+                        return ffi::LV2_WORKER_ERR_NO_SPACE;
+                    }
                     if let Some(thread) = (*ctx).thread.as_ref() {
                         thread.unpark();
                     }

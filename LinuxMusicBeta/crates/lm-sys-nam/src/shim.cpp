@@ -40,7 +40,8 @@ LmNamModel* lm_nam_load(const char* json, std::size_t len, char* error, std::siz
 {
 	try
 	{
-		const auto config = nlohmann::json::parse(json, json + len);
+		// (a null pointer is an empty document: adding to it would be undefined, and the parse refuses an empty one)
+		const auto config = json ? nlohmann::json::parse(json, json + len) : nlohmann::json::parse("");
 		auto model = std::make_unique<LmNamModel>();
 		model->dsp = nam::get_dsp(config);
 		if (!model->dsp)

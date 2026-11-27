@@ -94,7 +94,10 @@ pub(crate) async fn acquire(
     priority: i32,
 ) -> Result<()> {
     // The object first, so a request arriving right after we own the name is answered
-    conn.object_server().at(path, object).await.map_err(|e| failed(&e))?;
+    // `false` means an object is already there (an earlier reservation of this card not yet released)
+    if !conn.object_server().at(path, object).await.map_err(|e| failed(&e))? {
+        return Err(Error::new("linux.reserve.failed").arg("detail", "the card is already reserved by this process"));
+    }
     let result = negotiate(conn, name, path, priority).await;
     if result.is_err() {
         let _ = conn.object_server().remove::<ReserveDevice, _>(path).await;

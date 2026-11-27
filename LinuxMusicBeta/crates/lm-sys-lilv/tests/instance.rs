@@ -133,6 +133,10 @@ fn plugins_that_cannot_be_made_are_errors() {
     bad.power_of_two_block = true;
     bad.max_block = 100;
     assert_eq!(world.instantiate(GAIN, &bad).unwrap_err().key(), "lilv.bad_config");
+    let mut bad = bundle::config();
+    bad.power_of_two_block = false;
+    bad.max_block = (1 << 20) + 1;
+    assert_eq!(world.instantiate(GAIN, &bad).unwrap_err().key(), "lilv.bad_config");
 }
 
 #[test]

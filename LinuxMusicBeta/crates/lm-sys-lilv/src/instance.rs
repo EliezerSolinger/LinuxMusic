@@ -55,7 +55,8 @@ impl InstanceConfig {
         if !self.sample_rate.is_finite() || self.sample_rate <= 0.0 {
             return Err(bad("sample_rate"));
         }
-        if self.max_block == 0 || i32::try_from(self.max_block).is_err() {
+        // (the CV ports allocate `max_block` floats each: bounded to a million frames)
+        if self.max_block == 0 || self.max_block > 1 << 20 {
             return Err(bad("max_block"));
         }
         if self.min_block > self.max_block {

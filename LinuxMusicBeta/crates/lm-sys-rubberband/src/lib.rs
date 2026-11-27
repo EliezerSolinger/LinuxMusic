@@ -547,7 +547,8 @@ impl Offline {
             // SAFETY: `pointers` holds `channels` pointers to planes of OFFLINE_BLOCK floats each, `want` of which
             // are written; the planes are exclusively borrowed for the call
             let got = unsafe { ffi::rubberband_retrieve(self.handle.ptr(), pointers.as_ptr(), want as c_uint) };
-            let got = got as usize;
+            // Never more than asked, whatever the library says (the planes hold `want`)
+            let got = (got as usize).min(want);
             if got == 0 {
                 return;
             }
@@ -850,7 +851,7 @@ impl Realtime {
         // borrowed for the call; the library writes at most `frames` per channel
         let got = unsafe { ffi::rubberband_retrieve(self.handle.ptr(), self.outputs.as_ptr(), frames) };
         self.outputs.fill(std::ptr::null_mut());
-        Ok(got as usize)
+        Ok((got as usize).min(frames as usize))
     }
 }
 

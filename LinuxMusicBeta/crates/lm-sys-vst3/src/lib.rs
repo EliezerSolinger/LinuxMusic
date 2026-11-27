@@ -924,7 +924,8 @@ impl Instance {
                 Event::Midi { time, data } => {
                     let ch = (data[0] & 0x0F) as usize;
                     let (cc, v) = match data[0] & 0xF0 {
-                        0xB0 => (data[1] as usize, f64::from(data[2]) / 127.0),
+                        // (a data byte past 127 is malformed: it would index the next channel's controllers)
+                        0xB0 if data[1] < 128 => (data[1] as usize, f64::from(data[2]) / 127.0),
                         0xD0 => (ControllerNumbers_::kAfterTouch as usize, f64::from(data[1]) / 127.0),
                         0xE0 => (
                             ControllerNumbers_::kPitchBend as usize,
