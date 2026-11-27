@@ -394,6 +394,68 @@ pub enum LcdSheet {
     Purple19,
 }
 
+/// The lit color of the sheet's segments
+fn lcd_color(sheet: LcdSheet) -> Rgba {
+    match sheet {
+        LcdSheet::Green19 | LcdSheet::Green11 => Rgba::hex(0x4cff5e),
+        LcdSheet::Red19 => Rgba::hex(0xff3b2f),
+        LcdSheet::Pink21 => Rgba::hex(0xff5bd6),
+        LcdSheet::Purple19 => Rgba::hex(0xb06bff),
+    }
+}
+
+/// The segments (a to g, bit 0 to 6) lit for a glyph
+fn lcd_segments(d: char) -> u8 {
+    match d {
+        '0' => 0b0111111,
+        '1' => 0b0000110,
+        '2' => 0b1011011,
+        '3' => 0b1001111,
+        '4' => 0b1100110,
+        '5' => 0b1101101,
+        '6' => 0b1111101,
+        '7' => 0b0000111,
+        '8' => 0b1111111,
+        '9' => 0b1101111,
+        '-' => 0b1000000,
+        _ => 0,
+    }
+}
+
+/// The LCD's dark ground under `w` pixels of cells
+fn lcd_ground(c: &mut Canvas, x: f32, y: f32, w: f32, h: f32, enabled: bool) {
+    let g = if enabled { Rgba::rgb(10, 14, 11) } else { Rgba::rgb(22, 24, 26) };
+    c.fill_rect(x, y, w, h, g);
+}
+
+/// One glyph as seven segments at the screen's scale (the legacy's `lcd_*.png` strips redrawn as vectors): the lit
+/// ones in the sheet's color, the others a faint trace of it
+fn lcd_glyph(c: &mut Canvas, sheet: LcdSheet, d: char, x: f32, y: f32, enabled: bool) {
+    let (cw, ch) = sheet.cell();
+    let (cw, ch) = (cw as f32, ch as f32);
+    lcd_ground(c, x, y, cw, ch, enabled);
+    let lit = if enabled { lcd_color(sheet) } else { lcd_color(sheet).gray() };
+    let (padx, pady) = (cw * 0.2, ch * 0.09);
+    let t = (cw * 0.17).max(1.4);
+    let (l, r) = (x + padx + t / 2.0, x + cw - padx - t / 2.0);
+    let (top, mid, bot) = (y + pady + t / 2.0, y + ch / 2.0, y + ch - pady - t / 2.0);
+    let segs: [((f32, f32), (f32, f32)); 7] = [
+        ((l, top), (r, top)),
+        ((r, top), (r, mid)),
+        ((r, mid), (r, bot)),
+        ((l, bot), (r, bot)),
+        ((l, mid), (l, bot)),
+        ((l, top), (l, mid)),
+        ((l, mid), (r, mid)),
+    ];
+    let on = lcd_segments(d);
+    for (i, (a, b)) in segs.iter().enumerate() {
+        let lit_now = on & (1 << i) != 0;
+        let color = if lit_now { lit } else { Rgba { a: if enabled { 0.1 } else { 0.05 }, ..lit } };
+        c.line(*a, *b, t, Cap::Round, &Paint::Solid(color));
+    }
+}
+
 /// `LcdWidget::charsPerPixmap`
 const LCD_CELLS: u32 = 12;
 
@@ -458,21 +520,12 @@ pub fn draw_lcd_float(
     texts: &(String, String),
     enabled: bool,
 ) {
-    let img = assets::image(sheet.asset());
     let (cw, ch) = sheet.cell();
     let mw = cw / 2;
-    let row = if enabled { 0 } else { ch };
-    let glyph = |c: &mut Canvas, d: char, x: f32| {
-        let g = match d.to_digit(10) {
-            Some(v) => v,
-            None if d == '-' => 11,
-            None => 10,
-        };
-        c.pixmap_part(img, (g * cw, row, cw, ch), x, 1.0, false);
-    };
+    let glyph = |c: &mut Canvas, d: char, x: f32| lcd_glyph(c, sheet, d, x, 1.0, enabled);
     // the whole part: left margin, padding, digits, no right margin
     let mut x = 1.0;
-    c.pixmap_part(img, (LCD_CELLS * cw, row, cw, ch), x, 1.0, false);
+    lcd_ground(c, x, 1.0, mw as f32, ch as f32, enabled);
     x += mw as f32;
     let shown: Vec<char> = texts.0.chars().collect();
     for _ in shown.len()..whole {
@@ -487,7 +540,10 @@ pub fn draw_lcd_float(
     let dot = assets::image(sheet.dot());
     let dot_h = dot.height() / 2;
     let dot_y = ((ch + 2) as f32 - dot_h as f32) / 2.0;
-    c.pixmap_part(dot, (0, 0, dot.width(), dot_h), x, dot_y.floor(), false);
+    lcd_ground(c, x, 1.0, dot.width() as f32, ch as f32, enabled);
+    let dot_color = if enabled { lcd_color(sheet) } else { lcd_color(sheet).gray() };
+    let dw = (dot.width() as f32 * 0.5).max(2.0);
+    c.fill_rect(x + (dot.width() as f32 - dw) / 2.0, (dot_y + dot_h as f32 - dw - 1.0).floor(), dw, dw, dot_color);
     x += dot.width() as f32;
     // the fraction: digits from its left edge, then the right margin
     let shown: Vec<char> = texts.1.chars().collect();
@@ -499,11 +555,7 @@ pub fn draw_lcd_float(
         glyph(c, d, x);
         x += cw as f32;
     }
-    let right_w = mw.saturating_sub(1);
-    for i in 0..right_w {
-        let sx = LCD_CELLS * cw + (i * (cw / 2)) / right_w.max(1);
-        c.pixmap_part(img, (sx, row, 1, ch), x + i as f32, 1.0, false);
-    }
+    lcd_ground(c, x, 1.0, mw.saturating_sub(1) as f32, ch as f32, enabled);
     let (w, h) = lcd_float_size(sheet, whole, frac);
     draw_frame(c, w - 1.0, h);
 }
@@ -518,34 +570,23 @@ pub fn lcd_size(sheet: LcdSheet, digits: usize) -> (f32, f32) {
 /// `LcdWidget::paintEvent` without the label: the left margin, the blank padding, the glyphs, the right margin, and
 /// the sunken frame of `LmmsStyle::drawPrimitive(PE_Frame)`
 pub fn draw_lcd(c: &mut Canvas, sheet: LcdSheet, digits: usize, text: &str, enabled: bool) {
-    let img = assets::image(sheet.asset());
     let (cw, ch) = sheet.cell();
     let mw = cw / 2;
-    let row = if enabled { 0 } else { ch };
     let mut x = 1.0;
     let y = 1.0;
-    c.pixmap_part(img, (LCD_CELLS * cw, row, cw, ch), x, y, false);
+    lcd_ground(c, x, y, mw as f32, ch as f32, enabled);
     x += mw as f32;
     let shown: Vec<char> = text.chars().collect();
     for _ in shown.len()..digits {
-        c.pixmap_part(img, (10 * cw, row, cw, ch), x, y, false);
+        lcd_glyph(c, sheet, ' ', x, y, enabled);
         x += cw as f32;
     }
     for d in shown {
-        let g = match d.to_digit(10) {
-            Some(v) => v,
-            None if d == '-' => 11,
-            None => 10,
-        };
-        c.pixmap_part(img, (g * cw, row, cw, ch), x, y, false);
+        lcd_glyph(c, sheet, d, x, y, enabled);
         x += cw as f32;
     }
-    // the right margin: half a cell of the margin column, squeezed into marginWidth - 1 pixels
-    let right_w = mw.saturating_sub(1);
-    for i in 0..right_w {
-        let sx = LCD_CELLS * cw + (i * (cw / 2)) / right_w.max(1);
-        c.pixmap_part(img, (sx, row, 1, ch), x + i as f32, y, false);
-    }
+    // the right margin
+    lcd_ground(c, x, y, mw.saturating_sub(1) as f32, ch as f32, enabled);
     // the frame: rect (0, 0, w, h) with w = cells + margins - 1
     let w = (cw * digits as u32 + (1 + mw) * 2 - 1) as f32;
     let h = (ch + 2) as f32;
@@ -1085,5 +1126,50 @@ pub fn draw_led(c: &mut Canvas, color: LedColor, on: bool) {
             d * 0.22,
             vec![(0.0, Rgba::alpha(255, 255, 255, 190)), (1.0, Rgba::alpha(255, 255, 255, 0))],
         );
+    }
+}
+
+/// The theme's wave icon (`<name>_wave_active.png` / `_inactive.png`, 14×14) of an asset path: its name and whether it
+/// is the lit one
+pub fn wave_icon_of(path: &str) -> Option<(&str, bool)> {
+    let file = path.strip_prefix("lmms/")?.strip_suffix(".png")?;
+    let (name, state) = file.rsplit_once("_wave_")?;
+    Some((name, state == "active"))
+}
+
+/// A wave icon as a vector at the screen's scale: the small dark plate and the wave's line in it
+pub fn draw_wave_icon(c: &mut Canvas, name: &str, on: bool, w: f32, h: f32) {
+    let (plate, line) =
+        if on { (Rgba::rgb(52, 59, 66), Rgba::hex(0xd1d8e4)) } else { (Rgba::rgb(30, 34, 39), Rgba::hex(0x7b8590)) };
+    c.fill_rect(0.0, 0.0, w, h, Rgba::rgb(8, 10, 12));
+    c.fill_rect(1.0, 1.0, w - 2.0, h - 2.0, plate);
+    let (x0, x1, top, bot) = (2.5, w - 2.5, 3.0, h - 3.0);
+    let (mid, amp) = ((top + bot) / 2.0, (bot - top) / 2.0);
+    let at = |t: f32, v: f32| (x0 + (x1 - x0) * t, mid - amp * v);
+    let pts: Vec<(f32, f32)> = match name {
+        "sin" => (0..=24).map(|i| at(i as f32 / 24.0, (i as f32 / 24.0 * std::f32::consts::TAU).sin())).collect(),
+        "triangle" => vec![at(0.0, 0.0), at(0.25, 1.0), at(0.75, -1.0), at(1.0, 0.0)],
+        "saw" => vec![at(0.0, -1.0), at(0.5, 1.0), at(0.5, -1.0), at(1.0, 1.0)],
+        "square" => vec![at(0.0, -1.0), at(0.0, 1.0), at(0.5, 1.0), at(0.5, -1.0), at(1.0, -1.0)],
+        "round_square" => (0..=24)
+            .map(|i| at(i as f32 / 24.0, (3.0 * (i as f32 / 24.0 * std::f32::consts::TAU).sin()).tanh()))
+            .collect(),
+        "moog_saw" => vec![at(0.0, -1.0), at(0.4, 0.6), at(0.5, 0.9), at(0.55, -1.0), at(1.0, 1.0)],
+        "exp" => (0..=16).map(|i| at(i as f32 / 16.0, 1.0 - 2.0 * (1.0 - (-3.0 * i as f32 / 16.0).exp()))).collect(),
+        "white_noise" => [0.2, -0.7, 0.9, -0.3, 0.6, -0.9, 0.1, 0.8, -0.5, 0.4, -0.8]
+            .iter()
+            .enumerate()
+            .map(|(i, v)| at(i as f32 / 10.0, *v))
+            .collect(),
+        "usr" => (0..=24)
+            .map(|i| {
+                let t = i as f32 / 24.0;
+                at(t, 0.7 * (t * std::f32::consts::TAU).sin() + 0.3 * (t * 3.0 * std::f32::consts::TAU).sin())
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    for pair in pts.windows(2) {
+        c.line(pair[0], pair[1], 1.3, Cap::Round, &Paint::Solid(line));
     }
 }

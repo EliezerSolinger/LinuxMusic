@@ -2025,7 +2025,14 @@ impl<H: PortHost> PluginPanel<H> {
             Kind::Button(b) => {
                 let on = self.is_on(b.bind, cx) || self.pressed == Some(ctrl);
                 let asset = if on { b.active } else { b.inactive };
-                (on as u64, Box::new(move |cv| cv.pixmap(assets::image(asset), 0.0, 0.0, false)))
+                match widgets::wave_icon_of(asset.path) {
+                    // the theme's wave icons are drawn as vectors
+                    Some((name, lit)) => {
+                        let name = name.to_owned();
+                        (on as u64, Box::new(move |cv| widgets::draw_wave_icon(cv, &name, lit, w, h)))
+                    }
+                    None => (on as u64, Box::new(move |cv| cv.pixmap(assets::image(asset), 0.0, 0.0, false))),
+                }
             }
             Kind::Toggle(t) => {
                 let on = self.is_on(t.bind, cx) || self.pressed == Some(ctrl);
