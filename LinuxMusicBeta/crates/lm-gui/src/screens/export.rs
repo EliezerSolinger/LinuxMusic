@@ -1,12 +1,11 @@
-//! Owner: agent D. Exporting audio, as the legacy's export wizard (F-PRJ-022): four pages with Back, Next and Export —
-//! what to export, the formats, the processing, where — in the same order and with the same choices, plus what the
-//! new model needs (recorded in decisoes-autonomas.md):
-//! - a range (the loop's, or bars typed) is "Fast" (default, 10 s of warm-up) or "Exact", with what each renders and
-//!   costs (U37, V18); the whole song is always exact;
-//! - one track with the others muted (F-PRJ-023), and stems per track or per desk channel on the same page (P-40),
-//!   instead of the legacy's separate "Export tracks" dialog;
-//! - on the last page, the third-party plugins that do not promise the same result twice (H18);
-//! - after Export, the progress with cancel (the shared loading component) and the report, in the same window.
+//! Owner: agent D. Exporting audio, on ONE screen (F-PRJ-022; the legacy's four-page wizard is not copied, 27/11):
+//! what to export (the song, the loop, between markers, bars, one track, a region or a clip), the format and
+//! quality, the finish (level, fades, dither, loop), the destination, and the progress with cancel in the same
+//! window. What the new model needs (recorded in decisoes-autonomas.md):
+//! - a range (the loop's, or bars typed) is "Fast" (default, 10 s of warm-up) or "Exact" (U37, V18); the whole song
+//!   is always exact;
+//! - one track with the others muted (F-PRJ-023), and stems per track or per desk channel on the same screen (P-40);
+//! - the third-party plugins that do not promise the same result twice are named before Export (H18).
 //!
 //! The export is the session's operation `project.export`, with the request as data (`lm_port::trees`).
 
@@ -49,15 +48,11 @@ enum Stems {
     Channels,
 }
 
-const PAGES: [&str; 4] = ["What to export", "Formats", "Processing", "Where"];
 const RATES: [i64; 4] = [44_100, 48_000, 88_200, 96_000];
 const KBPS: [i64; 4] = [128, 192, 256, 320];
-/// The fake renderer's speed, in times real time, for the estimate (the session will say its own)
-const RENDER_SPEED: f64 = 40.0;
 
 pub struct Export {
     scx: ScreenCx,
-    page: usize,
     what: What,
     bars: (i64, i64),
     fast: bool,
@@ -124,7 +119,6 @@ impl Export {
         let (lb, le) = loop_bars(&root);
         Export {
             scx,
-            page: 0,
             what: match one.as_ref().and_then(|o| o.1).or_else(|| take_range(cx)) {
                 Some((a, z)) => What::Ticks(a, z),
                 None => What::Song,
@@ -178,7 +172,7 @@ impl Export {
             What::Loop => Some(model::song(root).loop_range).filter(|(a, z)| z > a),
             What::Bars => Some((bar(self.bars.0), bar(self.bars.1))),
             What::Markers => {
-                let end = map.bar_start(song_end(root).0).unwrap_or(0);
+                let end = map.bar_start(song_end(root)).unwrap_or(0);
                 MarksState::between_markers(root, end).get(self.marker).map(|(_, a, z)| (*a, *z))
             }
             What::Ticks(a, z) => Some((a, z)),
@@ -255,18 +249,11 @@ fn loop_bars(root: &Value) -> (i64, i64) {
     (start.max(1), end.max(start + 1))
 }
 
-/// The song's length: the end of the last item, in bars and seconds
-fn song_end(root: &Value) -> (i64, f64) {
+/// The bar after the song's last item
+fn song_end(root: &Value) -> i64 {
     let map = model::tempo_map(root);
     let end = model::tracks(root).iter().flat_map(|t| t.items.iter()).map(|i| i.start + i.length).max().unwrap_or(0);
-    let bar = map.bar_beat_tick(end).bar + 1;
-    let secs = map.bar_start(bar).map(|t| map.sample_at(t) as f64 / model::sample_rate(root) as f64).unwrap_or(0.0);
-    (bar, secs)
-}
-
-fn tick_seconds(root: &Value, tick: i64) -> f64 {
-    let map = model::tempo_map(root);
-    map.sample_at(tick) as f64 / model::sample_rate(root) as f64
+    map.bar_beat_tick(end).bar + 1
 }
 
 /// A plugin's name: its translation key, shown as the key when the table has no line for it
@@ -274,46 +261,42 @@ fn tr_dyn(key: &str) -> String {
     key.to_string()
 }
 
-fn mmss(s: f64) -> String {
-    let s = s.max(0.0);
-    if s < 60.0 { format!("{s:.1} s") } else { format!("{}:{:02}", (s / 60.0) as u32, (s % 60.0) as u32) }
+/// A label before a control, shorter than a form row's
+fn section(label: &'static str, body: impl IntoElement) -> gpui::Div {
+    form_row(tr(label), body)
 }
 
 impl Export {
-    fn page_what(&mut self, root: &Value, cx: &mut Context<Self>) -> AnyElement {
-        let (end_bar, song_secs) = song_end(root);
+    /// What to export: the scope, then what the scope needs (a track, bars, a marker span) and, for a range, how
+    fn what_section(&mut self, root: &Value, cx: &mut Context<Self>) -> AnyElement {
         let what = self.what;
-        let items = [
+        let mut items = vec![
             (What::Song, "The whole song"),
             (What::Loop, "The loop range"),
             (What::Markers, "Between markers"),
             (What::Bars, "Bars"),
             (What::Track, "One track"),
         ];
-        let mut col = div().flex().flex_col().gap(px(8.)).child(segmented(
-            "what",
-            items.iter().map(|(k, l)| (tr(l).into(), *k == what, true)).collect(),
-            cx,
-            move |e, i, _, cx| {
-                e.what = items[i].0;
-                cx.notify();
-            },
+        if matches!(what, What::Ticks(..)) {
+            items.push((what, "Region"));
+        }
+        let mut col = div().flex().flex_col().gap(px(6.)).child(section(
+            "What to export",
+            segmented(
+                "what",
+                items.iter().map(|(k, l)| (tr(l).into(), *k == what, true)).collect(),
+                cx,
+                move |e, i, _, cx| {
+                    e.what = items[i].0;
+                    cx.notify();
+                },
+            ),
         ));
         match what {
-            What::Song => {
-                col = col.child(caption(mmss(song_secs)));
-            }
-            What::Loop => {
-                let (a, b) = loop_bars(root);
-                col = col.child(caption(trf("Bars {0} to {1}", &[&a, &(b - 1)])));
-            }
             What::Markers => {
                 let map = model::tempo_map(root);
-                let end = map.bar_start(end_bar).unwrap_or(0);
+                let end = map.bar_start(song_end(root)).unwrap_or(0);
                 let spans = MarksState::between_markers(root, end);
-                if spans.is_empty() {
-                    col = col.child(caption(tr("The project has no markers")));
-                }
                 col = col.child(div().flex().flex_wrap().gap(px(3.)).children(spans.into_iter().enumerate().map(
                     |(i, (name, a, z))| {
                         let label = format!("{name} ({}–{})", map.bar_beat_tick(a).bar, map.bar_beat_tick(z).bar - 1);
@@ -326,15 +309,9 @@ impl Export {
                     },
                 )));
             }
-            What::Ticks(a, z) => {
-                let map = model::tempo_map(root);
-                col =
-                    col.child(caption(trf("Bars {0} to {1}", &[&map.bar_beat_tick(a).bar, &map.bar_beat_tick(z).bar])));
-            }
             What::Bars => {
                 let (a, b) = self.bars;
-                col = col.child(form_row(
-                    tr("Bars"),
+                col = col.child(
                     div()
                         .flex()
                         .gap(px(10.))
@@ -346,12 +323,12 @@ impl Export {
                             e.bars.1 = (b + d).max(a + 1);
                             cx.notify();
                         })),
-                ));
+                );
             }
             What::Track => {
                 let tracks = model::tracks(root);
                 col = col.child(
-                    div().id("track-list").max_h(px(110.)).overflow_y_scroll().flex().flex_wrap().gap(px(3.)).children(
+                    div().id("track-list").max_h(px(66.)).overflow_y_scroll().flex().flex_wrap().gap(px(3.)).children(
                         tracks.iter().enumerate().filter(|(_, t)| !t.folder).map(|(i, t)| {
                             button(("only-track", i), t.name.to_string(), i == self.track, THEME.green).on_click(
                                 cx.listener(move |e, _, _, cx| {
@@ -363,56 +340,34 @@ impl Export {
                     ),
                 );
             }
+            _ => {}
         }
-        // a range: Fast or Exact, each with what it renders and costs (U37)
-        if let Some((a, b)) = self.range(root) {
-            let len = tick_seconds(root, b) - tick_seconds(root, a);
-            let before = tick_seconds(root, a);
-            let fast_s = len + self.warmup.min(before);
-            let exact_s = tick_seconds(root, b);
+        // a range: Fast or Exact (U37)
+        if self.range(root).is_some() {
             let warm = self.warmup;
-            col = col
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .child(segmented(
-                            "mode",
-                            vec![(tr("Fast").into(), self.fast, true), (tr("Exact").into(), !self.fast, true)],
-                            cx,
-                            |e, i, _, cx| {
-                                e.fast = i == 0;
-                                cx.notify();
-                            },
-                        ))
-                        .when(self.fast, |d| {
-                            d.child(stepper("warmup", trf("warm-up {0} s", &[&warm]), cx, move |e, dd, cx| {
-                                e.warmup = (warm + dd as f64).clamp(0.0, 60.0);
-                                cx.notify();
-                            }))
-                        }),
-                )
-                .child(caption(if self.fast {
-                    trf("Renders {0}, about {1}", &[&mmss(fast_s), &mmss(fast_s / RENDER_SPEED)])
-                } else {
-                    trf("Renders {0}, about {1}", &[&mmss(exact_s), &mmss(exact_s / RENDER_SPEED)])
-                }));
-        }
-        let repeats = self.repeats;
-        col = col
-            .child(switch("as-loop", self.as_loop, cx, |e: &mut Export, v, cx| {
-                e.as_loop = v;
-                cx.notify();
-            }))
-            .child(caption(tr("As a loop")))
-            .child(form_row(
-                tr("Times"),
-                stepper("repeats", repeats.to_string(), cx, move |e, d, cx| {
-                    e.repeats = (repeats + d).clamp(1, 64);
-                    cx.notify();
-                }),
+            col = col.child(section(
+                "Range mode",
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(segmented(
+                        "mode",
+                        vec![(tr("Fast").into(), self.fast, true), (tr("Exact").into(), !self.fast, true)],
+                        cx,
+                        |e, i, _, cx| {
+                            e.fast = i == 0;
+                            cx.notify();
+                        },
+                    ))
+                    .when(self.fast, |d| {
+                        d.child(stepper("warmup", trf("warm-up {0} s", &[&warm]), cx, move |e, dd, cx| {
+                            e.warmup = (warm + dd as f64).clamp(0.0, 60.0);
+                            cx.notify();
+                        }))
+                    }),
             ));
+        }
         // stems (P-40): per track or per desk channel
         let stems = self.stems;
         let list: Vec<(NodeId, String)> = match stems {
@@ -422,8 +377,8 @@ impl Export {
             Stems::Channels => model::channels(root).into_iter().map(|c| (c.id, c.name.to_string())).collect(),
             Stems::None => Vec::new(),
         };
-        col.child(form_row(
-            tr("Stems"),
+        col = col.child(section(
+            "Stems",
             segmented(
                 "stems",
                 vec![
@@ -438,22 +393,22 @@ impl Export {
                     cx.notify();
                 },
             ),
-        ))
-        .when(stems != Stems::None, |d| {
+        ));
+        if stems != Stems::None {
             let all: Vec<NodeId> = list.iter().map(|(id, _)| *id).collect();
-            d.child(
+            col = col.child(
                 div()
+                    .id("stem-list")
+                    .max_h(px(66.))
+                    .overflow_y_scroll()
                     .flex()
-                    .gap(px(6.))
+                    .flex_wrap()
+                    .gap(px(3.))
                     .child(button("stems-all", tr("All"), false, 0).on_click(cx.listener(move |e, _, _, cx| {
                         e.chosen = all.clone();
                         cx.notify();
                     })))
-                    .child(caption(trf("{0} chosen", &[&self.chosen.len()]))),
-            )
-            .child(
-                div().id("stem-list").max_h(px(110.)).overflow_y_scroll().flex().flex_wrap().gap(px(3.)).children(
-                    list.iter().enumerate().map(|(i, (id, n))| {
+                    .children(list.iter().enumerate().map(|(i, (id, n))| {
                         let id = *id;
                         button(("stem", i), n.clone(), self.chosen.contains(&id), THEME.green)
                             .debug_selector(move || format!("stem-{i}"))
@@ -465,14 +420,14 @@ impl Export {
                                 }
                                 cx.notify();
                             }))
-                    }),
-                ),
-            )
-        })
-        .into_any_element()
+                    })),
+            );
+        }
+        col.into_any_element()
     }
 
-    fn page_formats(&mut self, root: &Value, cx: &mut Context<Self>) -> AnyElement {
+    /// The formats with their quality, and the sample rate
+    fn format_section(&mut self, root: &Value, cx: &mut Context<Self>) -> AnyElement {
         let project_rate = model::sample_rate(root) as i64;
         let bits =
             |id: &'static str, cur: Option<i64>, float: bool, cx: &mut Context<Self>, set: fn(&mut Export, i64)| {
@@ -491,7 +446,7 @@ impl Export {
         let check =
             |id: &'static str, label: &'static str, on: bool, cx: &mut Context<Self>, toggle: fn(&mut Export, bool)| {
                 div()
-                    .w(px(150.))
+                    .w(px(110.))
                     .flex_none()
                     .flex()
                     .items_center()
@@ -502,58 +457,47 @@ impl Export {
                     }))
                     .child(div().text_size(px(12.)).child(label))
             };
+        let row = |a: AnyElement, b: AnyElement| div().flex().items_center().gap(px(10.)).child(a).child(b);
         let (wav, flac, ogg, mp3) = (self.wav, self.flac, self.ogg, self.mp3);
+        let wav_row = row(
+            check("fmt-wav", "WAV", wav.is_some(), cx, |e, v| e.wav = v.then_some(24)).into_any_element(),
+            bits("wav-bits", wav, true, cx, |e, b| e.wav = Some(b)).into_any_element(),
+        );
+        let flac_row = row(
+            check("fmt-flac", "FLAC", flac.is_some(), cx, |e, v| e.flac = v.then_some(24)).into_any_element(),
+            bits("flac-bits", flac, false, cx, |e, b| e.flac = Some(b)).into_any_element(),
+        );
+        let ogg_row = row(
+            check("fmt-ogg", "OGG Vorbis", ogg.is_some(), cx, |e, v| e.ogg = v.then_some(6)).into_any_element(),
+            match ogg {
+                Some(q) => stepper("ogg-quality", trf("quality {0}", &[&q]), cx, move |e, dd, cx| {
+                    e.ogg = Some((q + dd).clamp(0, 10));
+                    cx.notify();
+                })
+                .into_any_element(),
+                None => div().into_any_element(),
+            },
+        );
+        let mp3_row = row(
+            check("fmt-mp3", "MP3", mp3.is_some(), cx, |e, v| e.mp3 = v.then_some(320)).into_any_element(),
+            segmented(
+                "mp3-kbps",
+                KBPS.iter().map(|k| (format!("{k} kbps").into(), mp3 == Some(*k), mp3.is_some())).collect(),
+                cx,
+                |e, i, _, cx| {
+                    e.mp3 = Some(KBPS[i]);
+                    cx.notify();
+                },
+            )
+            .into_any_element(),
+        );
         div()
             .flex()
             .flex_col()
-            .gap(px(8.))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(10.))
-                    .child(check("fmt-wav", "WAV", wav.is_some(), cx, |e, v| e.wav = v.then_some(24)))
-                    .child(bits("wav-bits", wav, true, cx, |e, b| e.wav = Some(b))),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(10.))
-                    .child(check("fmt-flac", "FLAC", flac.is_some(), cx, |e, v| e.flac = v.then_some(24)))
-                    .child(bits("flac-bits", flac, false, cx, |e, b| e.flac = Some(b))),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(10.))
-                    .child(check("fmt-ogg", "OGG Vorbis", ogg.is_some(), cx, |e, v| e.ogg = v.then_some(6)))
-                    .when_some(ogg, |d, q| {
-                        d.child(stepper("ogg-quality", trf("quality {0}", &[&q]), cx, move |e, dd, cx| {
-                            e.ogg = Some((q + dd).clamp(0, 10));
-                            cx.notify();
-                        }))
-                    }),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(10.))
-                    .child(check("fmt-mp3", "MP3", mp3.is_some(), cx, |e, v| e.mp3 = v.then_some(320)))
-                    .child(segmented(
-                        "mp3-kbps",
-                        KBPS.iter().map(|k| (format!("{k} kbps").into(), mp3 == Some(*k), mp3.is_some())).collect(),
-                        cx,
-                        |e, i, _, cx| {
-                            e.mp3 = Some(KBPS[i]);
-                            cx.notify();
-                        },
-                    )),
-            )
-            .child(form_row(
-                tr("Sample rate"),
+            .gap(px(5.))
+            .child(section("Formats", div().flex().flex_col().gap(px(4.)).child(wav_row).child(flac_row).child(ogg_row).child(mp3_row)))
+            .child(section(
+                "Sample rate",
                 segmented(
                     "exp-rate",
                     RATES
@@ -578,69 +522,87 @@ impl Export {
             .into_any_element()
     }
 
-    fn page_processing(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    /// Level, fades, dither and the loop
+    fn finish_section(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let (target, fi, fo, kind) = (self.target, self.fade_in, self.fade_out, self.normalize);
+        let repeats = self.repeats;
         div()
             .flex()
             .flex_col()
-            .gap(px(8.))
-            .child(form_row(
-                tr("Normalize"),
-                segmented(
-                    "normalize",
-                    vec![
-                        (tr("None").into(), kind == "none", true),
-                        (tr("Peak (dBFS)").into(), kind == "peak", true),
-                        (tr("Loudness (LUFS, ITU-R BS.1770)").into(), kind == "lufs", true),
-                    ],
-                    cx,
-                    |e, i, _, cx| {
-                        e.normalize = ["none", "peak", "lufs"][i];
-                        // the usual targets: -1 dBFS for a peak, -14 LUFS for streaming
-                        e.target = if i == 2 { -14.0 } else { -1.0 };
-                        cx.notify();
-                    },
-                ),
-            ))
-            .when(kind != "none", |d| {
-                d.child(form_row(
-                    tr("Target"),
-                    stepper("norm-target", format!("{target:.1}"), cx, move |e, dd, cx| {
-                        e.target = (target + dd as f64).clamp(-60.0, 0.0);
-                        cx.notify();
-                    }),
-                ))
-            })
-            .child(form_row(
-                tr("Fade in"),
-                stepper("fade-in", format!("{fi:.2} s"), cx, move |e, d, cx| {
-                    e.fade_in = (fi + d as f64 * 0.5).clamp(0.0, 30.0);
-                    cx.notify();
-                }),
-            ))
-            .child(form_row(
-                tr("Fade out"),
-                stepper("fade-out", format!("{fo:.2} s"), cx, move |e, d, cx| {
-                    e.fade_out = (fo + d as f64 * 0.5).clamp(0.0, 30.0);
-                    cx.notify();
-                }),
-            ))
-            .child(
+            .gap(px(5.))
+            .child(section(
+                "Normalize",
                 div()
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .child(switch("dither", self.dither, cx, |e: &mut Export, v, cx| {
-                        e.dither = v;
+                    .child(segmented(
+                        "normalize",
+                        vec![
+                            (tr("None").into(), kind == "none", true),
+                            (tr("Peak (dBFS)").into(), kind == "peak", true),
+                            (tr("Loudness (LUFS, ITU-R BS.1770)").into(), kind == "lufs", true),
+                        ],
+                        cx,
+                        |e, i, _, cx| {
+                            e.normalize = ["none", "peak", "lufs"][i];
+                            // the usual targets: -1 dBFS for a peak, -14 LUFS for streaming
+                            e.target = if i == 2 { -14.0 } else { -1.0 };
+                            cx.notify();
+                        },
+                    ))
+                    .when(kind != "none", |d| {
+                        d.child(stepper("norm-target", format!("{target:.1}"), cx, move |e, dd, cx| {
+                            e.target = (target + dd as f64).clamp(-60.0, 0.0);
+                            cx.notify();
+                        }))
+                    }),
+            ))
+            .child(section(
+                "Fade in",
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(14.))
+                    .child(stepper("fade-in", format!("{fi:.2} s"), cx, move |e, d, cx| {
+                        e.fade_in = (fi + d as f64 * 0.5).clamp(0.0, 30.0);
                         cx.notify();
                     }))
-                    .child(div().text_size(px(12.)).child(tr("Dither (TPDF)"))),
-            )
+                    .child(div().text_size(px(12.)).text_color(c(THEME.text2)).child(tr("Fade out")))
+                    .child(stepper("fade-out", format!("{fo:.2} s"), cx, move |e, d, cx| {
+                        e.fade_out = (fo + d as f64 * 0.5).clamp(0.0, 30.0);
+                        cx.notify();
+                    })),
+            ))
+            .child(section(
+                "Dither (TPDF)",
+                switch("dither", self.dither, cx, |e: &mut Export, v, cx| {
+                    e.dither = v;
+                    cx.notify();
+                }),
+            ))
+            .child(section(
+                "As a loop",
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(14.))
+                    .child(switch("as-loop", self.as_loop, cx, |e: &mut Export, v, cx| {
+                        e.as_loop = v;
+                        cx.notify();
+                    }))
+                    .when(self.as_loop, |d| {
+                        d.child(stepper("repeats", trf("{0} times", &[&repeats]), cx, move |e, dd, cx| {
+                            e.repeats = (repeats + dd).clamp(1, 64);
+                            cx.notify();
+                        }))
+                    }),
+            ))
             .into_any_element()
     }
 
-    fn page_where(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        // H18: the third-party plugins the project uses do not promise the same result twice
+    /// The destination, and the third-party plugins that do not promise the same result twice (H18)
+    fn where_section(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let port = self.scx.core.read(cx).port();
         let outside: Vec<(String, String)> =
             port.plugins().into_iter().filter(|p| p.third_party).map(|p| (p.id.to_string(), tr_dyn(&p.name))).collect();
@@ -656,16 +618,16 @@ impl Export {
         div()
             .flex()
             .flex_col()
-            .gap(px(8.))
-            .child(form_row(tr("Folder"), crate::ui::text_entry(Input::new(&self.folder))))
-            .child(form_row(tr("Name"), crate::ui::text_entry(Input::new(&self.name))))
+            .gap(px(5.))
+            .child(section("Folder", crate::ui::text_entry(Input::new(&self.folder))))
+            .child(section("Name", crate::ui::text_entry(Input::new(&self.name))))
             .when(!third.is_empty(), |d| {
                 d.child(note(trf("Not deterministic: {0}", &[&third.join(", ")]), THEME.orange))
             })
             .into_any_element()
     }
 
-    /// After Export: the progress (the shared loading component), then the report
+    /// After Export: the progress with cancel (the shared loading component), then the result
     fn progress(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let loading = target_loading(&self.scx, "export-loading", Target::Export(1), cx);
         let report = self.scx.core.read(cx).port().status().get("lastExport").cloned().unwrap_or(Value::NULL);
@@ -673,7 +635,7 @@ impl Export {
             return div().h(px(30.)).child(l).into_any_element();
         }
         if report.is_null() {
-            return caption(tr("Starting…")).into_any_element();
+            return div().h(px(30.)).into_any_element();
         }
         let ok = report.get("ok").and_then(Value::as_bool).unwrap_or(false);
         let file = report.get("file").and_then(Value::as_text).unwrap_or("").to_string();
@@ -699,21 +661,22 @@ impl Export {
 
 impl Render for Export {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (w, h) = modal_size(window, 640.0, 520.0);
+        let (w, h) = modal_size(window, 600.0, 600.0);
         let root = self.scx.core.read(cx).port().root().clone();
         let body = if self.started {
             self.progress(cx)
         } else {
-            match self.page {
-                0 => self.page_what(&root, cx),
-                1 => self.page_formats(&root, cx),
-                2 => self.page_processing(cx),
-                _ => self.page_where(cx),
-            }
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(10.))
+                .child(self.what_section(&root, cx))
+                .child(self.format_section(&root, cx))
+                .child(self.finish_section(cx))
+                .child(self.where_section(cx))
+                .into_any_element()
         };
-        let last = self.page == PAGES.len() - 1;
         let can_export = !self.formats().is_empty() && !self.name.read(cx).value().trim().is_empty();
-        let page = self.page;
         div()
             .id("export")
             .w(px(w))
@@ -728,16 +691,11 @@ impl Render for Export {
             .child(
                 div()
                     .px(px(18.))
-                    .py(px(12.))
+                    .py(px(10.))
                     .bg(c(THEME.bg1))
                     .border_b_1()
                     .border_color(c(THEME.line))
-                    .child(div().text_size(px(12.)).text_color(c(THEME.text3)).child(tr("Export the song")))
-                    .child(div().text_size(px(16.)).font_weight(FontWeight::BOLD).child(if self.started {
-                        tr("Exporting")
-                    } else {
-                        tr(PAGES[page])
-                    })),
+                    .child(div().text_size(px(16.)).font_weight(FontWeight::BOLD).child(tr("Export the song"))),
             )
             .child(div().id("export-body").flex_1().overflow_y_scroll().px(px(18.)).py(px(12.)).child(body))
             .child(
@@ -749,27 +707,7 @@ impl Render for Export {
                     .py(px(10.))
                     .border_t_1()
                     .border_color(c(THEME.line))
-                    .when(!self.started && page > 0, |d| {
-                        d.child(button("back", tr("Back"), false, 0).h(px(24.)).px(px(10.)).on_click(cx.listener(
-                            |e, _, _, cx| {
-                                e.page -= 1;
-                                cx.notify();
-                            },
-                        )))
-                    })
-                    .when(!self.started && !last, |d| {
-                        d.child(
-                            button("next", tr("Next"), false, 0)
-                                .h(px(24.))
-                                .px(px(10.))
-                                .debug_selector(|| "next".into())
-                                .on_click(cx.listener(|e, _, _, cx| {
-                                    e.page += 1;
-                                    cx.notify();
-                                })),
-                        )
-                    })
-                    .when(!self.started && last, |d| {
+                    .when(!self.started, |d| {
                         d.child(
                             tbutton("start-export", tr("Export"), can_export, THEME.green)
                                 .debug_selector(|| "start-export".into())

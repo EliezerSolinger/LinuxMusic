@@ -547,3 +547,6 @@ Used by "{0}": press again to take them = Em uso por "{0}": aperte de novo para 
 Press the new keys… = Aperte as novas teclas…
 
 read only = somente leitura
+# Export on one screen
+Region = Região
+Range mode = Trecho

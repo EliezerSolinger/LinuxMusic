@@ -1654,16 +1654,13 @@ fn file_keys_open_their_screens(cx: &mut TestAppContext) {
     }
 }
 
-/// The export wizard: four pages, then the export as an operation and its report
+/// The export screen: one screen, then the export as an operation and its report
 #[gpui::test]
-fn export_wizard(cx: &mut TestAppContext) {
+fn export_screen(cx: &mut TestAppContext) {
     let (ws, cx) = open(cx);
     open_part(&ws, cx, Screen::Export, None);
     click(cx, "what-1");
-    click(cx, "next");
     click(cx, "fmt-mp3");
-    click(cx, "next");
-    click(cx, "next");
     click(cx, "start-export");
     wait_until(&ws, cx, |s| s.get("lastExport").is_some_and(|r| !r.is_null()));
     let r = status(&ws, cx).get("lastExport").cloned().unwrap();

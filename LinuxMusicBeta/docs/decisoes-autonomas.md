@@ -2314,3 +2314,20 @@ derruba ou trava o processo principal nem a thread de áudio.
   filtro K com histograma por canal custaria CPU em todos os nós; o LUFS fica no master, onde já estava.
 - **Mudo do master no transporte (F-MIX-015).** O botão do transporte passou a ser o alto-falante (ícone), com a ação
   `transport.master_mute` que já existia.
+## Paridade 1.0 (27/11): projeto e navegador
+
+- **Exportar numa tela só.** O diálogo copiava o assistente de quatro páginas do legado (o quê, formatos, processamento,
+  onde, com Voltar/Avançar). Agora é uma tela: o que exportar (música, loop, entre marcadores, compassos, uma faixa,
+  uma região ou um clipe vindos da régua e do menu do clipe), trecho rápido ou exato, stems, formato e qualidade, taxa,
+  acabamento (nível, fades, dither, loop), destino, e o botão Exportar; depois de iniciado, a mesma janela mostra o
+  progresso com cancelar e o relatório. Sem legendas de estimativa nem "N escolhidos". O pedido ao núcleo
+  (`project.export`) não mudou.
+- **Importar MIDI.** Pitch bend, pressão e os CC além de 7 e 10 viram faixas de controle do item (`controls`, o que o
+  gravador já escreve), em vez de se perderem; o banco (CC0/CC32) e o primeiro program change escolhem o preset do
+  instrumento, os seguintes viram faixas `programChange`; o canal 10 é o banco 128. O instrumento passa a ser um
+  Sampler no SoundFont padrão (`defaultSoundFont`, ou o primeiro do índice); sem SoundFont fica o sintetizador
+  provisório, porque um Sampler sem arquivo não soa. O arquivo é importado para o projeto por `plugin.load_into_field`
+  (uma operação por faixa, o arquivo é guardado uma vez, pelo hash). Cada faixa de controle guarda no máximo 50 000
+  pontos e descarta o valor repetido.
+- **Exportar MIDI.** Escreve as faixas de controle e, para um Sampler em SF2/GIG, banco e program no início; banco 128
+  vai ao canal 10 sem seleção de banco (o GM não a usa ali), como o import espera.
