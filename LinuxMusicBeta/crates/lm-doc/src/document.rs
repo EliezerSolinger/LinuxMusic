@@ -354,7 +354,7 @@ impl Document {
             upgraded: false,
             read_only,
             notices: Vec::new(),
-            next_id: issued_before.max(crate::migrate::max_id(&root) + 1),
+            next_id: issued_before.max(first_free(crate::migrate::max_id(&root))?),
         };
         let next_before = up.next_id;
         up.outdated = from.iter().any(|(t, v)| registry.find(t).is_some_and(|s| s.version > *v));
@@ -427,7 +427,7 @@ impl Document {
         let mut root = root;
         let max_id = index.ids.keys().map(|id| id.number).max().unwrap_or(0);
         let max_note = ctx.max_note(&FieldKind::Object(ctx.root_type), &root).unwrap_or(0);
-        let needed = max_id.max(max_note) + 1;
+        let needed = first_free(max_id.max(max_note))?;
         let mut issued = needed;
         if ctx.has_meta {
             let saved = root
@@ -1090,5 +1090,27 @@ impl Upgrader<'_> {
         let state = self.registry.upgrade(schema.type_name, version, state)?;
         self.upgraded = true;
         Ok(node.with("state", state).with("version", Value::int(i64::from(schema.version))))
+    }
+}
+
+/// The number after the highest one a file uses. The file's numbers are not ours: one at the end of the range would
+/// wrap the counter (new ids colliding with old ones) or not fit in the saved counter, so such a file is refused
+fn first_free(highest: u64) -> Result<u64> {
+    highest
+        .checked_add(1)
+        .filter(|n| i64::try_from(*n).is_ok_and(|n| n <= lm_state::MAX_SAFE_INT))
+        .ok_or_else(|| Error::new("doc.id.exhausted"))
+}
+
+#[cfg(test)]
+mod id_range_tests {
+    use super::first_free;
+
+    #[test]
+    fn ids_at_the_end_of_the_range_are_refused() {
+        assert_eq!(first_free(0).unwrap(), 1);
+        assert_eq!(first_free(41).unwrap(), 42);
+        assert!(first_free(u64::MAX).is_err());
+        assert!(first_free(lm_state::MAX_SAFE_INT as u64).is_err());
     }
 }
