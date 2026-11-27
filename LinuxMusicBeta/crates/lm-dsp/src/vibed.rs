@@ -11,6 +11,12 @@ pub const IMPULSE_LENGTH: usize = 128;
 pub const OCTAVES: [f32; 9] = [0.25, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
 /// The rate the strings' oversampling is set for: above it, less
 pub const BASE_SAMPLE_RATE: u32 = 44100;
+/// Pitch limits of a string, in Hz: below the lowest note the plugin makes rooms for (about 1.9 Hz) and above any
+/// string that fits two samples
+const MIN_PITCH: f32 = 1.0;
+const MAX_PITCH: f32 = 1.0e6;
+/// The longest string, in internal samples (the lowest pitch at the longest length knob is about 0.75 million)
+const MAX_LENGTH: usize = 1 << 21;
 
 /// The legacy `cubicInterpolate`
 #[inline]
@@ -120,14 +126,25 @@ impl VibratingString {
     /// [`VibratingString::new`] makes it: the same at any sample rate
     pub fn length_for(pitch: f32, sample_rate: u32, oversample: i32, detune: f32) -> usize {
         let _ = sample_rate;
-        let mut length = ((Self::oversample_for(oversample) as u32 * BASE_SAMPLE_RATE) as f32 / pitch) as i32 + 1;
-        length += (length as f32 * -detune) as i32;
-        length.max(1) as usize
+        Self::length_of(pitch, Self::oversample_for(oversample), detune)
     }
 
-    /// The internal samples per sample of the base rate: twice the length knob
+    /// The one place a string's length is computed, for `length_for` and `restart`. Whatever the pitch (zero, not
+    /// finite, far below the lowest note, which would allocate and loop for megabytes) and the detune, it is
+    /// between 1 and [`MAX_LENGTH`] and the arithmetic cannot overflow. Inside the knobs' ranges it is the legacy
+    /// length exactly
+    fn length_of(pitch: f32, oversample: i32, detune: f32) -> usize {
+        let pitch = if pitch.is_finite() { pitch.clamp(MIN_PITCH, MAX_PITCH) } else { MIN_PITCH };
+        let detune = if detune.is_finite() { detune.clamp(-1.0, 1.0) } else { 0.0 };
+        let mut length = ((oversample as u32 * BASE_SAMPLE_RATE) as f32 / pitch) as i32 + 1;
+        length += (length as f32 * -detune) as i32;
+        (length.max(1) as usize).min(MAX_LENGTH)
+    }
+
+    /// The internal samples per sample of the base rate: twice the length knob (1 to 16 in the schema; limited
+    /// here so the product cannot overflow)
     fn oversample_for(oversample: i32) -> i32 {
-        (2 * oversample).max(1)
+        oversample.clamp(0, 16).saturating_mul(2).max(1)
     }
 
     /// A silent string with room for delay lines of @p room samples (allocates: in the build)
@@ -202,9 +219,9 @@ impl VibratingString {
         // at that many times the project rate (fewer above 88.2 kHz) and so changed its decay and tone with the rate
         let oversample = Self::oversample_for(oversample);
         let choice = rand.below_int(oversample).clamp(0, oversample - 1);
-        let mut length = ((oversample as u32 * BASE_SAMPLE_RATE) as f32 / pitch) as i32 + 1;
-        length += (length as f32 * -detune) as i32;
-        let length = (length.max(1) as usize).min(self.room()) as i32;
+        let length = Self::length_of(pitch, oversample, detune).min(self.room()) as i32;
+        // (fractions of the length: a position outside the string is a position at its end)
+        let (pick, pickup) = (finite_or(pick, 0.0).clamp(0.0, 1.0), finite_or(pickup, 0.0).clamp(0.0, 1.0));
         let pick_at = (length as f32 * pick).ceil() as i32;
 
         self.stretched.clear();
@@ -221,6 +238,7 @@ impl VibratingString {
             }));
         }
 
+        let randomize = finite_or(randomize, 0.0).clamp(0.0, 1.0);
         let amount = randomize / 2.0 - randomize;
         for dl in [&mut self.to_bridge, &mut self.from_bridge] {
             dl.data.clear();
@@ -231,7 +249,7 @@ impl VibratingString {
             set_delay_line(dl, pick_at, &self.stretched, IMPULSE_LENGTH as i32, 0.5, state, amount, rand);
         }
         self.pickup = (pickup * length as f32) as i32;
-        self.string_loss = 1.0 - stiffness;
+        self.string_loss = 1.0 - finite_or(stiffness, 0.0).clamp(0.0, 1.0);
         self.state = 0.1;
         // (the legacy read the `choice`-th of each output sample's internal samples)
         self.steps = f64::from(oversample) * f64::from(BASE_SAMPLE_RATE) / f64::from(sample_rate);
@@ -311,6 +329,10 @@ fn set_delay_line(
             dl.data[(i + pick) as usize] = scale * values[i as usize] + rand.inclusive(amount);
         }
     }
+}
+
+fn finite_or(v: f32, fallback: f32) -> f32 {
+    if v.is_finite() { v } else { fallback }
 }
 
 /// One string's knobs
