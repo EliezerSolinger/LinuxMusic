@@ -1,20 +1,40 @@
 //! Sample data: planar float frames, mono or stereo, shared by the zones that play them, and a small WAV reader
 //! (the one format every importer can read without a library).
 
+use std::sync::Arc;
+
 use lm_base::{Error, Result};
 
+use crate::stream::TailSource;
+
 /// The frames of a sample at its own rate: one channel, or two. Immutable once made; zones share it in an `Arc`
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Pcm {
     pub rate: u32,
+    /// The frames in memory: all of them, or the head of a streamed sample
     left: Box<[f32]>,
     right: Option<Box<[f32]>>,
+    /// Where the rest of a streamed sample is (`None`: the sample is all here)
+    tail: Option<Arc<dyn TailSource>>,
+}
+
+impl PartialEq for Pcm {
+    fn eq(&self, other: &Self) -> bool {
+        self.rate == other.rate
+            && self.left == other.left
+            && self.right == other.right
+            && match (&self.tail, &other.tail) {
+                (None, None) => true,
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                _ => false,
+            }
+    }
 }
 
 impl Pcm {
     /// A mono sample
     pub fn mono(rate: u32, frames: Vec<f32>) -> Self {
-        Self { rate: rate.max(1), left: frames.into_boxed_slice(), right: None }
+        Self { rate: rate.max(1), left: frames.into_boxed_slice(), right: None, tail: None }
     }
 
     /// A stereo sample (the shorter channel is padded with silence to the longer)
@@ -22,7 +42,7 @@ impl Pcm {
         let n = left.len().max(right.len());
         left.resize(n, 0.0);
         right.resize(n, 0.0);
-        Self { rate: rate.max(1), left: left.into_boxed_slice(), right: Some(right.into_boxed_slice()) }
+        Self { rate: rate.max(1), left: left.into_boxed_slice(), right: Some(right.into_boxed_slice()), tail: None }
     }
 
     /// From stereo frames; mono when both sides are identical everywhere
@@ -34,16 +54,45 @@ impl Pcm {
         }
     }
 
+    /// A streamed sample: `head` (its first frames, in memory) and the rest in `tail`, whose frame count is the
+    /// sample's. The head must not be longer than the tail's frames
+    pub fn streamed(head: Pcm, tail: Arc<dyn TailSource>) -> Self {
+        let n = tail.frames().max(head.left.len());
+        let mut head = head;
+        head.left = head.left[..head.left.len().min(n)].into();
+        if let Some(r) = head.right.take() {
+            head.right = Some(r[..head.left.len()].into());
+        }
+        Self { tail: Some(tail), ..head }
+    }
+
+    /// The sample's frames: all of them, also the ones not in memory
     pub fn frames(&self) -> usize {
+        match &self.tail {
+            Some(t) => t.frames().max(self.left.len()),
+            None => self.left.len(),
+        }
+    }
+
+    /// The frames in memory: the sample's own for a resident one, the head of a streamed one
+    pub fn head_frames(&self) -> usize {
         self.left.len()
     }
 
+    pub fn is_streamed(&self) -> bool {
+        self.tail.is_some()
+    }
+
+    pub fn tail(&self) -> Option<&Arc<dyn TailSource>> {
+        self.tail.as_ref()
+    }
+
     pub fn is_empty(&self) -> bool {
-        self.left.is_empty()
+        self.frames() == 0
     }
 
     pub fn is_stereo(&self) -> bool {
-        self.right.is_some()
+        self.right.is_some() || self.tail.as_ref().is_some_and(|t| t.stereo())
     }
 
     pub fn left(&self) -> &[f32] {

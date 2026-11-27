@@ -9,6 +9,7 @@ use lm_sampler::import::audio::{self, AudioOptions};
 use lm_sampler::import::drums::{self, Piece};
 use lm_sampler::import::pat::{self, PatOptions};
 use lm_sampler::import::{avl, gig, sf2, sfz};
+use lm_sampler::stream::StreamPlan;
 use lm_sampler::{Instrument, LoopMode, Pcm, Quality, Window};
 use lm_state::Value;
 
@@ -67,6 +68,17 @@ fn read_bytes(cx: &BuildContext<'_>, r: &lm_state::Resource) -> Result<Arc<[u8]>
     }
 }
 
+/// A file from this size on streams its long samples: the SoundFonts and GIGs that fit in memory stay whole
+const STREAM_FILE_BYTES: u64 = 256 << 20;
+
+/// The plan to stream the samples of the file a resource is, when it is a file large enough (the bytes the importer
+/// parses are read from the same file)
+fn stream_plan(cx: &BuildContext<'_>, r: &lm_state::Resource) -> Option<StreamPlan> {
+    let Some(Loaded::File(path)) = cx.resources.get(r) else { return None };
+    let file = std::fs::File::open(path).ok()?;
+    (file.metadata().ok()?.len() >= STREAM_FILE_BYTES).then(|| StreamPlan::new(Arc::new(file)))
+}
+
 fn pcm_of(data: &lm_render::SampleData) -> Pcm {
     if data.channels() > 1 {
         Pcm::stereo(data.rate(), data.channel(0).to_vec(), data.channel(1).to_vec())
@@ -113,6 +125,10 @@ pub fn build(state: &Value, cx: &BuildContext<'_>) -> Result<Built> {
             let bank = u16::try_from(s.int("bank")?).unwrap_or(0);
             let program = u16::try_from(s.int("program")?).unwrap_or(0);
             let font = sf2::SoundFont::parse(&bytes)?;
+            let font = match stream_plan(cx, r) {
+                Some(plan) => font.streaming(plan),
+                None => font,
+            };
             font.import(bank, program, Some(&mut OggDecoder))?
         }
         Format::Sfz => {
@@ -164,7 +180,10 @@ pub fn build(state: &Value, cx: &BuildContext<'_>) -> Result<Built> {
             let bytes = read_bytes(cx, r)?;
             let bank = u16::try_from(s.int("bank")?).unwrap_or(0);
             let program = u16::try_from(s.int("program")?).unwrap_or(0);
-            gig::import(&bytes, bank, program)?
+            match stream_plan(cx, r) {
+                Some(plan) => gig::import_streaming(&bytes, bank, program, plan)?,
+                None => gig::import(&bytes, bank, program)?,
+            }
         }
     };
     Ok(Built { instrument: Arc::new(instrument), source })

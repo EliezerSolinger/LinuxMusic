@@ -22,8 +22,9 @@ use std::sync::Arc;
 
 use crate::env::Env;
 use crate::filter::Biquad;
-use crate::interp::{Quality, SincTable, Wrap, read};
+use crate::interp::{Quality, SincTable, Wrap, read, read_with};
 use crate::model::{Ahdsr, Instrument, LoopMode, Trigger, VelCurve, Window, Zone};
+use crate::stream::{BLOCK, Link, REACH, Ring, STREAM_VOICES};
 
 /// The most voices that sound at once (the polyphony's ceiling)
 pub const MAX_POLYPHONY: usize = 256;
@@ -37,6 +38,9 @@ const HELD: usize = 512;
 const FADE: u32 = 32;
 /// The time a stolen or choked voice takes to fall, seconds
 const FAST_RELEASE: f32 = 0.004;
+
+/// A voice with no ring of stream blocks
+const NO_RING: u32 = u32::MAX;
 
 /// Replaces the zones' amplitude envelopes (the plugin's envelope knobs)
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -190,6 +194,8 @@ struct Voice {
     k_gain: f32,
     /// Work the values out at the next frame even if it is not a grid boundary (a voice that just began or moved)
     fresh: bool,
+    /// The ring of stream blocks it reads a streamed sample's tail through (`NO_RING`: none yet)
+    ring: u32,
 }
 
 impl Voice {
@@ -234,6 +240,7 @@ impl Voice {
             gr: 1.0,
             k_gain: 1.0,
             fresh: true,
+            ring: NO_RING,
         }
     }
 }
@@ -290,6 +297,12 @@ pub struct Engine {
     bus: Vec<f32>,
     bus_frames: usize,
     rate: f32,
+    /// The rings of stream blocks (made only when the instrument has a streamed sample) and the queues to the feeder
+    /// (without them the engine reads the blocks itself)
+    rings: Vec<Ring>,
+    link: Option<Link>,
+    /// Misses of the rings given up
+    misses: u32,
 }
 
 impl std::fmt::Debug for Engine {
@@ -329,9 +342,32 @@ impl Engine {
             bus: vec![0.0; groups * 2 * cfg.max_block.max(1)],
             bus_frames: 0,
             rate: cfg.rate as f32,
+            rings: if instrument.zones.iter().any(|z| z.sample.is_streamed()) {
+                (0..STREAM_VOICES).map(|_| Ring::new()).collect()
+            } else {
+                Vec::new()
+            },
+            link: None,
+            misses: 0,
             instrument,
             cfg,
         }
+    }
+
+    /// Gives the engine the queues to the plugin's feeder thread ([`crate::stream::link`]): the blocks of streamed
+    /// samples are then read there; without them the engine reads them in `render` (offline)
+    pub fn set_link(&mut self, link: Link) {
+        self.link = Some(link);
+    }
+
+    /// Whether the instrument has a sample that streams
+    pub fn streams(&self) -> bool {
+        !self.rings.is_empty()
+    }
+
+    /// The frames of streamed samples that were asked for and not there yet (read as silence) since the engine began
+    pub fn stream_misses(&self) -> u32 {
+        self.rings.iter().fold(self.misses, |m, r| m.wrapping_add(r.misses))
     }
 
     pub fn instrument(&self) -> &Arc<Instrument> {
@@ -385,6 +421,9 @@ impl Engine {
             && self.cfg.multi == other.cfg.multi
             && self.cfg.max_block == other.cfg.max_block
             && self.cfg.quality == other.cfg.quality
+            // (the voices' rings and the queues belong to one engine)
+            && !self.streams()
+            && !other.streams()
     }
 
     /// Takes the live state (voices, turns, pedal) of `old`, which must be [`Engine::same_sound`]
@@ -664,6 +703,7 @@ impl Engine {
             gr: 1.0,
             k_gain: 1.0,
             fresh: true,
+            ring: NO_RING,
         };
         v.amp.start(&amp, self.rate);
         if let Some(f) = &z.filter {
@@ -848,9 +888,13 @@ impl Engine {
         let master = db_to_lin(self.params.gain_db) * self.volume * self.expression;
         let inst = Arc::clone(&self.instrument);
         let first_frame = self.frame;
-        let Self { voices, bus, table, cfg, params, bend, rate, groups, stutter_at, .. } = self;
-        for v in voices.iter_mut().filter(|v| v.active) {
+        let Self { voices, bus, table, cfg, params, bend, rate, groups, stutter_at, rings, link, misses, .. } = self;
+        if !rings.is_empty() {
+            Self::stream_housekeeping(voices, rings, link, misses);
+        }
+        for (vi, v) in voices.iter_mut().enumerate().filter(|(_, v)| v.active) {
             let zone = &inst.zones[v.zone as usize];
+            let mut ring = if zone.sample.is_streamed() { Self::service(v, vi, zone, rings, link, n) } else { None };
             let group = if cfg.multi { usize::from(v.output).min(*groups - 1) } else { 0 };
             let mono_out = cfg.multi && !inst.outputs.get(group).is_none_or(|o| o.stereo);
             let (lo, hi) = bus.split_at_mut((2 * group + 1) * stride);
@@ -875,6 +919,7 @@ impl Engine {
                     master,
                     mono_out,
                     update,
+                    ring.as_mut().map(|r| &mut **r),
                     &mut left[at..at + m],
                     &mut right[at..at + m],
                 );
@@ -885,6 +930,64 @@ impl Engine {
             }
         }
         self.frame += n as u64;
+    }
+}
+
+impl Engine {
+    /// Takes the answers of the feeder into the rings and gives back the rings of voices that ended
+    fn stream_housekeeping(voices: &[Voice], rings: &mut [Ring], link: &mut Option<Link>, misses: &mut u32) {
+        if let Some(l) = link.as_mut() {
+            while let Ok(r) = l.responses.pop() {
+                if let Some(ring) = rings.get_mut(r.ring as usize) {
+                    ring.accept(r);
+                }
+            }
+        }
+        for ring in rings.iter_mut().filter(|r| r.used) {
+            let alive = voices.get(ring.voice as usize).is_some_and(|v| v.active && v.order == ring.order);
+            if !alive {
+                ring.used = false;
+                *misses = misses.wrapping_add(ring.misses);
+                ring.misses = 0;
+            }
+        }
+    }
+
+    /// The ring of voice `vi` (taken on the first block it plays), with the blocks it will need asked for: those
+    /// under and ahead of its position, and the start of its loop when it is about to wrap. `None` when every ring is
+    /// in use (the voice plays its head and then is silent)
+    fn service<'r>(
+        v: &mut Voice,
+        vi: usize,
+        zone: &Zone,
+        rings: &'r mut [Ring],
+        link: &mut Option<Link>,
+        frames: usize,
+    ) -> Option<&'r mut Ring> {
+        let mine = v.ring != NO_RING && rings.get(v.ring as usize).is_some_and(|r| r.used && r.order == v.order);
+        if !mine {
+            let free = rings.iter().position(|r| !r.used)?;
+            rings[free].take(vi as u32, v.order);
+            v.ring = free as u32;
+        }
+        let index = v.ring;
+        let ring = rings.get_mut(index as usize)?;
+        let ahead = BLOCK as i64 + 4 * frames as i64;
+        let pos = v.pos as i64;
+        let mut spans = [(0i64, -1i64); 2];
+        if v.dir > 0.0 {
+            spans[0] = (pos - REACH, pos + ahead);
+            let looping = matches!(v.looping, LoopMode::Forward | LoopMode::PingPong)
+                || (v.looping == LoopMode::UntilRelease && !v.released);
+            if looping && pos + ahead >= v.loop_end as i64 {
+                let start = v.loop_start as i64;
+                spans[1] = (start - REACH, start + ahead);
+            }
+        } else {
+            spans[0] = (pos - ahead, pos + REACH);
+        }
+        ring.want(index, &zone.sample, &spans, link);
+        Some(ring)
     }
 }
 
@@ -931,6 +1034,7 @@ fn render_sub(
     master: f32,
     mono_out: bool,
     update: Option<usize>,
+    mut ring: Option<&mut Ring>,
     left: &mut [f32],
     right: &mut [f32],
 ) {
@@ -961,7 +1065,10 @@ fn render_sub(
         } else {
             Wrap::NONE
         };
-        let mut s = read(&zone.sample, v.pos, quality, wrap, table);
+        let mut s = match ring.as_mut() {
+            Some(r) => read_with(|i| r.at(&zone.sample, i), v.pos, quality, wrap, table),
+            None => read(&zone.sample, v.pos, quality, wrap, table),
+        };
         if v.has_filter {
             s = v.filter.process(s);
         }

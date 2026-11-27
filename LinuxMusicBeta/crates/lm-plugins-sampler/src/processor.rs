@@ -87,6 +87,21 @@ impl Sampler {
         let frame = display_frame(&built.instrument);
         let mut engine = Engine::new(built.instrument, config);
         engine.set_params(engine_params(&values));
+        if engine.streams() {
+            // The long samples' tails are read by a thread of this processor (it ends when the processor is
+            // dropped); if the thread cannot start, the engine reads the blocks itself
+            let (link, mut feeder) = lm_sampler::stream::link(lm_sampler::stream::QUEUE);
+            let spawned = std::thread::Builder::new().name("lm-sampler-stream".to_owned()).spawn(move || {
+                while !feeder.abandoned() {
+                    if feeder.serve() == 0 {
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
+                }
+            });
+            if spawned.is_ok() {
+                engine.set_link(link);
+            }
+        }
         Ok(Self {
             current: Some(engine),
             ghost: None,

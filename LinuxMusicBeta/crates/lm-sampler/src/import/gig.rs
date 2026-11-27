@@ -26,6 +26,7 @@ use lm_base::{Error, Result};
 use crate::import::pat::MONO_CENTER_DB;
 use crate::model::{Ahdsr, Instrument, LoopMode, PresetInfo, Sequence, Trigger, Zone};
 use crate::pcm::Pcm;
+use crate::stream::{FileTail, Raw, StreamPlan};
 
 fn fail(reason: &'static str) -> Error {
     Error::new("sampler.gig.invalid").arg("reason", reason)
@@ -304,6 +305,8 @@ struct Wave<'a> {
     bits: u16,
     compressed: bool,
     data: &'a [u8],
+    /// Where `data` is in the file
+    data_at: Option<usize>,
 }
 
 #[derive(Clone, Debug)]
@@ -318,6 +321,7 @@ struct Ins {
 pub struct GigFile<'a> {
     instruments: Vec<Ins>,
     waves: Vec<Wave<'a>>,
+    stream: Option<StreamPlan>,
 }
 
 impl std::fmt::Debug for GigFile<'_> {
@@ -335,6 +339,14 @@ fn text(b: &[u8]) -> String {
 }
 
 impl<'a> GigFile<'a> {
+    /// The long uncompressed waves stream from `plan`'s file (which must be the file `parse` read) instead of being
+    /// decoded whole
+    #[must_use]
+    pub fn streaming(mut self, plan: StreamPlan) -> Self {
+        self.stream = Some(plan);
+        self
+    }
+
     /// Reads the structure of a file's bytes. Keys: `sampler.gig.invalid`
     pub fn parse(bytes: &'a [u8]) -> Result<Self> {
         if bytes.len() < 12 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"DLS " {
@@ -376,6 +388,7 @@ impl<'a> GigFile<'a> {
                     bits,
                     compressed: w.find(b"EWAV").is_some(),
                     data,
+                    data_at: crate::stream::offset_in(bytes, data),
                 });
             }
         }
@@ -406,7 +419,7 @@ impl<'a> GigFile<'a> {
                 instruments.push(Ins { name, bank, program, regions });
             }
         }
-        Ok(Self { instruments, waves })
+        Ok(Self { instruments, waves, stream: None })
     }
 
     /// The instruments, in the file's order
@@ -458,6 +471,25 @@ impl<'a> GigFile<'a> {
                 f32::from(i16::from_le_bytes([w.data[o], w.data[o + 1]])) / 65_536.0
             }
         };
+        if let (Some(plan), Some(at)) = (&self.stream, w.data_at)
+            && frames > plan.min_frames
+            && stride <= 2
+        {
+            // The long wave keeps its head; the rest is read from the file as the voices reach it (half amplitude, as
+            // above)
+            let head = frames.min(plan.head);
+            let left: Vec<f32> = (0..head).map(|i| sample(i, 0)).collect();
+            let head_pcm = if stride == 2 {
+                Pcm::stereo(w.rate, left, (0..head).map(|i| sample(i, 1)).collect())
+            } else {
+                Pcm::mono(w.rate, left)
+            };
+            let raw = if width == 3 { Raw::I24 } else { Raw::I16 };
+            let tail = FileTail::new(Arc::clone(&plan.file), at as u64, frames, stride, raw).scaled(0.5);
+            let pcm = Arc::new(Pcm::streamed(head_pcm, Arc::new(tail)));
+            cache.insert(index, Arc::clone(&pcm));
+            return Ok(Some(pcm));
+        }
         let left: Vec<f32> = (0..frames).map(|i| sample(i, 0)).collect();
         let pcm = if stride >= 2 {
             Pcm::stereo(w.rate, left, (0..frames).map(|i| sample(i, 1)).collect())
@@ -698,6 +730,11 @@ fn read_region(rgn: &Ck<'_>, v3: bool, wave_of: &dyn Fn(u32) -> Option<usize>) -
 /// The instruments of a `.gig` file's bytes
 pub fn list_presets(bytes: &[u8]) -> Result<Vec<PresetInfo>> {
     Ok(GigFile::parse(bytes)?.presets())
+}
+
+/// One instrument of a `.gig` file's bytes, its long waves streaming from `plan`'s file
+pub fn import_streaming(bytes: &[u8], bank: u16, program: u16, plan: StreamPlan) -> Result<Instrument> {
+    GigFile::parse(bytes)?.streaming(plan).import(bank, program)
 }
 
 /// One instrument of a `.gig` file's bytes

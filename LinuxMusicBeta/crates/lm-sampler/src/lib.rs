@@ -21,6 +21,7 @@ pub mod import;
 pub mod interp;
 pub mod model;
 pub mod pcm;
+pub mod stream;
 
 pub use engine::{Engine, EngineConfig, EnvOverride, MAX_POLYPHONY, Params};
 pub use interp::Quality;

@@ -124,6 +124,18 @@ const POSITION_LIMIT: f64 = 1.0e15;
 /// The frame at `position` (frames, fractional) of `pcm`
 #[inline]
 pub fn read(pcm: &Pcm, position: f64, quality: Quality, wrap: Wrap, table: &SincTable) -> [f32; 2] {
+    read_with(|i| pcm.at(i), position, quality, wrap, table)
+}
+
+/// The frame at `position` of a sample whose frame `i` is `frame(i)` (a streamed sample's head and blocks)
+#[inline]
+pub fn read_with(
+    mut frame: impl FnMut(i64) -> [f32; 2],
+    position: f64,
+    quality: Quality,
+    wrap: Wrap,
+    table: &SincTable,
+) -> [f32; 2] {
     // A position that is not finite or beyond any sample would overflow the integer indices below
     let position = if position.is_finite() { position.clamp(-POSITION_LIMIT, POSITION_LIMIT) } else { 0.0 };
     let i = position.floor();
@@ -131,16 +143,16 @@ pub fn read(pcm: &Pcm, position: f64, quality: Quality, wrap: Wrap, table: &Sinc
     let i = i as i64;
     match quality {
         Quality::Linear => {
-            let a = pcm.at(wrap.index(i));
-            let b = pcm.at(wrap.index(i + 1));
+            let a = frame(wrap.index(i));
+            let b = frame(wrap.index(i + 1));
             [a[0] + (b[0] - a[0]) * frac, a[1] + (b[1] - a[1]) * frac]
         }
         Quality::Cubic => {
             let p = [
-                pcm.at(wrap.index(i - 1)),
-                pcm.at(wrap.index(i)),
-                pcm.at(wrap.index(i + 1)),
-                pcm.at(wrap.index(i + 2)),
+                frame(wrap.index(i - 1)),
+                frame(wrap.index(i)),
+                frame(wrap.index(i + 1)),
+                frame(wrap.index(i + 2)),
             ];
             let mut out = [0.0; 2];
             for (ch, o) in out.iter_mut().enumerate() {
@@ -162,7 +174,7 @@ pub fn read(pcm: &Pcm, position: f64, quality: Quality, wrap: Wrap, table: &Sinc
             let mut acc = [0.0f32; 2];
             for t in 0..SINC_TAPS {
                 let k = c0[t] + (c1[t] - c0[t]) * mix;
-                let f = pcm.at(wrap.index(first + t as i64));
+                let f = frame(wrap.index(first + t as i64));
                 acc[0] += k * f[0];
                 acc[1] += k * f[1];
             }

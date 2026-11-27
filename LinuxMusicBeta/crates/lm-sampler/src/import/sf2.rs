@@ -15,6 +15,7 @@ use lm_base::{Error, Result};
 
 use crate::model::{Ahdsr, Filter, FilterKind, Instrument, LoopMode, PresetInfo, VelCurve, Zone};
 use crate::pcm::Pcm;
+use crate::stream::{FileTail, Raw, StreamPlan};
 
 fn fail(reason: &'static str) -> Error {
     Error::new("sampler.sf2.invalid").arg("reason", reason)
@@ -138,6 +139,9 @@ pub struct SoundFont<'a> {
     samples: Vec<SampleHeader>,
     smpl: &'a [u8],
     sm24: &'a [u8],
+    /// Where `smpl` is in the file, and what to stream (a sample of many frames keeps only its head in memory)
+    smpl_at: Option<usize>,
+    stream: Option<StreamPlan>,
 }
 
 impl std::fmt::Debug for SoundFont<'_> {
@@ -189,6 +193,14 @@ fn records<'a>(body: &'a [u8], size: usize) -> impl Iterator<Item = Cursor<'a>> 
 }
 
 impl<'a> SoundFont<'a> {
+    /// The long 16-bit samples of this font stream from `plan`'s file (which must be the file `parse` read) instead of
+    /// being decoded whole; a compressed or 24-bit sample is decoded whole as before
+    #[must_use]
+    pub fn streaming(mut self, plan: StreamPlan) -> Self {
+        self.stream = Some(plan);
+        self
+    }
+
     /// Parses the file's bytes. Keys: `sampler.sf2.invalid`
     pub fn parse(bytes: &'a [u8]) -> Result<Self> {
         if bytes.len() < 12 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"sfbk" {
@@ -267,6 +279,8 @@ impl<'a> SoundFont<'a> {
             samples,
             smpl,
             sm24,
+            smpl_at: crate::stream::offset_in(bytes, smpl),
+            stream: None,
         };
         if font.presets.len() < 2 || font.insts.len() < 2 {
             return Err(fail("no presets"));
@@ -482,6 +496,14 @@ impl<'a> SoundFont<'a> {
         let (a, b) = (h.start as usize, h.end as usize);
         let data = self.smpl.get(a * 2..b * 2).ok_or_else(|| fail("a sample past the data"))?;
         let low = self.sm24.get(a..b);
+        if let (Some(plan), Some(at), None) = (&self.stream, self.smpl_at, low)
+            && b - a > plan.min_frames
+        {
+            let head: Vec<f32> =
+                data.as_chunks::<2>().0.iter().take(plan.head).map(|p| f32::from(i16::from_le_bytes(*p)) / 32768.0).collect();
+            let tail = FileTail::new(Arc::clone(&plan.file), (at + a * 2) as u64, b - a, 1, Raw::I16);
+            return Ok(Pcm::streamed(Pcm::mono(rate, head), Arc::new(tail)));
+        }
         let frames: Vec<f32> = data
             .as_chunks::<2>()
             .0
@@ -675,6 +697,17 @@ fn apply_velocity_modulators(z: &mut Zone, inst: &[Modulator], global: Option<&[
 /// Reads the presets of a SoundFont's bytes
 pub fn list_presets(bytes: &[u8]) -> Result<Vec<PresetInfo>> {
     Ok(SoundFont::parse(bytes)?.presets())
+}
+
+/// Reads one preset of a SoundFont's bytes, its long 16-bit samples streaming from `plan`'s file
+pub fn import_streaming(
+    bytes: &[u8],
+    bank: u16,
+    program: u16,
+    sf3: Option<&mut dyn Sf3Decoder>,
+    plan: StreamPlan,
+) -> Result<Instrument> {
+    SoundFont::parse(bytes)?.streaming(plan).import(bank, program, sf3)
 }
 
 /// Reads one preset of a SoundFont's bytes

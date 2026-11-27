@@ -14,6 +14,7 @@ workspace = true
 lm-base.workspace = true
 lm-dsp.workspace = true
 libm.workspace = true
+rtrb.workspace = true
 
 [dev-dependencies]
 assert_no_alloc.workspace = true

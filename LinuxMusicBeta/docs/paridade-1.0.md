@@ -405,7 +405,7 @@ a ação contam como parcial.
 | F-INS-020 | Vibed (cordas vibrantes) | parcial | plugin registrado, só o editor genérico (botões); falta a GUI de desenhar a forma de onda de cada corda (campo shape, lista) | lm-plugins-instruments/src/vibed.rs,lm-gui/src/screens/instrument.rs |
 | F-INS-021 | Watsyn (4 osciladores de onda desenhada) | parcial | plugin registrado, só o editor genérico (botões); falta a GUI de desenhar as 4 ondas A1/A2/B1/B2 (campos de lista) | lm-plugins-instruments/src/watsyn.rs,lm-gui/src/screens/instrument.rs |
 | F-INS-022 | Xpressive (síntese por expressões) | feito | plugin `xpressive` sobre `lm-dsp::xpressive` e `lm-expr`, painel com o editor, a lâmpada de validade e os gráficos das ondas W1-W3 e das saídas O1/O2: o plugin publica o quadro de display (cinco bandeiras de erro e a curva de cada saída, uma nota A4 de meio segundo, I-9.5) | lm-plugins-instruments/src/xpressive.rs,lm-gui-plugins/src/panels/xpressive.rs |
-| F-INS-023 | ZynAddSubFX | falta | nenhum crate nem código do ZynAddSubFX |  |
+| F-INS-023 | ZynAddSubFX | decidido: hospedado | decisão P-05: fora do processo, como plugin de terceiros (threads próprias e janela FLTK); não é portado para Rust (um porte completo não cabe e perderia para o original). Entra pela hospedagem de terceiros (P11) |  |
 | F-INS-024 | Janela de "plugin não encontrado" e instrumento fantasma | feito |  | lm-doc/src/edit.rs,lm-gui/src/screens/instrument.rs,lm-gui/src/screens/effect.rs |
 
 ## F-HOST: Plugins de terceiros (hospedagem)
