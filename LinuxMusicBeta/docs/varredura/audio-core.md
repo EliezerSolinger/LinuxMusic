@@ -122,3 +122,20 @@ Por crate: `lm-render` tem 0 CRÍTICO, 5 ALTO, 4 MÉDIO, 2 BAIXO. `lm-compile` t
 - Divisão do bloco no renderer: o laço de automação e de modulação de `Rate::Block` usa a grade global de 32 quadros, então automação e LFO não dependem do tamanho do bloco.
 - A compilação roda num thread próprio com `catch_unwind`, e recomeça da última tabela boa (H14).
 - `lm-compile` valida as entradas que chegam ao renderer (`ProgramBuilder::build`): limites de nó, slot, porta, canal de feed, ciclos e tamanho de linha de atraso. Por isso os índices que o áudio usa depois são seguros.
+
+## Resultado da confirmação
+
+| Achado | Veredito | Commit |
+|---|---|---|
+| C-1 laço de 1 tique gera repetições sem limite | Confirmado e corrigido: o número de repetições é calculado sem estouro e a compilação recusa o item (`compile.item.too_many_events`) quando repetições x notas/pontos de controle passa de 2^20 eventos, antes de gerar qualquer um (mais uma checagem durante a geração). O esquema do documento não mudou. | 32634cf82 |
+| C-2 pânico ao trocar efeito de nota | Confirmado e corrigido: sem cauda planejada, `install.replace` recebe `None`. Teste `replacing_a_note_effect_installs_it_without_a_tail` (com plugin de teste `nfx`). | 559682b74 |
+| C-3 cauda decidida pelo relógio de parede | Confirmado e não corrigido: o prazo de parede é também a rede de segurança caso `TailEnded` se perca (anel cheio); removê-lo sem um prazo em tempo de áudio vazaria nós. Exige desenho (prazo em quadros reportado pelo renderer). | |
+| R-1 seguidor de pico depende do bloco | Confirmado e não corrigido: exige reescrever a medição do pico por janela de grade com acumulador no nó (mudança grande no renderer). | |
+| R-2 alocação em `swap_program` | Confirmado e corrigido: comparação por iteradores, sem `collect` (a busca linear da cadeia continua, sem alocar). | 1df90833d |
+| R-3 ordenação estável aloca | Confirmado e corrigido: `seq` de chegada em `LiveMidi` e `sort_unstable_by_key((offset, seq))`; teste com rajada de 1000. | ff81ef2f1 |
+| R-4 hook silencia pânico fora do `catch_unwind` | Confirmado em parte, não corrigido: `lm-io` (alsa e dummy) envolve o callback em `catch_unwind`, então o processo não aborta; só falta mensagem. Precisa de um marcador por site de captura. | |
+| R-5 MPE nota presa no hardware | Confirmado e corrigido: `MpeOut::start` devolve a tecla da nota tomada e `send_mpe` envia o note-off antes; teste atualizado em `mpe.rs`. | ff81ef2f1 |
+| R-6 eventos descartados sem contagem | Confirmado e corrigido: falhas de `push` em `run_chains` somam em `dropped[1]`. | 1df90833d |
+| R-7 gravação perde trecho sem marcador | Confirmado e não corrigido: o relatório mesmo diz que os limites impedem o caso; falta decidir qual evento de falha emitir. | |
+| R-8 espera ocupada sem prazo | Confirmado e não corrigido: com `workers == 0` (padrão) não ocorre; marcar o nó morto enquanto o worker detém o núcleo exige desenho. | |
+| R-9 `expect` em `job` | Confirmado e corrigido: `job` devolve `Option` e o nó fica em silêncio. | 1df90833d |
