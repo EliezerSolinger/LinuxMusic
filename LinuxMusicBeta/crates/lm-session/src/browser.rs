@@ -234,6 +234,18 @@ pub fn merge_listing(
     out
 }
 
+impl crate::session::Session {
+    /// The SoundFont a MIDI file is played on, in a preview and on import: the preferences' (`defaultSoundFont`), else
+    /// the first of the index
+    pub fn default_soundfont(&self) -> Option<std::path::PathBuf> {
+        if let Some(p) = self.preferences().text(&["defaultSoundFont"]).filter(|p| !p.is_empty()) {
+            return Some(std::path::PathBuf::from(p));
+        }
+        let index = self.browser.index.lock().ok()?.clone();
+        index.items.iter().find(|i| i.ty == "soundfont").map(|i| std::path::PathBuf::from(&i.path))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

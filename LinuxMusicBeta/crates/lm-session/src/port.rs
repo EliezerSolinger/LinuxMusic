@@ -460,13 +460,9 @@ impl LocalPort {
             .unwrap_or_default()
     }
 
-    /// The SoundFont a MIDI preview is played on: the preferences' (`defaultSoundFont`), else the first of the index
+    /// The SoundFont a MIDI preview is played on (see [`Session::default_soundfont`])
     fn default_soundfont(&self) -> Option<PathBuf> {
-        if let Some(p) = self.session.preferences().text(&["defaultSoundFont"]).filter(|p| !p.is_empty()) {
-            return Some(PathBuf::from(p));
-        }
-        let index = self.session.browser.index.lock().ok()?.clone();
-        index.items.iter().find(|i| i.ty == "soundfont").map(|i| PathBuf::from(&i.path))
+        self.session.default_soundfont()
     }
 
     /// What the index covers: the sample, project and preset folders of the user and of the factory
