@@ -813,16 +813,17 @@ impl Renderer {
         );
         // A chain that changed (an effect added, removed, bypassed or moved) ends what the old one had started: the
         // instrument releases its notes, through the new chain
-        let effects_of = |p: &Program, ci: usize| -> Vec<NodeIndex> {
-            p.chains[ci].effects.iter().map(|&e| p.nodes[e as usize].desc.node).collect()
-        };
+        // (compared as iterators: this runs in the audio block, nothing is collected)
+        fn effects_of(p: &Program, ci: usize) -> impl Iterator<Item = NodeIndex> + '_ {
+            p.chains[ci].effects.iter().map(move |&e| p.nodes[e as usize].desc.node)
+        }
         let chain_of = |p: &Program, target: NodeIndex| -> Option<usize> {
             p.chains.iter().position(|c| p.nodes[c.target as usize].desc.node == target)
         };
         for ci in 0..program.chains.len() {
             let target = program.nodes[program.chains[ci].target as usize].desc.node;
             let changed = match chain_of(old, target) {
-                Some(oi) => effects_of(old, oi) != effects_of(program, ci),
+                Some(oi) => !effects_of(old, oi).eq(effects_of(program, ci)),
                 None => old.node_of(target).is_some(),
             };
             if changed && pending.len() < pending.capacity() {
@@ -1611,7 +1612,9 @@ impl Renderer {
                 chain.cur.clear();
                 chain.source.finish();
                 for e in chain.source.sorted() {
-                    chain.cur.push(e.offset, e.kind);
+                    if !chain.cur.push(e.offset, e.kind) {
+                        self.dropped[1] = self.dropped[1].saturating_add(1);
+                    }
                 }
                 chain.source.clear();
             }
@@ -1628,16 +1631,18 @@ impl Renderer {
                 let Some(mut core) = self.slots[slot].core.take() else { continue };
                 let Program { nodes, chains, .. } = &mut *self.program;
                 let chain = &mut chains[c];
+                let mut lost = 0u32;
                 chain.merge.clear();
                 if let Some(io) = nodes[ei as usize].io.as_mut() {
                     io.events.finish();
                     for e in io.events.sorted() {
-                        chain.merge.push(e.offset, e.kind);
+                        lost += u32::from(!chain.merge.push(e.offset, e.kind));
                     }
                 }
                 for e in chain.cur.as_slice() {
-                    chain.merge.push(e.offset, e.kind);
+                    lost += u32::from(!chain.merge.push(e.offset, e.kind));
                 }
+                self.dropped[1] = self.dropped[1].saturating_add(lost);
                 chain.merge.finish();
                 chain.next.clear();
                 let started = std::time::Instant::now();
@@ -2303,7 +2308,10 @@ impl Renderer {
                 next += 1;
                 let slot = self.program.nodes[i as usize].desc.node.slot();
                 let worth = count > 1 && self.slots[slot].cost_ns >= DISPATCH_MIN_NS;
-                let mut job = self.job(i, n, info);
+                let Some(mut job) = self.job(i, n, info) else {
+                    self.silence_if_needed(i, n);
+                    continue;
+                };
                 match self.workers.idle() {
                     Some(w) if worth => self.workers.give(w, job),
                     _ => {
@@ -2344,11 +2352,16 @@ impl Renderer {
         }
     }
 
-    fn job(&mut self, i: u32, n: usize, info: &TransportInfo) -> Job {
+    /// The job of a runnable node, or `None` when its processor or memory is not home (an invariant that should
+    /// hold: the node then outputs silence for this pass instead of panicking in the audio block)
+    fn job(&mut self, i: u32, n: usize, info: &TransportInfo) -> Option<Job> {
         let slot = self.program.nodes[i as usize].desc.node.slot();
-        let core = self.slots[slot].core.take().expect("runnable node has a processor");
-        let io = self.program.nodes[i as usize].io.take().expect("node memory is home between calls");
-        Job {
+        let core = self.slots[slot].core.take()?;
+        let Some(io) = self.program.nodes[i as usize].io.take() else {
+            self.slots[slot].core = Some(core);
+            return None;
+        };
+        Some(Job {
             node: i,
             slot: slot as u32,
             core,
@@ -2358,7 +2371,7 @@ impl Renderer {
             panic: None,
             non_finite: false,
             cost_ns: 0.0,
-        }
+        })
     }
 
     fn finish(&mut self, mut job: Job) {
