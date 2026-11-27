@@ -133,7 +133,7 @@ Por crate: `lm-render` tem 0 CRÍTICO, 5 ALTO, 4 MÉDIO, 2 BAIXO. `lm-compile` t
 | R-1 seguidor de pico depende do bloco | Corrigido na rodada de desenho: janela da grade com acumulador no nó (`PeakTracker`), leitura com atraso fixo de 4096 quadros. Teste `a_peak_follower_is_the_same_for_any_block_size`. | COMMIT |
 | R-2 alocação em `swap_program` | Confirmado e corrigido: comparação por iteradores, sem `collect` (a busca linear da cadeia continua, sem alocar). | 1df90833d |
 | R-3 ordenação estável aloca | Confirmado e corrigido: `seq` de chegada em `LiveMidi` e `sort_unstable_by_key((offset, seq))`; teste com rajada de 1000. | ff81ef2f1 |
-| R-4 hook silencia pânico fora do `catch_unwind` | Confirmado em parte, não corrigido: `lm-io` (alsa e dummy) envolve o callback em `catch_unwind`, então o processo não aborta; só falta mensagem. Precisa de um marcador por site de captura. | |
+| R-4 hook silencia pânico fora do `catch_unwind` | Corrigido na rodada de desenho: `catching` nos pontos de captura, registro fixo de mensagens alimentado pelo gancho fora deles, `take_render_panics` na sessão (`session.audio.panicked`), `note_caught_panic` em `lm-io` (dummy e alsa). Teste `a_panic_outside_a_catch_site_is_logged_and_one_inside_is_not`. | COMMIT |
 | R-5 MPE nota presa no hardware | Confirmado e corrigido: `MpeOut::start` devolve a tecla da nota tomada e `send_mpe` envia o note-off antes; teste atualizado em `mpe.rs`. | ff81ef2f1 |
 | R-6 eventos descartados sem contagem | Confirmado e corrigido: falhas de `push` em `run_chains` somam em `dropped[1]`. | 1df90833d |
 | R-7 gravação perde trecho sem marcador | Confirmado e não corrigido: o relatório mesmo diz que os limites impedem o caso; falta decidir qual evento de falha emitir. | |

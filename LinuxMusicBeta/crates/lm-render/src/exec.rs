@@ -10,7 +10,7 @@
 //! nodes' outputs happen afterwards on the audio thread in the program's fixed order (base item 9)
 
 use std::any::Any;
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::thread::{JoinHandle, Thread};
@@ -18,7 +18,7 @@ use std::thread::{JoinHandle, Thread};
 use lm_base::ring::{Consumer, Producer, PushError, ring};
 
 use crate::install::NodeCore;
-use crate::panic::RenderThreadGuard;
+use crate::panic::{RenderThreadGuard, catching};
 use crate::processor::{Buffers, ProcessContext, TransportInfo};
 use crate::program::NodeIo;
 use crate::spec::{RenderThreads, ThreadKind};
@@ -103,7 +103,7 @@ pub(crate) fn run_job(job: &mut Job, watch: &AtomicU32) {
     watch.store(job.slot + 1, Ordering::Relaxed);
     let NodeIo { buffer, events, .. } = &mut *job.io;
     let core = &mut *job.core;
-    let result = catch_unwind(AssertUnwindSafe(|| {
+    let result = catching(AssertUnwindSafe(|| {
         let mut cx = ProcessContext {
             frames,
             buffers: Buffers::new(buffer, layout, frames),

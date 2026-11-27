@@ -2092,6 +2092,15 @@ dá a mesma saída.
   de 85 ms a 48 kHz) atrás, uma constante do programa e não do dispositivo. Efeito audível: o seguidor de pico responde
   com esse atraso fixo (a atenuação de ataque/decaimento do legado continua por cima); é a correção, o preço de ser
   idêntico em qualquer `max_block` até 4096.
+- **R-4, pânico fora do `catch_unwind` ficava sem mensagem.** O gancho silenciava todo pânico em thread de render. Decidido:
+  os pontos de captura do renderer (`catching`, em `panic.rs`) avisam o gancho, que fica quieto neles (o `PanicReport`
+  leva a mensagem). Fora de um ponto de captura, o gancho escreve a mensagem (com a posição) num registro fixo de
+  atômicos (8 vagas de 320 bytes, sem alocação nem trava; cheio, só conta a perda). `lm_render::take_render_panics` o
+  esvazia na thread principal, e a sessão o transforma no aviso `session.audio.panicked` (a cada telemetria e ao
+  receber `DeviceEvent::Panicked`). Em `lm-io`, os sites com carga útil (`dummy`, `alsa`) chamam
+  `lm_render::note_caught_panic`, que só registra se o gancho não registrou aquele pânico (pânico no código do
+  dispositivo fora de `render`). CoreAudio e JACK pegam o pânico na camada `lm-sys-*`, que não carrega a mensagem: valem
+  o registro do gancho dentro de `render`.
 
 ## Rodada de desenho (27/11): parâmetros e base
 

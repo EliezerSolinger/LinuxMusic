@@ -1761,7 +1761,27 @@ impl Session {
                 Vec::new(),
             );
         }
+        self.report_render_panics();
         changed
+    }
+
+    /// Panics that unwound out of the render call without a catch site of the engine (R-4): the hook logged their
+    /// messages in real-time-safe memory, and here they reach the user and the log
+    fn report_render_panics(&mut self) {
+        let mut messages: Vec<String> = Vec::new();
+        let lost = lm_render::take_render_panics(|m| messages.push(m.to_owned()));
+        if lost > 0 {
+            messages.push(format!("({lost} more audio panics not kept)"));
+        }
+        for m in messages {
+            self.notices.push(
+                "session.audio.panicked",
+                vec![("message", Value::text(m))],
+                Severity::Error,
+                None,
+                Vec::new(),
+            );
+        }
     }
 
     fn telemetry_event(&mut self, t: Telemetry, table: &InstalledTable) {
@@ -1830,6 +1850,7 @@ impl Session {
                 _ => {}
             }
         }
+        self.report_render_panics();
         // Recording waits for the device to arm (lm-io: the first blocks would be lost otherwise)
         if let Some(rs) = &self.record_start
             && let Some(device) = self.device.as_ref()

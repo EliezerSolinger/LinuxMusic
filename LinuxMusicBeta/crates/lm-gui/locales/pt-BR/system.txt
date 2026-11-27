@@ -480,6 +480,7 @@ session.device.lost = O dispositivo de áudio sumiu; o programa continua parado,
 session.node.silenced = Um plugin mandou NaN ou infinito e foi silenciado ({node})
 session.master.protection = Proteção dos ouvidos: um pico de {peak} no master cortou a saída
 session.plugin.panicked = Um plugin caiu: {message}
+session.audio.panicked = O motor de áudio teve um erro interno: {message}
 Turn on = Ligar
 
 # Markers and regions (F-REG-011, F-REG-012)

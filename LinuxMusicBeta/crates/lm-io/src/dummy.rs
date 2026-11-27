@@ -230,7 +230,8 @@ impl Backend for DummyBackend {
             threads.run(ThreadKind::Audio, &mut || {
                 callback.report(DeviceEvent::Started { realtime: None });
                 let result = std::panic::catch_unwind(AssertUnwindSafe(|| run.run(&mut callback, &reopen)));
-                if result.is_err() {
+                if let Err(payload) = result {
+                    lm_render::note_caught_panic(&*payload);
                     callback.report(DeviceEvent::Panicked);
                 }
             });

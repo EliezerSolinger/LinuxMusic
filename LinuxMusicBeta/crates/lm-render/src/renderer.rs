@@ -15,7 +15,7 @@
 //! was made, and whatever leaves the audio side goes back through a ring that has room for it
 
 use std::any::Any;
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -31,7 +31,7 @@ use crate::install::{Install, NodeCore, Retired};
 use crate::midimap::{MapEvent, MapTarget, MidiMap, MidiOutEvent, RETURN_DIV, RecordedMidi};
 use crate::modulation::ModKind;
 use crate::notes::{ActiveNotes, NoteSource};
-use crate::panic::RenderThreadGuard;
+use crate::panic::{RenderThreadGuard, catching};
 use crate::params::ParamSlots;
 use crate::processor::{Adopted, BufferLayout, Buffers, HostOutbox, NoteContext, ProcessContext, TransportInfo};
 use crate::program::{
@@ -639,7 +639,7 @@ impl Renderer {
                 && !was_dead
             {
                 let new = &mut core.processor;
-                match catch_unwind(AssertUnwindSafe(|| new.adopt(o.processor.as_mut()))) {
+                match catching(AssertUnwindSafe(|| new.adopt(o.processor.as_mut()))) {
                     Ok(a) => adopted = a,
                     Err(p) => adopt_panic = Some(p),
                 }
@@ -1084,7 +1084,7 @@ impl Renderer {
                 && !dead
             {
                 let p = &mut core.processor;
-                if let Err(payload) = catch_unwind(AssertUnwindSafe(|| p.reset())) {
+                if let Err(payload) = catching(AssertUnwindSafe(|| p.reset())) {
                     self.slots[i].dead = true;
                     let node = NodeIndex::new(i as u32, self.slots[i].generation);
                     self.report_panic(Some(node), None, payload);
@@ -1647,7 +1647,7 @@ impl Renderer {
                 chain.next.clear();
                 let started = std::time::Instant::now();
                 self.watch.current[0].store(slot as u32 + 1, Ordering::Relaxed);
-                let result = catch_unwind(AssertUnwindSafe(|| {
+                let result = catching(AssertUnwindSafe(|| {
                     let mut cx = NoteContext {
                         frames: n,
                         events: chain.merge.sorted(),
@@ -2819,7 +2819,7 @@ impl Renderer {
                     let rng = &mut s.rng;
                     let outbox = &mut s.outbox;
                     let buffer = &mut s.buffer;
-                    let result = catch_unwind(AssertUnwindSafe(|| {
+                    let result = catching(AssertUnwindSafe(|| {
                         let mut cx = ProcessContext {
                             frames: n,
                             buffers: Buffers::new(buffer, layout, n),

@@ -48,7 +48,7 @@ pub use exec::Watch;
 pub use ids::{GUI_PORT_BASE, NodeIndex, NoteId, ParamSlot, PortIndex, PreviewId, ProducerIndex, ProgramGen, gui_port};
 pub use install::{Install, NodeCore, Relocate, Retired, Returned};
 pub use midimap::{MapEvent, MapTarget, MidiMap, MidiOutEvent, ParamRange, RangeScale, RecordedMidi};
-pub use panic::{install_panic_hook, is_render_thread};
+pub use panic::{install_panic_hook, is_render_thread, note_caught_panic, take_render_panics};
 pub use params::ParamSlots;
 pub use processor::{
     Adopted, BlockShape, Buffers, Channels, ChannelsMut, DisplayReader, DisplayWriter, HostOutbox, NoteContext,

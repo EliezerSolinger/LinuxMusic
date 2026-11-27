@@ -304,7 +304,8 @@ impl Backend for AlsaBackend {
                 threads.run(ThreadKind::Audio, &mut || {
                     callback.report(DeviceEvent::Started { realtime: None });
                     let r = std::panic::catch_unwind(AssertUnwindSafe(|| run(&mut opened, &mut callback)));
-                    if r.is_err() {
+                    if let Err(payload) = r {
+                        lm_render::note_caught_panic(&*payload);
                         callback.report(DeviceEvent::Panicked);
                     }
                 });
