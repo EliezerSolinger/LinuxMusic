@@ -3616,6 +3616,7 @@ dependencies = [
  "lm-plugins-guitarix",
  "lm-plugins-instruments",
  "lm-plugins-opulenz",
+ "lm-plugins-sampler",
  "lm-plugins-sid",
  "lm-plugins-tripleoscillator",
  "lm-port",
