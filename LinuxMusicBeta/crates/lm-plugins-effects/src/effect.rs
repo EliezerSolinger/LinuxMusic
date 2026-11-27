@@ -133,6 +133,10 @@ impl<E: Effect> EffectProcessor<E> {
     fn event(&mut self, kind: EventKind) {
         match kind {
             EventKind::Param { index, value } => {
+                // A NaN would stay in the feedback paths and filter memories until the next reset
+                if !value.is_finite() {
+                    return;
+                }
                 for fx in &mut self.pairs {
                     fx.set_param(index as usize, value);
                 }
@@ -248,7 +252,7 @@ impl<const N: usize> Knobs<N> {
 
     /// A parameter event; an index past the parameters is ignored
     pub fn set(&mut self, index: usize, value: f32) {
-        if let Some(v) = self.now.get_mut(index) {
+        if let Some(v) = self.now.get_mut(index).filter(|_| value.is_finite()) {
             *v = value;
         }
     }
@@ -275,5 +279,21 @@ impl<const N: usize> Knobs<N> {
     /// Adopting: the ramps start where the old effect's ended, so a changed knob glides instead of jumping
     pub fn adopt(&mut self, old: &Self) {
         self.before = old.before;
+    }
+}
+
+#[cfg(test)]
+mod finite_tests {
+    use super::*;
+
+    #[test]
+    fn a_non_finite_knob_value_is_ignored() {
+        let mut k = Knobs::from_values([0.5, 0.25]);
+        k.set(0, f32::NAN);
+        k.set(1, f32::INFINITY);
+        assert_eq!(k.get(0), 0.5);
+        assert_eq!(k.get(1), 0.25);
+        k.set(0, 0.75);
+        assert_eq!(k.get(0), 0.75);
     }
 }

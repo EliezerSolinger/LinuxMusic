@@ -521,7 +521,7 @@ impl<S: Synth> Instrument<S> {
         let out = &mut Pool(&mut self.pool);
         match kind {
             EventKind::NoteOn { note, channel, key, velocity } => {
-                self.run.note_on(&cx, out, note, channel, key.min(127), velocity.clamp(0.0, 1.0));
+                self.run.note_on(&cx, out, note, channel, key.min(127), clean_velocity(velocity));
             }
             EventKind::NoteOff { note, .. } => self.run.note_off(&cx, out, note),
             EventKind::Param { index, value } => self.set_param(index, value),
@@ -819,5 +819,24 @@ impl<S: Synth> Processor for Instrument<S> {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+/// A velocity inside 0 to 1 (`f32::clamp` hands NaN on: a NaN velocity is silence)
+pub(crate) fn clean_velocity(velocity: f32) -> f32 {
+    if velocity.is_finite() { velocity.clamp(0.0, 1.0) } else { 0.0 }
+}
+
+#[cfg(test)]
+mod velocity_tests {
+    use super::clean_velocity;
+
+    #[test]
+    fn a_velocity_is_always_a_number_in_range() {
+        assert_eq!(clean_velocity(f32::NAN), 0.0);
+        assert_eq!(clean_velocity(f32::INFINITY), 0.0);
+        assert_eq!(clean_velocity(7.0), 1.0);
+        assert_eq!(clean_velocity(-1.0), 0.0);
+        assert_eq!(clean_velocity(0.5), 0.5);
     }
 }

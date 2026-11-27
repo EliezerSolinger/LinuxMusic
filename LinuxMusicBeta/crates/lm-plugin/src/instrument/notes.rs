@@ -11,6 +11,9 @@ use lm_render::{Expression, NoteId, VoiceNote};
 
 use super::{MAX_BASES, MAX_SOUNDING, SOUNDING_IDS};
 
+/// The most a note's tuning expression is taken to (semitones, either way): far past any playable pitch
+const MAX_TUNING: f32 = 120.0;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum VoiceMode {
     Poly,
@@ -371,10 +374,14 @@ impl Run {
 
     /// A note expression of a base note (`NoteExpression`): it ramps from where it is
     pub(crate) fn express(&mut self, note: NoteId, expression: Expression, value: f32, ramp: u32) {
+        // A NaN or infinite value would turn the note's frequency (and every oscillator phase) to NaN
+        if !value.is_finite() {
+            return;
+        }
         if let Some(i) = self.base(note) {
             let b = &mut self.bases[i];
             match expression {
-                Expression::Tuning => b.tuning.go(value, ramp),
+                Expression::Tuning => b.tuning.go(value.clamp(-MAX_TUNING, MAX_TUNING), ramp),
                 Expression::Pan => b.pan.go(value.clamp(-1.0, 1.0), ramp),
                 // The built-in instruments do not use the pressure and the timbre of a note
                 Expression::Pressure | Expression::Timbre => {}

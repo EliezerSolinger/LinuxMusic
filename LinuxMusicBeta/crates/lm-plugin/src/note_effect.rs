@@ -215,6 +215,7 @@ impl Expressions {
 
     /// A new value of an expression of `note`; false when the note is not known
     pub fn set(&mut self, note: NoteId, expression: Expression, value: f32) -> bool {
+        let value = if value.is_finite() { value } else { 0.0 };
         match self.bases.iter_mut().find(|(n, _)| *n == note) {
             Some((_, v)) => {
                 v[slot(expression)] = value;
@@ -264,5 +265,18 @@ impl IdCounter {
         let id = NoteId(self.0);
         self.0 = if self.0 >= 0x7FFF_FFFF { GENERATED_IDS } else { self.0 + 1 };
         id
+    }
+}
+
+#[cfg(test)]
+mod expression_tests {
+    use super::*;
+
+    #[test]
+    fn a_non_finite_expression_is_stored_as_zero() {
+        let mut e = Expressions::new(4);
+        e.begin(NoteId(1));
+        assert!(e.set(NoteId(1), Expression::Tuning, f32::NAN));
+        assert!(e.bases[0].1.iter().all(|x| x.is_finite()));
     }
 }
