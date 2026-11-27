@@ -550,6 +550,27 @@ fn peaks_come_binary_and_are_kept() {
     assert!(matches!(r.client.peaks(&res, 2, 0, 500), Pending::Ready(Ok(_))));
 }
 
+/// A block asked again while its first request is in flight shares that request
+#[test]
+fn peaks_asked_twice_in_flight_share_one_request() {
+    let mut r = Remote::unix();
+    let res = r
+        .core
+        .root()
+        .get("tracks")
+        .unwrap()
+        .items()
+        .filter_map(|t| t.get("items")?.at(0)?.get("lanes")?.at(0)?.get("source")?.as_resource().cloned())
+        .next()
+        .expect("a resource");
+    let (Pending::Waiting(a), Pending::Waiting(b)) = (r.client.peaks(&res, 2, 0, 500), r.client.peaks(&res, 2, 0, 500))
+    else {
+        panic!("both wait")
+    };
+    assert_eq!(a, b);
+    assert!(matches!(r.wait(a), Finished::Peaks(Ok(_))));
+}
+
 #[test]
 fn telemetry_and_session_state_reach_the_mirror() {
     let mut r = Remote::unix();

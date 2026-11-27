@@ -3918,6 +3918,7 @@ dependencies = [
  "lm-port-fake",
  "lm-session",
  "lm-state",
+ "rustix",
 ]
 
 [[package]]

@@ -16,6 +16,8 @@ lm-state.workspace = true
 lm-doc.workspace = true
 lm-port.workspace = true
 blake3.workspace = true
+# statvfs: the free space the uploads must leave
+rustix = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
 lm-port-fake.workspace = true

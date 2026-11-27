@@ -224,6 +224,8 @@ fn upload_thread(id: u64, job: Arc<UploadJob>, generation: u64, out: Sender<(u8,
     };
     let begin = Value::object([
         ("t", Value::text("upload_begin")),
+        // The request id too: a refusal (quota, limits) answers the import instead of leaving it waiting
+        ("id", Value::int(id as i64)),
         ("upload", Value::int(id as i64)),
         ("hash", Value::text(hash.as_str())),
         ("size", Value::int(i64::try_from(size).unwrap_or(i64::MAX))),
@@ -1168,6 +1170,10 @@ impl CorePort for RemotePort {
         let key = (resource.key().to_owned(), level, from, to);
         if let Some(b) = self.cached_peaks(&key) {
             return Pending::Ready(Ok(b));
+        }
+        // The same block already asked and not yet answered: the caller waits for that answer, no second request
+        if let Some((id, _)) = self.peaks_asked.iter().find(|(_, k)| **k == key) {
+            return Pending::Waiting(*id);
         }
         let (Ok(f), Ok(t)) = (c::int_value(from), c::int_value(to)) else {
             return Pending::Ready(Err(bad("peaks range")));

@@ -41,6 +41,8 @@ pub struct ServerConfig {
     /// The server's name, shown by the clients
     pub name: String,
     pub limits: ClientLimits,
+    /// What all the uploads together may take from the disk (A6)
+    pub quota: crate::files::UploadQuota,
     /// Where uploads land before they are imported (I-20.3)
     pub uploads: PathBuf,
 }
@@ -80,6 +82,7 @@ impl ServerConfig {
             tokens: Vec::new(),
             name: name.to_owned(),
             limits: ClientLimits::default(),
+            quota: crate::files::UploadQuota::default(),
             uploads: std::env::temp_dir().join("linuxmusic-uploads"),
         }
     }
@@ -1132,11 +1135,30 @@ impl Server {
                     return Err(Error::new("remote.upload.too_big").arg("max", limits.max_upload as i64));
                 }
                 let dir = self.config.uploads.clone();
-                let c = self.conns.get_mut(&conn).expect("present");
-                if !c.uploads.contains_key(&upload) && c.uploads.len() >= limits.max_uploads {
-                    return Err(Error::new("remote.limit.uploads"));
+                let hash = text(msg, "hash")?;
+                {
+                    let c = self.conns.get(&conn).expect("present");
+                    if !c.uploads.contains_key(&upload) && c.uploads.len() >= limits.max_uploads {
+                        return Err(Error::new("remote.limit.uploads"));
+                    }
                 }
-                let u = files::Upload::begin(&dir, text(msg, "hash")?, size, text(msg, "ext")?)?;
+                // A6: the quota covers every client together. An upload begun again on the same id replaces its
+                // old entry, so that one is not counted twice
+                let outstanding: u64 = self
+                    .conns
+                    .iter()
+                    .flat_map(|(cid, c)| c.uploads.iter().map(move |(uid, u)| (*cid == conn && *uid == upload, u)))
+                    .filter(|(same, _)| !same)
+                    .map(|(_, u)| u.size.saturating_sub(u.have))
+                    .sum();
+                let open: Vec<String> =
+                    self.conns.values().flat_map(|c| c.uploads.values().map(|u| u.hash.clone())).collect();
+                let quota = self.config.quota;
+                let stored = files::prune_and_measure(&dir, &quota, &open);
+                let remaining = size - files::part_len(&dir, hash, size);
+                files::quota_verdict(&quota, outstanding, remaining, stored, files::free_space(&dir))?;
+                let c = self.conns.get_mut(&conn).expect("present");
+                let u = files::Upload::begin(&dir, hash, size, text(msg, "ext")?)?;
                 let have = u.have;
                 c.uploads.insert(upload, u);
                 c.send_json(&Value::object([

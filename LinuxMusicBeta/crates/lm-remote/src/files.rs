@@ -29,6 +29,92 @@ pub(crate) fn valid_ext(ext: &str) -> bool {
     (1..=8).contains(&ext.len()) && ext.bytes().all(|b| b.is_ascii_alphanumeric())
 }
 
+/// What the uploads folder may take from the server's disk (A6). The per-client limits bound one client; these bound
+/// all of them together, which is what fills a disk
+#[derive(Clone, Copy, Debug)]
+pub struct UploadQuota {
+    /// Bytes still to arrive over every open upload of every client at once
+    pub max_outstanding: u64,
+    /// Everything in the uploads folder (partial files and finished ones not yet removed)
+    pub max_stored: u64,
+    /// Free space that must remain on the disk after an upload's remaining bytes
+    pub min_free: u64,
+    /// A partial file untouched this long is not coming back: it is removed
+    pub stale_after: std::time::Duration,
+}
+
+impl Default for UploadQuota {
+    fn default() -> Self {
+        Self {
+            max_outstanding: 32 << 30,
+            max_stored: 64 << 30,
+            min_free: 1 << 30,
+            stale_after: std::time::Duration::from_secs(7 * 24 * 3600),
+        }
+    }
+}
+
+/// The quota's verdict for a new upload that still needs `remaining` bytes. Pure, so the policy can be tested
+pub(crate) fn quota_verdict(q: &UploadQuota, outstanding: u64, remaining: u64, stored: u64, free: u64) -> Result<()> {
+    let refuse = |what: &'static str, limit: u64| {
+        Err(Error::new("remote.upload.quota").arg("what", what).arg("limit", i64::try_from(limit).unwrap_or(i64::MAX)))
+    };
+    if outstanding.saturating_add(remaining) > q.max_outstanding {
+        return refuse("outstanding", q.max_outstanding);
+    }
+    if stored.saturating_add(remaining) > q.max_stored {
+        return refuse("stored", q.max_stored);
+    }
+    if free < remaining.saturating_add(q.min_free) {
+        return refuse("disk", q.min_free);
+    }
+    Ok(())
+}
+
+/// Removes partial uploads nobody has touched for `quota.stale_after`, except those in `open` (hashes), and returns
+/// the bytes the folder holds afterwards
+pub(crate) fn prune_and_measure(dir: &Path, quota: &UploadQuota, open: &[String]) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else { return 0 };
+    let now = std::time::SystemTime::now();
+    let mut total = 0u64;
+    for e in entries.flatten() {
+        let Ok(meta) = e.metadata() else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let path = e.path();
+        let stale = path.extension().is_some_and(|x| x == "part")
+            && meta.modified().ok().and_then(|m| now.duration_since(m).ok()).is_some_and(|age| age > quota.stale_after)
+            && !path.file_stem().and_then(|s| s.to_str()).is_some_and(|h| open.iter().any(|o| o == h));
+        if stale && std::fs::remove_file(&path).is_ok() {
+            continue;
+        }
+        total = total.saturating_add(meta.len());
+    }
+    total
+}
+
+/// The bytes the partial file of this hash already holds (an upload resumes from them), capped at `size`
+pub(crate) fn part_len(dir: &Path, hash: &str, size: u64) -> u64 {
+    match std::fs::metadata(dir.join(format!("{hash}.part"))) {
+        Ok(m) if m.len() <= size => m.len(),
+        _ => 0,
+    }
+}
+
+/// Free bytes of the disk holding `dir` (its nearest existing parent); `u64::MAX` when it cannot be read, so an
+/// unreadable disk never blocks an upload by itself
+pub(crate) fn free_space(dir: &Path) -> u64 {
+    let mut at = dir;
+    while !at.exists() {
+        match at.parent() {
+            Some(p) => at = p,
+            None => break,
+        }
+    }
+    rustix::fs::statvfs(at).map_or(u64::MAX, |s| s.f_bavail.saturating_mul(s.f_frsize))
+}
+
 impl Upload {
     /// Starts or resumes the upload of a file with this hash: what is already there (`<hash>.part`) counts
     pub fn begin(dir: &Path, hash: &str, size: u64, ext: &str) -> Result<Upload> {
@@ -203,6 +289,36 @@ pub(crate) fn list_projects(projects: &str) -> Receiver<Result<Vec<String>>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_quota_bounds_outstanding_stored_and_free_space() {
+        use super::{UploadQuota, quota_verdict};
+        let q = UploadQuota { max_outstanding: 100, max_stored: 200, min_free: 10, ..UploadQuota::default() };
+        assert!(quota_verdict(&q, 50, 50, 100, 1000).is_ok());
+        let what = |r: lm_base::Result<()>| r.unwrap_err().label.args.iter().find(|(k, _)| *k == "what").map(|(_, a)| format!("{a:?}"));
+        assert!(what(quota_verdict(&q, 60, 50, 0, 1000)).unwrap().contains("outstanding"));
+        assert!(what(quota_verdict(&q, 0, 50, 160, 1000)).unwrap().contains("stored"));
+        assert!(what(quota_verdict(&q, 0, 50, 0, 55)).unwrap().contains("disk"));
+    }
+
+    #[test]
+    fn stale_partials_are_removed_and_the_rest_counted() {
+        use super::{UploadQuota, prune_and_measure};
+        let dir = std::env::temp_dir().join(format!("lmr-prune-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("aa.part"), [0u8; 10]).unwrap();
+        std::fs::write(dir.join("bb.part"), [0u8; 20]).unwrap();
+        std::fs::write(dir.join("cc.wav"), [0u8; 30]).unwrap();
+        let none = UploadQuota { stale_after: std::time::Duration::from_secs(3600), ..UploadQuota::default() };
+        assert_eq!(prune_and_measure(&dir, &none, &[]), 60);
+        // Everything is older than a zero age; the open one and the finished file stay
+        let all = UploadQuota { stale_after: std::time::Duration::ZERO, ..UploadQuota::default() };
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert_eq!(prune_and_measure(&dir, &all, &["bb".to_owned()]), 50);
+        assert!(!dir.join("aa.part").exists() && dir.join("bb.part").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
 
     #[cfg(unix)]

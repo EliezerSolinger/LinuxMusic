@@ -27,11 +27,16 @@ struct Setup {
 
 impl Setup {
     fn new() -> Setup {
+        Setup::with_quota(lm_remote::UploadQuota::default())
+    }
+
+    fn with_quota(quota: lm_remote::UploadQuota) -> Setup {
         let socket = temp("sock");
         let uploads = temp("uploads");
         let mut cfg = ServerConfig::new("files");
         cfg.socket = Some(socket.clone());
         cfg.uploads = uploads.clone();
+        cfg.quota = quota;
         let mut server = Server::start(cfg).unwrap();
         let mut core = TestCore::new(3);
         let mut c = ClientConfig::new(Endpoint::Unix(socket), Arc::new(lm_port_fake::demo::registry().unwrap()));
@@ -105,6 +110,19 @@ fn an_upload_lands_hashed_and_imported() {
     assert!(path.extension().is_some_and(|e| e == "wav"));
     assert!(!path.exists());
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A6: an upload past the global quota is refused, and the import fails instead of waiting
+#[test]
+fn an_upload_over_the_quota_is_refused() {
+    let quota = lm_remote::UploadQuota { max_outstanding: 1 << 20, ..lm_remote::UploadQuota::default() };
+    let mut s = Setup::with_quota(quota);
+    let file = temp("big.wav");
+    std::fs::write(&file, noise(2 << 20, 3)).unwrap();
+    let Pending::Waiting(id) = s.client.import(file.clone()) else { panic!("remote imports wait") };
+    let Finished::Imported(r) = s.wait(id) else { panic!() };
+    assert_eq!(r.unwrap_err().key(), "remote.upload.quota");
+    let _ = std::fs::remove_file(&file);
 }
 
 #[test]

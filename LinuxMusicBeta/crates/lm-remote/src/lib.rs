@@ -24,4 +24,5 @@ pub mod wire;
 
 pub use client::{ClientConfig, Connecting, Connection, Endpoint, RemotePort, Traffic};
 pub use proto::{Mode, PROGRAM, PROTOCOL, Role, TOOL_APIS, admin_action};
+pub use files::UploadQuota;
 pub use server::{ClientLimits, Server, ServerConfig};
