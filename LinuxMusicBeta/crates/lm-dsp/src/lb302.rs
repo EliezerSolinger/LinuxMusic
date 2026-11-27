@@ -252,6 +252,8 @@ impl Lb302 {
     /// At @p sample_rate, its knobs at their defaults (the first [`Self::prepare_period`] sets them); @p seed is
     /// the white noise's
     pub fn new(sample_rate: f32, seed: u64) -> Self {
+        // The wave tables are built here, not on the first note inside the audio callback
+        crate::band_limited_wave::prepare();
         let fs = KnobState::default();
         let mut three_pole = ThreePole::default();
         three_pole.env_recalc(&fs, sample_rate);
@@ -494,5 +496,16 @@ impl Lb302 {
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn construction_builds_the_wave_tables() {
+        let _ = Lb302::new(44100.0, 0);
+        assert!(crate::band_limited_wave::is_prepared());
     }
 }

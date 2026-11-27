@@ -77,6 +77,9 @@ impl Default for SfxrSettings {
 
 /// The frames rendered at once at the synth's own pitch
 const BLOCK: usize = 512;
+/// The range a note's pitch ratio is kept to (six octaves either way): bounds the work per period
+const MIN_PITCH: f64 = 1.0 / 64.0;
+const MAX_PITCH: f64 = 64.0;
 
 /// The sfxr's synth, at its own rate. A note restarts it in place ([`SfxrSynth::restart`]) and `clone_from` copies
 /// into it: neither allocates (for the audio thread)
@@ -483,6 +486,12 @@ impl SfxrVoice {
             out.fill([0.0; 2]);
             return false;
         }
+        // A tuning far out of range would make the loop below run for ages (or the pitch be NaN/infinite)
+        if !pitch.is_finite() {
+            out.fill([0.0; 2]);
+            return true;
+        }
+        let pitch = pitch.clamp(MIN_PITCH, MAX_PITCH);
         let frames = out.len();
         let due = pitch * frames as f64 * 44100.0 / f64::from(sample_rate) + self.fraction_due;
         let whole = due as i32;
@@ -509,6 +518,18 @@ impl SfxrVoice {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_absurd_pitch_is_bounded_and_a_non_finite_one_is_silent() {
+        let s = SfxrSettings { wave: SfxrWave::Saw, ..SfxrSettings::default() };
+        let mut voice = SfxrVoice::new(&s, 3);
+        let mut out = vec![[1.0; 2]; 256];
+        assert!(voice.render(&mut out, f64::INFINITY, 44100.0));
+        assert!(out.iter().all(|f| *f == [0.0; 2]));
+        assert!(voice.render(&mut out, f64::NAN, 44100.0));
+        assert!(voice.render(&mut out, 1.0e300, 44100.0));
+        assert!(out.iter().all(|f| f[0].is_finite()));
+    }
 
     #[test]
     fn a_note_at_the_base_pitch_and_rate_plays_the_synth_as_it_renders() {

@@ -61,8 +61,14 @@ fn generate(odd_only: bool, amp: impl Fn(i32) -> f64, offset: impl Fn(i32) -> f6
         .collect()
 }
 
+static WAVES: OnceLock<[MipMap; 4]> = OnceLock::new();
+
+/// Whether the tables are built already (a synth's constructor must have done it, not its first note)
+pub fn is_prepared() -> bool {
+    WAVES.get().is_some()
+}
+
 fn waves() -> &'static [MipMap; 4] {
-    static WAVES: OnceLock<[MipMap; 4]> = OnceLock::new();
     WAVES.get_or_init(|| {
         let saw = generate(false, |h| -1.0 / f64::from(h), |_| 0.0);
         let square = generate(true, |h| 1.0 / f64::from(h), |_| 0.0);
