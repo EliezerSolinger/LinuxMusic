@@ -316,9 +316,16 @@ pub struct AudioItem {
     /// Frame of the source played at `start`
     pub offset: i64,
     pub gain: f32,
-    /// Linear fades, in samples, inside the item
+    /// Fades, in samples, inside the item
     pub fade_in: u32,
     pub fade_out: u32,
+    /// The fades' tension, -1..1: 0 is linear, above it the fade starts slow, below it fast (see `fade_shape`)
+    pub fade_in_curve: f32,
+    pub fade_out_curve: f32,
+    /// The fade is the half of an automatic crossfade of overlapping items at equal power (sine, F-CLP-062); a
+    /// tension other than 0 overrides it
+    pub fade_in_equal: bool,
+    pub fade_out_equal: bool,
 }
 
 /// One event of a MIDI item, at an absolute tick

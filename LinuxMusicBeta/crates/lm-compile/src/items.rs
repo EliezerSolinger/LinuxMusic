@@ -535,34 +535,37 @@ fn audio_segments(
     let lane_index = |id: Option<NodeId>| id.and_then(|id| lanes.iter().position(|(l, _)| *l == Some(id)));
 
     // The segments: (from, to) in timeline samples, the lane, the crossfade into it
-    let mut segs: Vec<(i64, i64, Option<usize>, u32)> = Vec::new();
+    let mut segs: Vec<(i64, i64, Option<usize>, u32, f32)> = Vec::new();
     let comp: Vec<&Value> = items(item, "comp").collect();
     if comp.is_empty() {
         if !lanes.is_empty() {
-            segs.push((item_start, item_end, Some(lanes.len() - 1), 0));
+            segs.push((item_start, item_end, Some(lanes.len() - 1), 0, 0.0));
         }
     } else {
-        let mut sorted: Vec<(i64, i64, Option<usize>, u32)> = comp
+        let mut sorted: Vec<(i64, i64, Option<usize>, u32, f32)> = comp
             .iter()
             .map(|c| {
                 let from = int(c, "from", 0).clamp(0, length);
                 let to = int(c, "to", 0).clamp(0, length);
                 let fade = u32::try_from(int(c, "fade", 240).max(0)).unwrap_or(u32::MAX);
-                (at(from), at(to), lane_index(ref_of(c, "lane")), fade)
+                let curve = real(c, "curve", 0.0).clamp(-1.0, 1.0) as f32;
+                (at(from), at(to), lane_index(ref_of(c, "lane")), fade, curve)
             })
-            .filter(|(a, b, _, _)| b > a)
+            .filter(|(a, b, ..)| b > a)
             .collect();
         sorted.sort_by_key(|s| s.0);
         segs = sorted;
     }
     let fade_in = u32::try_from(int(item, "fadeIn", 0).max(0)).unwrap_or(u32::MAX);
     let fade_out = u32::try_from(int(item, "fadeOut", 0).max(0)).unwrap_or(u32::MAX);
+    let fade_in_curve = real(item, "fadeInCurve", 0.0).clamp(-1.0, 1.0) as f32;
+    let fade_out_curve = real(item, "fadeOutCurve", 0.0).clamp(-1.0, 1.0) as f32;
     let gain = real(item, "gain", 1.0) as f32;
     let mut out = Vec::new();
     let mut streams = Vec::new();
     let n = segs.len();
     for i in 0..n {
-        let (from, to, lane, fade) = segs[i];
+        let (from, to, lane, fade, curve) = segs[i];
         let Some(lane) = lane else { continue };
         let Some(d) = data.get(lane) else { continue };
         if matches!(d, LaneData::None) {
@@ -581,8 +584,13 @@ fn audio_segments(
             continue;
         }
         let offset = lanes[lane].1 + (begin - item_start);
-        let mut fi = if i == 0 || begin == item_start { fade_in } else { fade };
-        let mut fo = if end >= item_end { fade_out } else { u32::try_from(next_fade).unwrap_or(0) };
+        let first = i == 0 || begin == item_start;
+        let mut fi = if first { fade_in } else { fade };
+        let fi_curve = if first { fade_in_curve } else { curve };
+        let last = end >= item_end;
+        let mut fo = if last { fade_out } else { u32::try_from(next_fade).unwrap_or(0) };
+        // The crossfade out of this segment has the tension of the next one's
+        let fo_curve = if last || i + 1 >= n { fade_out_curve } else { segs[i + 1].4 };
         let len = end - begin;
         let cap = u32::try_from(len).unwrap_or(u32::MAX);
         fi = fi.min(cap);
@@ -598,9 +606,52 @@ fn audio_segments(
             }
             LaneData::None => continue,
         };
-        out.push(AudioItem { start: begin, length: len, source, offset, gain, fade_in: fi, fade_out: fo });
+        out.push(AudioItem {
+            start: begin,
+            length: len,
+            source,
+            offset,
+            gain,
+            fade_in: fi,
+            fade_out: fo,
+            fade_in_curve: fi_curve,
+            fade_out_curve: fo_curve,
+            fade_in_equal: false,
+            fade_out_equal: false,
+        });
     }
     Ok((out, streams))
+}
+
+/// The automatic crossfade of overlapping items (F-CLP-062): where an item starts inside the one before it and ends
+/// after it, the stretch they share is the fade out of the first and the fade in of the second, at equal power (a
+/// fade already longer stays; a tension other than 0 on the second one's fade in bends both). An item lying wholly
+/// inside another is a layer and is left as it is. The list comes out sorted by start
+pub(crate) fn auto_crossfade(list: &mut [AudioItem]) {
+    list.sort_by_key(|i| i.start);
+    for a in 0..list.len() {
+        let end_a = list[a].start.saturating_add(list[a].length);
+        for b in a + 1..list.len() {
+            if list[b].start >= end_a {
+                break;
+            }
+            let end_b = list[b].start.saturating_add(list[b].length);
+            if end_b <= end_a || list[b].start == list[a].start {
+                continue;
+            }
+            let overlap = u32::try_from(end_a - list[b].start).unwrap_or(u32::MAX);
+            let curve = list[b].fade_in_curve;
+            if overlap > list[a].fade_out {
+                list[a].fade_out = overlap.min(u32::try_from(list[a].length).unwrap_or(u32::MAX));
+                list[a].fade_out_curve = curve;
+                list[a].fade_out_equal = true;
+            }
+            if overlap > list[b].fade_in {
+                list[b].fade_in = overlap.min(u32::try_from(list[b].length).unwrap_or(u32::MAX));
+                list[b].fade_in_equal = true;
+            }
+        }
+    }
 }
 
 /// The curve of an automation lane, its ticks converted to samples
@@ -656,6 +707,46 @@ mod tests {
             ("loop", Value::int(loop_len)),
             ("notes", Value::object([(note_key(1), note)])),
         ])
+    }
+
+    fn playing(start: i64, length: i64) -> AudioItem {
+        let data = Arc::new(SampleData::from_channels(48_000, vec![vec![0.0; 4]]).expect("data"));
+        AudioItem {
+            start,
+            length,
+            source: AudioSource::Memory(data),
+            offset: 0,
+            gain: 1.0,
+            fade_in: 0,
+            fade_out: 0,
+            fade_in_curve: 0.0,
+            fade_out_curve: 0.0,
+            fade_in_equal: false,
+            fade_out_equal: false,
+        }
+    }
+
+    #[test]
+    fn overlapping_items_crossfade_over_their_overlap_and_layers_stay() {
+        // 0..1000 and 800..2000 share 200 samples; 1200..1500 lies inside the second one
+        let mut list = vec![playing(800, 1200), playing(1200, 300), playing(0, 1000)];
+        auto_crossfade(&mut list);
+        assert_eq!(list.iter().map(|i| i.start).collect::<Vec<_>>(), vec![0, 800, 1200]);
+        assert_eq!((list[0].fade_out, list[0].fade_in), (200, 0));
+        assert_eq!((list[1].fade_in, list[1].fade_out), (200, 0));
+        assert!(list[0].fade_out_equal && list[1].fade_in_equal);
+        assert_eq!((list[2].fade_in, list[2].fade_out), (0, 0), "a layer is not faded");
+    }
+
+    #[test]
+    fn a_crossfade_keeps_a_longer_fade_and_takes_the_tension() {
+        let mut list = vec![playing(0, 1000), playing(900, 1000)];
+        list[0].fade_out = 500;
+        list[1].fade_in_curve = 0.5;
+        auto_crossfade(&mut list);
+        assert_eq!(list[0].fade_out, 500, "the longer fade stays");
+        assert_eq!(list[1].fade_in, 100);
+        assert_eq!(list[0].fade_out_curve, 0.0, "only a raised fade takes the tension");
     }
 
     #[test]

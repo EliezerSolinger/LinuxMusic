@@ -3170,6 +3170,22 @@ fn play_audio(
     missing
 }
 
+/// The exponent of a fade of tension `curve` (-1..1): 4^curve, so 0 is the straight line, 1 a slow start (power 4),
+/// -1 a fast one (power 1/4)
+fn fade_power(curve: f32) -> f32 {
+    4f32.powf(curve.clamp(-1.0, 1.0))
+}
+
+/// The gain at `x` (0..1 along the fade) for the exponent `power`
+fn fade_shape(x: f32, power: f32) -> f32 {
+    if power == 1.0 { x } else { x.clamp(0.0, 1.0).powf(power) }
+}
+
+/// The gain at `x` (0..1) of a fade at equal power: the sine, whose square and the mirrored one's sum to 1
+fn equal_power(x: f32) -> f32 {
+    (x.clamp(0.0, 1.0) * std::f32::consts::FRAC_PI_2).sin()
+}
+
 /// One item's samples `a..b` (timeline) into the buffer, with its gain and fades; `get(channel, source frame)`
 #[allow(clippy::too_many_arguments)]
 fn mix_item(
@@ -3183,6 +3199,8 @@ fn mix_item(
     get: impl Fn(usize, i64) -> Option<f32>,
 ) {
     let dst_ch = layout.inputs;
+    let (in_power, out_power) = (fade_power(it.fade_in_curve), fade_power(it.fade_out_curve));
+    let (in_equal, out_equal) = (it.fade_in_equal && in_power == 1.0, it.fade_out_equal && out_power == 1.0);
     for k in a..b {
         let in_item = k - it.start;
         let frame = it.offset + in_item;
@@ -3191,11 +3209,13 @@ fn mix_item(
         }
         let mut g = it.gain;
         if it.fade_in > 0 && in_item < i64::from(it.fade_in) {
-            g *= in_item as f32 / it.fade_in as f32;
+            let x = in_item as f32 / it.fade_in as f32;
+            g *= if in_equal { equal_power(x) } else { fade_shape(x, in_power) };
         }
         let to_end = it.length - in_item;
         if it.fade_out > 0 && to_end <= i64::from(it.fade_out) {
-            g *= (to_end - 1).max(0) as f32 / it.fade_out as f32;
+            let x = (to_end - 1).max(0) as f32 / it.fade_out as f32;
+            g *= if out_equal { equal_power(x) } else { fade_shape(x, out_power) };
         }
         let at = (k - pos0) as usize;
         let s = |ch: usize| get(ch, frame).unwrap_or(0.0);
@@ -3319,5 +3339,32 @@ mod span_tests {
         // The span in progress can still grow when contiguous
         let last = *spans.last().expect("a span");
         assert!(push_span(&mut spans, last.offset + last.frames, 5, last.sample + last.frames as i64));
+    }
+}
+
+#[cfg(test)]
+mod fade_tests {
+    use super::*;
+
+    /// F-CLP-066: tension 0 is the straight line; above it the fade starts slow, below it fast; the ends stay put
+    #[test]
+    fn a_fade_curve_bends_the_line_and_keeps_its_ends() {
+        let linear = fade_power(0.0);
+        assert_eq!(fade_shape(0.5, linear), 0.5);
+        let slow = fade_power(1.0);
+        let fast = fade_power(-1.0);
+        assert!(fade_shape(0.5, slow) < 0.5 && fade_shape(0.5, fast) > 0.5);
+        for p in [linear, slow, fast] {
+            assert_eq!(fade_shape(0.0, p), 0.0);
+            assert!((fade_shape(1.0, p) - 1.0).abs() < 1e-6);
+        }
+        // At equal power the two halves of a crossfade have squares that sum to 1
+        for x in [0.0f32, 0.25, 0.5, 0.9, 1.0] {
+            let (a, b) = (equal_power(x), equal_power(1.0 - x));
+            assert!((a * a + b * b - 1.0).abs() < 1e-5);
+        }
+        // A value out of range is held to it, never NaN
+        assert_eq!(fade_power(9.0), fade_power(1.0));
+        assert!(fade_shape(-0.1, slow).is_finite());
     }
 }

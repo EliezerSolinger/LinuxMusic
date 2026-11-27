@@ -81,7 +81,7 @@ impl Side {
 }
 
 fn item(source: AudioSource, frames: usize) -> AudioItem {
-    AudioItem { start: 1000, length: frames as i64 - 500, source, offset: 500, gain: 0.75, fade_in: 64, fade_out: 64 }
+    AudioItem { start: 1000, length: frames as i64 - 500, source, offset: 500, gain: 0.75, fade_in: 64, fade_out: 64, fade_in_curve: 0.0, fade_out_curve: 0.0, fade_in_equal: false, fade_out_equal: false }
 }
 
 /// Serves every chunk the stream wants, from the data (the "file"), now

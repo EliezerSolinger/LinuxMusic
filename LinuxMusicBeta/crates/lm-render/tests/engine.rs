@@ -894,6 +894,10 @@ fn audio_items_play_in_place() {
             gain: 1.0,
             fade_in: 10,
             fade_out: 0,
+            fade_in_curve: 0.0,
+            fade_out_curve: 0.0,
+            fade_in_equal: false,
+            fade_out_equal: false,
         }],
     );
     install(&mut control, Install::new(b.build().expect("program")));

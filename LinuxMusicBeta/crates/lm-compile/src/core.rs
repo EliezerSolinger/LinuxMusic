@@ -1599,6 +1599,7 @@ impl CompilerCore {
                     }
                 }
                 if !list.is_empty() {
+                    crate::items::auto_crossfade(&mut list);
                     plan.audio.push((a, list));
                 }
             }

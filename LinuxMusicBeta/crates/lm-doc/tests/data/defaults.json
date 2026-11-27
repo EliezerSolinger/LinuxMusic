@@ -23,7 +23,9 @@
       "color": 0,
       "comp": [],
       "fadeIn": 0,
+      "fadeInCurve": 0.0,
       "fadeOut": 0,
+      "fadeOutCurve": 0.0,
       "gain": 1.0,
       "kind": "midi",
       "lanes": [],
@@ -37,16 +39,17 @@
       "swing": 0.0,
       "timebase": "musical"
     },
-    "version": 3
+    "version": 4
   },
   "item.comp": {
     "defaults": {
+      "curve": 0.0,
       "fade": 240,
       "from": 0,
       "lane": null,
       "to": 0
     },
-    "version": 1
+    "version": 2
   },
   "item.control": {
     "defaults": {
