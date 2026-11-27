@@ -2686,9 +2686,46 @@ impl InstrumentWindow {
                     && e.info.get("plugin").and_then(Value::as_text) == Some(&*plugin)
                 {
                     self.load_preset(node, e.id, e.name.clone(), cx);
+                    return;
+                }
+                // a sound file (SoundFont, GIG, SFZ, patch, sample): the Sampler takes it
+                let kind = e.info.get("type").and_then(Value::as_text).unwrap_or("");
+                if let Some(path) = e.info.get("path").and_then(Value::as_text) {
+                    self.open_in_sampler(kind, path, &plugin, cx);
                 }
             }
         }
+    }
+
+    /// A sound file of the Sampler's kinds is loaded into the track's Sampler (the instrument becomes one when it is
+    /// another plugin): the format and the file in one go, the file imported by the core (`plugin.load_into_field`)
+    fn open_in_sampler(&mut self, kind: &str, path: &str, plugin: &str, cx: &mut Context<Self>) {
+        let (field, format) = match kind {
+            "soundfont" => ("soundfont", "sf2"),
+            "sfz" => ("sfz", "sfz"),
+            "patch" => ("patch", "pat"),
+            "gig" => ("gig", "gig"),
+            "audio" => ("sample", "audio"),
+            _ => return,
+        };
+        let Some(track) = self.track else { return };
+        let op = if plugin == "sampler" {
+            EditOp::set(track, &["instrument", "state", "format"], Value::text(format))
+        } else {
+            let state = Value::object([("format", Value::text(format))]);
+            let node = Value::object([("plugin", Value::text("sampler")), ("state", state)]);
+            EditOp::set(track, &["instrument"], node)
+        };
+        let core = self.scx.core.clone();
+        if !apply_ops(&core, "Open in the Sampler", vec![op], cx) {
+            return;
+        }
+        let params = Value::object([
+            ("node", Value::text(track.to_string())),
+            ("field", Value::text(field)),
+            ("path", Value::text(path)),
+        ]);
+        run_action(&core, "plugin.load_into_field", params, cx);
     }
 }
 

@@ -51,6 +51,10 @@ enum Target {
 fn plugin_at(s: &Session, node: NodeId) -> Result<(String, Vec<PathStep>, Value)> {
     let found =
         s.document().find(node).ok_or_else(|| Error::new("action.node.missing").arg("node", node.to_string()))?;
+    // A modulator holds its fields itself (its user wave is the field `userWave`)
+    if node.kind == lm_doc::schemas::KIND_MODULATOR {
+        return Ok((lm_doc::schemas::types::MODULATOR.to_owned(), Vec::new(), found));
+    }
     let (plugin, path) = match found.get("instrument") {
         Some(instrument) => (instrument.clone(), vec![PathStep::key("instrument"), PathStep::key("state")]),
         None => (found, vec![PathStep::key("state")]),
