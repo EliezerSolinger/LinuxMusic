@@ -274,7 +274,7 @@ Só `cargo check` (macOS). Os trechos só de Linux (`lm-sys-linux/src/crash.rs`,
 | ALTO linux `install_handlers` (recursão) | confirmado e corrigido (sem `cargo check`): desfaz os handlers já trocados; `chain` ignora o próprio `on_signal`; `write_all` sai com `n == 0`. Sem teste (sinais reais) | lm-sys-linux |
 | ALTO sndfile `Reader::open` (vazamento) | confirmado e corrigido: `sf_close` no caminho de erro. Sem teste (libsndfile não aceita arquivo sem canais) | lm-sys-sndfile |
 | ALTO vst3 `Stream::write`/`seek` | confirmado e corrigido: limite de 256 MiB, `checked_add`, erro acima disso; teste em `host.rs`. O `catch_unwind` nos métodos COM não foi feito | lm-sys-vst3 |
-| ALTO ipc `SharedMemory::open` (par encolhe o objeto) | confirmado e não corrigido: o par é do mesmo usuário e o macOS não tem selos de `memfd`; a correção certa é mudar o desenho do canal (selos no Linux) | - |
+| ALTO ipc `SharedMemory::open` (par encolhe o objeto) | corrigido na rodada de desenho: o principal cria e dimensiona um objeto anônimo (Linux: `memfd` selado; macOS: nome removido na hora, tamanho de uma só definição) e passa o descritor por `SCM_RIGHTS`; risco residual no macOS em decisoes-autonomas.md | 177be238e |
 | ALTO lilv `urid:map` com mutex | falso: a especificação LV2 diz que `map` não é de tempo real e plugins mapeiam na instanciação; `try_lock` devolvendo 0 quebraria instanciações simultâneas | - |
 | MÉDIO midi `as_slice`, `value + 8192` | confirmado e corrigido, com teste | lm-sys-alsa |
 | MÉDIO `pcm_hints` nulo, `PcmPoll::new` (`got > count`), `Instant` em seq | confirmado e corrigido (sem `cargo check`; sem teste, exige ALSA) | lm-sys-alsa |

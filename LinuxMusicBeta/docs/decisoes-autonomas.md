@@ -2206,3 +2206,45 @@ dá a mesma saída.
 - **Não mudados.** jack `Client::open` global e `unique_name`: aceitáveis. `Worker::release` (bus): sem repetição a
   fazer, a conexão que some libera o nome sozinha. `mmap_commit` com `?`: o PCM recupera o xrun. `setString` do VST3:
   já limitado a 65 536. `instance.run` e `Instance::new` do lilv: só registro de invariante (comentários).
+
+
+## Rodada de desenho (27/11): isolamento do helper de plugins
+
+Princípio: o helper é não confiável; nada que ele faça (morrer, travar, mandar lixo, mexer na memória compartilhada)
+derruba ou trava o processo principal nem a thread de áudio.
+
+- **Memória compartilhada que o par podia encolher (SIGBUS).** `SharedMemory::open` por nome deixava o helper abrir o
+  objeto e fazer `ftruncate` menor; a próxima leitura do principal era SIGBUS. Decidido: o principal cria e dimensiona um
+  objeto anônimo (`SharedMemory::create(words)`, sem nome) e o entrega por descritor num par de sockets Unix
+  (`FdChannel`, `SCM_RIGHTS`, descritor 3 do helper, etiquetado com o número da instância); o helper o mapeia com
+  `SharedMemory::from_fd`, que confere o tamanho exato. Linux: `memfd_create` com `F_SEAL_SHRINK | F_SEAL_GROW |
+  F_SEAL_SEAL` (o helper recusa objeto sem selos). macOS: `shm_open` com o nome removido logo após criar (ninguém mais abre
+  o objeto) e o tamanho só pode ser definido uma vez no Darwin, então um segundo `ftruncate` falha. Risco residual no
+  macOS, dito com franqueza: não há selos, e "tamanho fixo depois do primeiro `ftruncate`" é comportamento do núcleo,
+  não garantia documentada; e o helper ainda escreve palavras arbitrárias (o principal as lê como números não
+  confiáveis, como antes). `unique_name`, `open`, `unlink` e a chave `shm` da mensagem `load` deixaram de existir.
+- **A-6, thread de áudio e controle disputavam o `Mutex` do plugin.** A instância de CLAP/VST3 aceita `&mut self` e não
+  pode ser chamada de duas threads, e as chamadas de thread principal (estado, janela, reinício) não podem rodar com
+  `process`. Passar a posse inteira à thread de áudio e mandar tudo por mensagem violaria a regra de thread principal, e
+  tornar as instâncias concorrentes exigiria mexer em `lm-sys-clap`/`lm-sys-vst3`. Decidido: um só dono por vez, e as
+  duas threads não são iguais (`shared.rs`). A de áudio só _tenta_ (`try_lock`: uma comparação atômica, sem espera,
+  sem chamada de sistema); com o plugin ocupado, o bloco sai em silêncio e o laço segue. A principal espera a vez
+  (sondando, para o `unlock` do áudio nunca ter quem acordar) e segura o plugin durante a chamada dela: pedidos longos
+  (estado, janela) são uma parada de processamento, limitada ao tempo do pedido no principal (3 s, depois
+  `plugin_host.busy`); o `idle` espera no máximo 2 ms e pula a vez. Efeito audível: durante um `save` demorado o nó
+  fica mudo, mas o helper deixa de ser dado como travado por isso.
+- **M-3, helper órfão.** O helper termina sozinho: fim do canal de controle (stdin) encerra o laço e, se a thread
+  principal estiver presa dentro de um plugin, um `_exit` depois de 3 s; e uma thread vigia o pai (a cada 200 ms,
+  `getppid` mudou) para os modos sem stdin (`files`, `list`, `probe`). **Não** usamos `PR_SET_PDEATHSIG`: o Linux o dispara
+  quando morre a _thread_ que criou o filho, e o principal cria helpers de threads de `Operation` curtas, o que mataria
+  helpers vivos. A sondagem do pai serve igual nos dois sistemas, então o macOS não precisou de `kqueue`.
+- **M-4, eventos cortados em `take(max_events)`.** O proxy agora divide o bloco em pedaços consecutivos, cada um cortado
+  onde começam os eventos que não cabem (no máximo 4096 por pedaço, deslocamentos contados do início do pedaço, posição e
+  tick do transporte avançados); mais de 4096 eventos no mesmo quadro continuam no pedaço seguinte, um quadro depois,
+  em vez de se perder. Cada pedaço é uma ida e volta ao helper com prazo proporcional ao seu tamanho.
+- **M-7, bloqueio permanente depois de um timeout.** Um estouro de tempo pode ser disco frio ou máquina ocupada, mas
+  bania o plugin para sempre e sem desfazer. Decidido: uma queda (`plugin_host.crashed`) bloqueia na hora; um estouro é
+  uma contagem (`strikes` na entrada da lista), o plugin continua na lista (o usuário vê) mas a varredura seguinte o
+  tenta de novo; o segundo estouro bloqueia. Um plugin que a varredura achou funcionando sai da lista. O usuário desfaz
+  com a ação `plugin.unblock {format?, uri?}` (sem `uri`: todo o formato; sem `format`: tudo). A tela ainda não tem
+  botão para ela.

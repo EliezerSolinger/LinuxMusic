@@ -850,13 +850,22 @@ O `lm-remote` leva o quadro como está (`KIND_DISPLAY`, só enquanto a janela as
 
 ### I-9.6 Plugins de terceiros fora do processo (F2) ⏳
 
-- Um processo auxiliar, memória compartilhada (buffers, eventos, pedidos) e um semáforo do sistema por bloco.
+- Um processo auxiliar, memória compartilhada (buffers, eventos, pedidos) e um semáforo do sistema por bloco. O objeto
+  de memória é anônimo e é o PROCESSO PRINCIPAL que o cria e o dimensiona (Linux: `memfd` com selos contra encolher e
+  crescer; macOS: `shm_open` com o nome removido na hora); o auxiliar o recebe por descritor (`SCM_RIGHTS`, descritor 3)
+  e nunca abre nada por nome. Um bloco com mais eventos do que a memória comporta roda em pedaços consecutivos, sem
+  perder evento.
+- O auxiliar é não confiável e não prende o principal nem a thread de áudio: dentro dele, a thread de áudio só _tenta_
+  pegar o plugin (sem esperar; ocupado, o bloco sai em silêncio) e a thread principal espera a vez; e ele termina sozinho
+  quando o principal some (canal de controle fechado ou pai trocado).
 - **Ao vivo:** prazo por bloco; perdeu o prazo, aquele bloco do nó sai em silêncio; depois de N perdidos seguidos, o
   processo é dado como travado, morto, e a `Session` oferece recriá-lo a partir da árvore.
 - **Exportação: espera sem prazo** (S19), para o arquivo sair igual bit a bit.
 - Iniciar o processo auxiliar e pedir o estado são `Operation`s.
 - **A varredura de plugins também roda num processo auxiliar** (H15). Um plugin que derruba a varredura vai para uma
-  lista de bloqueados nas preferências, com aviso, e não é tentado de novo até o usuário pedir.
+  lista de bloqueados nas preferências, com aviso, e não é tentado de novo até o usuário pedir (`plugin.unblock`). Uma
+  queda bloqueia na hora; um estouro de tempo é só uma contagem, e o plugin é tentado de novo na varredura seguinte
+  (bloqueia no segundo estouro).
 - O protocolo é versionado.
 
 ---
