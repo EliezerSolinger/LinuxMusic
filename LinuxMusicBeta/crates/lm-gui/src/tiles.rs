@@ -24,6 +24,7 @@ pub const TILE_PAIRS: usize = 256;
 /// Tile height in device pixels (the item's waveform area; 1x display here)
 pub const TILE_H: usize = 64;
 const MAX_IMAGES: usize = 512; // 64 KB each: 32 MB at most
+const MAX_BLOCKS: usize = 16_384; // 1 KB each: 16 MB at most
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct Key {
@@ -40,6 +41,7 @@ pub struct TileCache {
     blocks: HashMap<(u32, u8, u32), Arc<PeakBlock>>,
     images: HashMap<Key, Arc<RenderImage>>,
     wanted: HashSet<(u32, u8, u32)>,
+    /// Blocks the port answered `Waiting` last frame: only the ones still visible are asked again
     retry: Vec<(u32, u8, u32)>,
     /// Images of resources that grew, waiting for a window to free them
     stale: Vec<Arc<RenderImage>>,
@@ -109,17 +111,22 @@ impl TileCache {
 
     /// Some wanted block is not there yet (asked again on the next frame)
     pub fn waiting(&self) -> bool {
-        !self.wanted.is_empty()
+        !self.wanted.is_empty() || !self.retry.is_empty()
     }
 
     /// Asks the port for the wanted blocks (once per frame, with the port borrowed mutably); the ones still
-    /// `Waiting` stay wanted
+    /// `Waiting` are asked again only if the next frame still wants them (scrolled-away ones are dropped)
     pub fn fetch(&mut self, port: &mut dyn CorePort) {
+        self.retry.clear();
         for (res, level, tile) in std::mem::take(&mut self.wanted) {
             let from = tile as u64 * TILE_PAIRS as u64;
             let Some(name) = self.names.get(res as usize).cloned() else { continue };
             match port.peaks(&name, level, from, from + TILE_PAIRS as u64) {
                 Pending::Ready(Ok(b)) => {
+                    if self.blocks.len() >= MAX_BLOCKS {
+                        // simple eviction, like the images: the visible ones are asked again by the next frame
+                        self.blocks.clear();
+                    }
                     self.blocks.insert((res, level, tile), Arc::new(b));
                 }
                 Pending::Waiting(_) => {
@@ -128,7 +135,6 @@ impl TileCache {
                 Pending::Ready(Err(_)) => {}
             }
         }
-        self.wanted.extend(self.retry.drain(..));
     }
 
     fn image(
@@ -205,5 +211,25 @@ pub fn paint_wave(
             let tb = Bounds::new(point(origin_x + px(t as f32 * tile_w), y), size(px(tile_w), h));
             let _ = window.paint_image(clip, tb, Default::default(), img, 0, false);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_port_fake::{Config, FakePort};
+
+    #[test]
+    fn a_waiting_block_that_scrolled_away_is_not_asked_again() {
+        let mut port = FakePort::new(Config { tracks: 1, slow_delay: None, slow_track: usize::MAX }).expect("the demo");
+        let res = Resource::new("sample", "0000000000000000").expect("a valid key");
+        let mut cache = TileCache::default();
+        cache.want(&res, 0, 0..1);
+        cache.fetch(&mut port);
+        // unknown to the port: answered Waiting, so another frame is asked
+        assert!(cache.waiting());
+        // the next frame no longer wants it: it is dropped, and the animation stops
+        cache.fetch(&mut port);
+        assert!(!cache.waiting());
     }
 }

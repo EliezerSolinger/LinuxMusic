@@ -84,3 +84,21 @@ Nenhum `unsafe` fora de `lm-sys-*`. Todos os crates têm `#![forbid(unsafe_code)
 - Tamanho de tela e teclas lidos da árvore têm limite (`kept("grid")` em `piano_roll.rs:328`; `steps(clip)` com `.max(1)`; `transpose` com verificação antes de mover).
 - Aberturas de tela em `workspace.rs:open` substituem (não duplicam) uma tela já aberta. Telas destacadas registram o retorno em `should_close`.
 - `lm-port` é só tipos e trait; sem IO nem pânico. `TelemetryView::peak` limita o canal antes de fatiar.
+
+## Resultado da confirmação
+
+| Achado | Veredito | Commit |
+|---|---|---|
+| CRÍTICO panel.rs `wave_zoom` clamp | confirmado e corrigido: `start`/`end` limitados a 0..1 (NaN vira 0) e `fit_between` sem pânico | ff9402c5a |
+| Mesmo padrão em outros painéis (graph, schemas de plugin, `Range::fit`, fader, lomm, graphs, instrument) | confirmado e corrigido: `fit_between` / `max().min()`, limites de schema podem vir invertidos ou NaN | ff9402c5a |
+| ALTO tiles.rs cache de blocos sem limite | confirmado e corrigido: teto de 16384 blocos (16 MB); `names` não limpo (só cresce com recursos distintos, sem limpeza) | commit seguinte |
+| ALTO `Finished::Peaks` descartado, repetição por quadro | parcialmente corrigido: `retry` agora só repete blocos ainda visíveis e a animação para; deduplicação de pedidos em voo fica no `RemotePort` (lm-remote, outra área) | commit seguinte |
+| MÉDIO marks.rs:385 clamp | confirmado e corrigido | ff9402c5a |
+| MÉDIO piano_roll.rs:909/918 clamp com `length < 0` | confirmado e corrigido | ff9402c5a |
+| Novos achados do mesmo padrão: export.rs bars, edit.rs TrimStart, piano_roll.rs:980 cast | confirmado e corrigido | ff9402c5a / commit seguinte |
+| MÉDIO gestos abertos (panel, piano_roll, tempo_drag) | confirmado e não corrigido: exige `on_release` com cancelamento por gesto em várias telas; fora do fôlego desta rodada | n/a |
+| MÉDIO `Clip::read` por evento | confirmado e não corrigido: cache invalidado por revisão do feed é mudança de desenho | n/a |
+| MÉDIO mapas `imported`/`entries`/`previews` | confirmado e não corrigido: exige registro de ids pendentes | n/a |
+| MÉDIO `let _ = port...` sistêmico | confirmado e não corrigido: exige ponto único de toast | n/a |
+| MÉDIO `tempo_map` na GUI | confirmado e não corrigido: mudança de arquitetura | n/a |
+| MÉDIO main.rs:130 `session.open` | falso: `open` devolve `OperationId` (operação mostrada na UI), não `Result` | n/a |

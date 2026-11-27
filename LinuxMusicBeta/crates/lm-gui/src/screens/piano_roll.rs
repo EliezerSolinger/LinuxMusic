@@ -977,7 +977,7 @@ impl PianoRoll {
                                 t,
                                 Some(Note {
                                     start: x.start + delta.0,
-                                    key: (x.key as i32 + delta.1) as u8,
+                                    key: (x.key as i32 + delta.1).clamp(0, 127) as u8,
                                     ..x.clone()
                                 }),
                             )
