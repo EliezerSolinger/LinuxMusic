@@ -1165,7 +1165,7 @@ Abrir, salvar, exportar e trocar de dispositivo são `Operation`s; a `Session` n
 | Chama de volta o nosso código? | por trampolina com `catch_unwind` |
 | Testes | do pacote, sob ASan, mais a armadilha de alocação no que roda no áudio |
 
-**Os primeiros pacotes `lm-sys`** (F1, Linux): `lm-sys-alsa` (PCM e seq), `lm-sys-sndfile`, `lm-sys-fluidsynth`,
+**Os primeiros pacotes `lm-sys`** (F1, Linux): `lm-sys-alsa` (PCM e seq), `lm-sys-sndfile`, `lm-sys-fluidsynth` (apagado em 27/11),
 `lm-sys-samplerate`, `lm-sys-fpu`, `lm-sys-linux` (rtkit, logind e ReserveDevice1 pelo D-Bus, `mlockall`). Depois:
 `lm-sys-jack`, `lm-sys-lilv`. O Mac (`lm-sys-coreaudio`, `lm-sys-coremidi`, `lm-sys-macos`) vem em segundo.
 
@@ -1968,7 +1968,7 @@ vozes entre instâncias, e plugins de terceiros também não):
 - ele continua num **nó de cauda**, gerado pelo compilador, até a cauda acabar (no máximo 2 s), e só então é removido;
 - o novo já recebe as notas novas.
 
-**U33. FluidSynth** (base do AvlDrums, F1). Tudo isto vai na ficha do `lm-sys-fluidsynth`:
+**U33. FluidSynth** (base do AvlDrums, F1; o crate e o plugin foram apagados em 27/11, o Sampler os substitui, mas a regra vale para qualquer biblioteca de C). Tudo isto vai na ficha do `lm-sys-fluidsynth`:
 - `synth.threadsafe-api` desligado: a instância só é chamada pela thread de áudio;
 - `synth.cpu-cores = 1`: sem threads próprias;
 - um SoundFont nunca é carregado numa instância que está tocando, sempre numa instância nova no build, com a troca do

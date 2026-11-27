@@ -1850,14 +1850,20 @@ Escrito sem rodar testes (regra do dia): só `cargo check`; os testes existem e 
   continua até a nova ficar pronta). O `adopt` leva as vozes se o instrumento é o mesmo; se não, o motor antigo vira
   fantasma que termina as notas dele (recebe os note-offs delas) misturado com o novo. Mudar a disposição das saídas não é
   adotado.
-- **Fora desta passada.** Acordes e arpejo são efeitos de nota (item 2); mono, legato e glide do instrumento ainda não
-  existem no Sampler; GIG é TODO marcado (leitor RIFF/DLS próprio, sem libgig); a vista da foto dos kits AVL e a GUI de
-  escolha de fonte e preset; amostras de SF2 ficam todas em memória como f32 (um instrumento grande lê só o preset
-  escolhido; carregar em streaming fica para depois).
-- **Migração.** Os seis plugins antigos continuam registrados (projetos antigos abrem e tocam) e saem das listas de
-  instrumento novo (`lm-session/src/deprecated.rs`, filtrado em `plugins()` e no navegador). Quem substitui quem: Sf2
-  Player, `format sf2`; GigPlayer, `format gig` (TODO); PatMan, `format pat`; AudioFileProcessor, `format audio`; AvlDrums e
-  DrumMachines, `format kit`. Os crates antigos serão apagados numa passada própria.
+- **Fora desta passada (e o que veio em 27/11).** Acordes e arpejo são efeitos de nota (item 2). Em 27/11 entraram: mono,
+  legato e glide (abaixo), o leitor GIG em Rust puro, o painel (fonte, preset, botões globais, foto dos kits AVL, onda,
+  mapa de zonas) e a remoção dos jogadores antigos. Amostras de SF2 e GIG ficam todas em memória como f32 (um instrumento
+  grande lê só o preset escolhido); o streaming está desenhado abaixo.
+- **Migração (27/11: feita).** Os seis plugins antigos e os crates `lm-plugins-fluidsynth`, `lm-plugins-gigplayer`,
+  `lm-sys-fluidsynth` e `lm-sys-gig` foram apagados, com `lm-session/src/deprecated.rs`, os módulos `patman`,
+  `audio_file_processor` e `drum_machines` de `lm-plugins-instruments` (o tipo `Audio` do SlicerT foi para
+  `lm-plugins-instruments/src/audio.rs`) e os painéis do Patman e do AudioFileProcessor. Ficam `lm_dsp::patman`,
+  `lm_dsp::drumsynth`, `lm_dsp::drum_machines` e `lm_dsp::sample_player`, que o Sampler usa. Quem substitui quem: Sf2
+  Player, `format sf2`; GigPlayer, `format gig`; PatMan, `format pat`; AudioFileProcessor, `format audio`; AvlDrums e
+  DrumMachines, `format kit`. Um projeto antigo que cita um deles abre com o plugin ausente (a faixa fica muda e o
+  estado é guardado, F-INS-024). O `libfluidsynth` e a `libgig` saíram do CI; as referências do A/B (renderizadas pelo
+  FluidSynth) ficam só como arquivos em `lm-plugins-sampler/tests/ab/` (os scripts e o harness que as faziam foram
+  apagados).
 - **Testes dos jogadores antigos a aposentar** quando os crates saírem: `lm-plugins-fluidsynth` (`ab`,
   `avldrums_contract`, `sf2player_contract`), `lm-plugins-gigplayer` (`contract`) e, em `lm-plugins-instruments`,
   `audio_file_processor`, `patman` e `drum_machines`. Os que já falham hoje (`ab`, `avldrums_contract`, o `contract` do
@@ -2020,3 +2026,45 @@ o comportamento é moderno e configurável.
 - **Segurança:** localhost por padrão; ligar para fora exige a preferência `lan` (linha "OSC de outras máquinas").
   As ações são as do registro do núcleo, as mesmas do mapa MIDI.
 - **Configurações:** na página MIDI, três linhas curtas: OSC (liga), porta e "de outras máquinas".
+
+### Sampler: GIG, voz, painel e streaming (27/11)
+
+Escrito sem rodar testes (regra do dia): só `cargo check`; os testes existem e rodam na próxima sessão.
+
+- **Leitor GIG** (`lm-sampler/src/import/gig.rs`), Rust puro, sem libgig. Lê o que o GigPlayer lia: instrumentos (`lins`/`ins `,
+  banco e programa como o libgig os junta, nome em `INFO/INAM`), regiões (`rgn `, faixa de teclas), dimensões (`3lnk`, 8
+  por região na versão 3 do arquivo, 5 na 2), regiões de dimensão (`3prg`/`3ewl`: o `3ewa` de 148 bytes com o EG1, a curva
+  de resposta de velocidade, o rastreio de altura, o decaimento do release trigger e os limites de zona; o `wsmp` com nota,
+  afinação fina, ganho e o primeiro laço), a tabela de ondas (`ptbl` de 32 ou 64 bits, `wvpl`) e o PCM de 16 e 24 bits (mono
+  ou estéreo; escala de meia amplitude, como o GigPlayer lia). Cada região de dimensão vira uma `Zone`: velocidade vira
+  faixa de velocidade (os limites do arquivo, ou zonas iguais; a tabela de 128 níveis da curva vira `Zone::vel_table`),
+  release trigger vira `Trigger::Release` (a queda é `0,0915 x (256 >> decaimento)` dB/s, a mesma reta do libgig perto de 0),
+  pedal de sustentação vira `Zone::pedal`, aleatório vira `Zone::random`, round robin vira `Zone::sequence` (um grupo por
+  região), camadas tocam todas, e o canal de amostra toca as duas amostras mono à esquerda e à direita. **Chaveamento de
+  teclas e dimensões de controlador** tomam a primeira zona (o GigPlayer fazia o mesmo): o chaveamento com trava fica para
+  depois. O EG1 vira o AHDSR do motor (o decaimento linear do arquivo vira o exponencial equivalente, a soltura cai como
+  `exp(-5 t / R)`); o pré-ataque não existe no motor. **Amostras comprimidas** (chunk `EWAV`) **não são suportadas**: o
+  instrumento que usa uma falha com `sampler.gig.compressed` (só as do instrumento escolhido são lidas; listar os
+  instrumentos não decodifica nada). O arquivo de teste é escrito pelo próprio teste (`import/gig/tests.rs`).
+- **Mono, legato e glide** são parâmetros do Sampler: `voiceMode` (0 poli, 1 mono, 2 legato; passo, mapeável) e `glide` (ms,
+  0 a 2000). No mono uma nota nova cai a anterior (4 ms, sem clique) e soltar a nota de cima traz de volta a anterior ainda
+  segurada (a última tem prioridade); no legato as vozes que soam mudam de altura para a nota nova, sem ataque novo, se a
+  zona cobre a tecla (senão recomeçam); o glide leva a altura da última nota até a nova em linha reta em cents. Mudam a
+  voz, não o instrumento: nada reconstrói.
+- **MPE:** a pressão de cada nota soma até 6 dB de ganho e o timbre move o corte do filtro até duas oitavas (zonas sem filtro
+  ignoram).
+- **`sampler.list_presets {node}`** (`lm-session/src/sampler_presets.rs`): lê o SoundFont ou o GIG do nó em uma operação e põe
+  a lista em `status.pluginInfo.<nó>`; roda sozinha depois de carregar um banco por `plugin.load_into_field`.
+- **Streaming de amostras grandes (projeto; o gancho existe, a execução fica para depois).** Hoje `Instrument` guarda cada
+  amostra como `Arc<Pcm>` inteiro em memória: um GIG de piano de 2 GB não cabe. Desenho: (1) uma zona guarda um `Arc<Source>`
+  em vez do `Arc<Pcm>`, um enum `Resident(Pcm)` ou `Streamed { head: Pcm, file }`, em que `head` é o começo da amostra (o
+  tempo que o disco leva para responder, por exemplo 64 mil quadros) e `file` descreve onde ler o resto; o motor continua a
+  só ler `Pcm`s, então a mudança é em `Zone::sample` e em `interp::read`. (2) Um **fio de pré-leitura** do plugin (não do
+  motor: o motor não tem fios nem locks) mantém, por voz que passa do `head`, um anel de blocos já decodificados; a voz e o
+  fio se falam por um canal `rtrb` (já permitido) por voz: a voz manda "preciso do bloco N" quando passa de um limiar e o
+  fio responde com blocos prontos em buffers pré-alocados que a voz devolve pelo mesmo canal. Sem lock e sem alocação na
+  thread de áudio. (3) Se o bloco não chegou, a voz toca silêncio e conta uma "falta" (o mesmo aviso de xrun do disco) em
+  vez de travar. (4) O laço e a soltura de uma amostra em streaming exigem o trecho do laço residente (`head` cobre o laço
+  ou o laço fica inteiro em memória). O gancho de hoje: `Instrument::sample_frames()` diz quantos quadros o instrumento
+  tem, e a escolha por preset já limita o que se decodifica; o limite de memória que faria o importador escolher
+  `Streamed` ainda não existe.
