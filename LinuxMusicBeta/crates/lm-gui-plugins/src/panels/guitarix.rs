@@ -137,6 +137,7 @@ fn decoration(w: f32, h: f32, draw: crate::spec::SurfDrawFn, live: bool, tag: u3
         wheel_edit: None,
         peaks: None,
         tag,
+        markers: None,
     }
 }
 
@@ -250,6 +251,7 @@ fn build(u: &'static Unit) -> PanelSpec {
                     wheel_edit: None,
                     peaks: None,
                     tag,
+                    markers: None,
                 };
                 controls.push(restrict(surface(spec, it.key, it.x, it.y, it.name), it));
             }
@@ -275,6 +277,7 @@ fn build(u: &'static Unit) -> PanelSpec {
                     wheel: false,
                     wheel_edit: None,
                     peaks: None,
+                    markers: None,
                     tag: it.a,
                 };
                 controls.push(restrict(surface(spec, it.key, it.x, it.y, it.name), it));

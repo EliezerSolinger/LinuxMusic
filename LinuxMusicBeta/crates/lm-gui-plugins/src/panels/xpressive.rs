@@ -7,10 +7,9 @@
 //! The editor is the panel's text editor over the field of the selected view (`w1Expr`... `o1`, `o2`); the help is a
 //! view that covers the rest with the names the expressions know.
 //!
-//! What the core must expose for the rest: the validity lamp reads the plugin's live frame, one flag for each
-//! expression in the order W1, W2, W3, O1, O2 (1 = does not compile; `lm_plugins_instruments::xpressive::status`
-//! gives them), but the plugin has no display yet; and the O1 and O2 graphs of the legacy show the curve the
-//! expression makes, which the plugin would have to give as a frame too. A W graph is drawn whatever the smoothing
+//! The live frame (`lm_plugins_instruments::xpressive::FRAME_FLOATS`): one flag for each expression in the order W1,
+//! W2, W3, O1, O2 (1 = does not compile) for the validity lamp, then the curve each output makes alone (a note of A4,
+//! half a second, 256 columns) for the O1 and O2 graphs. A W graph is drawn whatever the smoothing
 //! and the text (the legacy allows it only with the smoothing at 0 and an empty text).
 
 use std::sync::LazyLock;
@@ -19,7 +18,7 @@ use lm_port::Value;
 
 use crate::asset;
 use crate::assets::{self, Asset};
-use crate::raster::{Canvas, Rgba};
+use crate::raster::{Canvas, Cap, Paint, Rgba};
 use crate::spec::{
     Bind, Control, GraphSpec, GraphStyle, PanelSpec, PressCx, StaticText, SurfText, SurfaceCx, SurfaceSpec, Target,
     Text, button, graph, knob, led, surface, text_edit, toggle,
@@ -39,6 +38,9 @@ const SMOOTH: [&str; 3] = ["smoothW1", "smoothW2", "smoothW3"];
 const INTERP: [&str; 3] = ["interpolateW1", "interpolateW2", "interpolateW3"];
 const HELP: u8 = 5;
 const GRAPH_LEN: usize = 4096;
+/// The live frame's layout (`lm_plugins_instruments::xpressive`: the tests check these numbers)
+pub(crate) const FLAGS: usize = 5;
+pub(crate) const PREVIEW_POINTS: usize = 256;
 
 /// A wave shortcut: the text it appends to a W's expression and to an output's
 fn append(cx: &mut PressCx<'_>, wave: &str, output: &str) -> Vec<(Target, Value)> {
@@ -121,6 +123,22 @@ fn draw_valid(c: &mut Canvas, cx: &SurfaceCx<'_>) {
     widgets::draw_led(c, LedColor::Red, cx.live(cx.tag as usize, 0.0) >= 0.5);
 }
 
+/// The curve output `tag` (0 for O1, 1 for O2) makes, from the plugin's live frame: a note of A4 as the core played it
+/// alone, one point per column
+fn draw_output(c: &mut Canvas, cx: &SurfaceCx<'_>) {
+    c.fill_rect(0.0, 0.0, cx.w, cx.h, Rgba::rgb(0, 0, 0));
+    let mid = (cx.h / 2.0).floor();
+    c.line((0.0, mid), (cx.w, mid), 1.0, Cap::Flat, &Paint::Solid(Rgba::hex(0x2a3a2a)));
+    let base = FLAGS + cx.tag as usize * PREVIEW_POINTS;
+    let y = |v: f32| mid - v.clamp(-1.0, 1.0) * (cx.h / 2.0 - 1.0);
+    let step = cx.w / (PREVIEW_POINTS - 1) as f32;
+    let paint = Paint::Solid(Rgba::rgb(255, 255, 255));
+    for i in 1..PREVIEW_POINTS {
+        let (a, b) = (cx.live(base + i - 1, 0.0), cx.live(base + i, 0.0));
+        c.line(((i - 1) as f32 * step, y(a)), (i as f32 * step, y(b)), 1.0, Cap::Flat, &paint);
+    }
+}
+
 fn draw_cover(c: &mut Canvas, cx: &SurfaceCx<'_>) {
     c.fill_rect(0.0, 0.0, cx.w, cx.h, Rgba::hex(0x101410));
 }
@@ -170,6 +188,7 @@ fn cover(tag: u32, w: f32, h: f32, texts: bool) -> SurfaceSpec {
         wheel_edit: None,
         peaks: None,
         tag,
+        markers: None,
     }
 }
 
@@ -254,6 +273,13 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             )
             .in_view_n(view),
         );
+    }
+    for k in 0..2u32 {
+        let mut graph = cover(k, 180.0, 81.0, false);
+        graph.primary = "";
+        graph.draw = draw_output;
+        graph.live = true;
+        c.push(surface(graph, leak(format!("output{k}")), 3.0, 3.0, "Output").in_view_n(3 + k as u8));
     }
     let waves: [(&str, fn(&mut PressCx<'_>) -> Vec<(Target, Value)>, f32, f32, &'static Asset, &'static Asset); 7] = [
         ("moog", moog_saw, 4.0, 195.0, &assets::lmms::MOOG_SAW_WAVE_ACTIVE, &assets::lmms::MOOG_SAW_WAVE_INACTIVE),

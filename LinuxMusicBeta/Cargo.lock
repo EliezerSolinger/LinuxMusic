@@ -3611,6 +3611,7 @@ dependencies = [
  "gpui-pre",
  "image",
  "lm-plugin",
+ "lm-plugins-ampandir",
  "lm-plugins-effects",
  "lm-plugins-freeboy",
  "lm-plugins-guitarix",

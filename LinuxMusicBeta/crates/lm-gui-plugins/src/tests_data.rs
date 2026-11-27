@@ -128,7 +128,7 @@ fn snapshots() {
                             Bind::Step { param, value } => {
                                 schema.find_param(param).is_some_and(|p| (p.def - value).abs() < 0.5)
                             }
-                            Bind::Flag { .. } | Bind::Press(_) | Bind::Momentary { .. } | Bind::Open { .. } => false,
+                            Bind::Flag { .. } | Bind::Press(_) | Bind::Momentary { .. } | Bind::Open { .. } | Bind::Action { .. } => false,
                             Bind::View(n) => n == 0,
                         };
                         one.pixmap(crate::assets::image(if on { b.active } else { b.inactive }), 0.0, 0.0, false);

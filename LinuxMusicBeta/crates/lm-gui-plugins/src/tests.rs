@@ -581,7 +581,7 @@ fn check_bind(o: &mut Opened<'_>, id: &'static str, bind: Bind) {
             o.click(id, MouseButton::Left);
             assert_eq!(o.param(param), 0.0, "{id}: back to 0 when released");
         }
-        Bind::Press(_) | Bind::View(_) | Bind::Open { .. } => {}
+        Bind::Press(_) | Bind::View(_) | Bind::Open { .. } | Bind::Action { .. } => {}
     }
 }
 
@@ -903,4 +903,67 @@ fn guitarix(cx: &mut TestAppContext) {
 fn xpressive(cx: &mut TestAppContext) {
     let mut o = open(cx, &[(&lm_plugins_instruments::xpressive::DESCRIPTOR, true)], "xpressive");
     exercise(&mut o);
+}
+
+#[gpui::test]
+fn ampandir(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_ampandir::DESCRIPTOR, true)], "ampandir");
+    exercise(&mut o);
+}
+
+#[gpui::test]
+fn slicert(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_instruments::slicert::DESCRIPTOR, true)], "slicert");
+    exercise(&mut o);
+}
+
+fn slices_of(o: &mut Opened<'_>) -> Vec<f64> {
+    o.field("slices").items().filter_map(Value::as_real).collect()
+}
+
+#[gpui::test]
+fn the_slice_points_are_added_moved_and_removed_on_the_wave(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_instruments::slicert::DESCRIPTOR, true)], "slicert");
+    let ends = Value::list([0.0, 1.0].map(|v| Value::real(v).unwrap()));
+    set_field(&mut o, "slices", ends);
+    let b = o.cx.debug_bounds("wave").expect("the wave is drawn");
+    let at = |f: f32| point(b.origin.x + px(f * 515.0), b.center().y);
+    let near = |a: &[f64], want: &[f64]| a.len() == want.len() && a.iter().zip(want).all(|(x, y)| (x - y).abs() < 0.01);
+    // a press on an empty place adds a point there
+    o.cx.simulate_mouse_move(at(0.5), None, Modifiers::none());
+    o.cx.simulate_mouse_down(at(0.5), MouseButton::Left, Modifiers::none());
+    o.cx.simulate_mouse_up(at(0.5), MouseButton::Left, Modifiers::none());
+    o.settle();
+    assert!(near(&slices_of(&mut o), &[0.0, 0.5, 1.0]), "{:?}", slices_of(&mut o));
+    // a drag moves it, one undo step
+    o.cx.simulate_mouse_move(at(0.5), None, Modifiers::none());
+    o.cx.simulate_mouse_down(at(0.5), MouseButton::Left, Modifiers::none());
+    for k in 1..=5 {
+        o.cx.simulate_mouse_move(at(0.5 + 0.05 * k as f32), MouseButton::Left, Modifiers::none());
+    }
+    o.cx.simulate_mouse_up(at(0.75), MouseButton::Left, Modifiers::none());
+    o.settle();
+    assert!(near(&slices_of(&mut o), &[0.0, 0.75, 1.0]), "{:?}", slices_of(&mut o));
+    o.undo();
+    assert!(near(&slices_of(&mut o), &[0.0, 0.5, 1.0]), "one drag is one undo step: {:?}", slices_of(&mut o));
+    // a point does not pass its neighbour
+    o.cx.simulate_mouse_move(at(0.5), None, Modifiers::none());
+    o.cx.simulate_mouse_down(at(0.5), MouseButton::Left, Modifiers::none());
+    o.cx.simulate_mouse_move(at(0.99), MouseButton::Left, Modifiers::none());
+    o.cx.simulate_mouse_up(at(0.99), MouseButton::Left, Modifiers::none());
+    o.settle();
+    let s = slices_of(&mut o);
+    assert!(s.len() == 3 && s[1] <= 1.0 && s[1] >= s[0], "{s:?}");
+    // the ends stay, and the right button removes a point
+    o.cx.simulate_mouse_move(at(0.0), None, Modifiers::none());
+    o.cx.simulate_mouse_down(at(0.0), MouseButton::Right, Modifiers::none());
+    o.cx.simulate_mouse_up(at(0.0), MouseButton::Right, Modifiers::none());
+    o.settle();
+    assert_eq!(slices_of(&mut o).len(), 3, "an end is not removed");
+    let x = s[1] as f32;
+    o.cx.simulate_mouse_move(at(x), None, Modifiers::none());
+    o.cx.simulate_mouse_down(at(x), MouseButton::Right, Modifiers::none());
+    o.cx.simulate_mouse_up(at(x), MouseButton::Right, Modifiers::none());
+    o.settle();
+    assert!(near(&slices_of(&mut o), &[0.0, 1.0]), "{:?}", slices_of(&mut o));
 }

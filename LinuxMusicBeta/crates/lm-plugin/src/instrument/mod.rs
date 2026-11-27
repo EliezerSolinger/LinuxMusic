@@ -156,6 +156,11 @@ pub trait Synth: Clone + Send + 'static {
     fn copies_voices(&self) -> bool {
         true
     }
+    /// Fills the plugin window's live frame (its [`crate::DisplaySpec`]'s bytes, all of them), once per block, when the
+    /// window is open. What the synth shows must not depend on the block size
+    fn display(&self, frame: &mut [u8]) {
+        frame.fill(0);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -763,6 +768,9 @@ impl<S: Synth> Processor for Instrument<S> {
         }
         for ev in &events[e..] {
             self.event(ev.kind);
+        }
+        if let Some(writer) = cx.display.as_mut() {
+            writer.write(|frame| self.synth.display(frame));
         }
     }
 

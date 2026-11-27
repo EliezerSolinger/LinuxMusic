@@ -97,6 +97,8 @@ pub enum Bind {
     /// through the port's import; any other kind of file is sent as its bytes to the core's `action`
     /// (`{node, field, bytes}`, one undo step there), which reads it and sets the field
     Open { field: &'static str, action: Option<&'static str>, extensions: &'static [&'static str] },
+    /// A push button that runs a core action of the plugin with `{node}` (SlicerT's "find slices")
+    Action { action: &'static str },
 }
 
 impl Bind {
@@ -104,7 +106,7 @@ impl Bind {
         match *self {
             Bind::Choice { field, .. } | Bind::Flag { field } => Target::Field(field),
             Bind::Switch { param } | Bind::Momentary { param } | Bind::Step { param, .. } => Target::Param(param),
-            Bind::Press(_) | Bind::View(_) => Target::Field(""),
+            Bind::Press(_) | Bind::View(_) | Bind::Action { .. } => Target::Field(""),
             Bind::Open { field, .. } => Target::Field(field),
         }
     }
@@ -393,6 +395,23 @@ pub struct SurfaceSpec {
     pub peaks: Option<PeaksSpec>,
     /// A number the panel gives the surface for its draw function (`SurfaceCx::tag`)
     pub tag: u32,
+    /// Markers the user places on the wave view (SlicerT's slice points)
+    pub markers: Option<MarkersSpec>,
+}
+
+/// A list field of points, fractions of the shown resource from 0 to 1 and kept sorted: a click on the wave view
+/// adds one, a drag moves one (the neighbours bound it) and a click on one with Shift, or the right button, removes
+/// it; every change is one undo step (a drag is one gesture)
+#[derive(Clone, Copy, Debug)]
+pub struct MarkersSpec {
+    pub field: &'static str,
+    /// How near a click must be to a point to take it (pixels)
+    pub grab: f32,
+    /// The wave view's left edge and width in the surface (the graph's padding), for the pixel of a fraction
+    pub x0: f32,
+    pub width: f32,
+    /// The first and last points are the ends of the resource (0 and 1): they are not moved and not removed
+    pub fixed_ends: bool,
 }
 
 /// The resource field a wave view shows and the two parameters that bound the part that plays (fractions)

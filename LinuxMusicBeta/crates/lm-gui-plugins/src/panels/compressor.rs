@@ -291,6 +291,7 @@ fn ring(id: &'static str, x: f32, y: f32, large: bool) -> Control {
             wheel_edit: None,
             peaks: None,
 
+            markers: None,
             tag: 0,
         },
         id,
@@ -320,6 +321,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             wheel_edit: None,
             peaks: None,
             // the dB range: 36 at first, 3 dB a notch, from 3 to 96
+            markers: None,
             tag: crate::spec::SURFACE_ZOOM | 36 | (3 << 8) | (96 << 16),
         },
         "graph",
@@ -345,6 +347,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             wheel_edit: None,
             peaks: None,
 
+            markers: None,
             tag: 0,
         },
         "box",

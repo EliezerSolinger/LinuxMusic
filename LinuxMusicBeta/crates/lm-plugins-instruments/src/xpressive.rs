@@ -28,7 +28,7 @@ use lm_dsp::xpressive::{
 };
 use lm_expr::CompileError;
 use lm_plugin::instrument::{Instrument, NoteStart, Synth, add_instrument_functions};
-use lm_plugin::{BuildContext, Descriptor, PluginKind, StateView, TestHints, Velocity};
+use lm_plugin::{BuildContext, Descriptor, DisplaySpec, PluginKind, StateView, TestHints, Velocity};
 use lm_render::{Processor, Rng};
 use lm_state::{FieldKind, FieldSpec, NodeSchema, ParamSpec, Scale, Value};
 
@@ -40,6 +40,14 @@ pub const VOICES: usize = 32;
 pub const DEFAULT_O1: &str =
     "0.5*sinew(integrate(f*(1+0.05sinew(12t))))*(2^(-(1.1+A2)*t)*(0.4+0.1(1+A3)+0.4sinew((2.5+2A1)t))^2)";
 pub const DEFAULT_O2: &str = "0.5*(expw(integrate(f*atan(500t)*2/pi))*0.5+0.12)";
+/// The live frame (f32s): one flag for each expression in the order W1, W2, W3, O1, O2 (1 = does not compile), then
+/// the curve each output makes (O1, then O2): [`PREVIEW_POINTS`] points from -1 to 1
+pub const FLAGS: usize = 5;
+pub const PREVIEW_POINTS: usize = 256;
+pub const FRAME_FLOATS: usize = FLAGS + 2 * PREVIEW_POINTS;
+/// What the preview plays: a note of A4 and this long
+const PREVIEW_HZ: f32 = 440.0;
+const PREVIEW_SECONDS: f32 = 0.5;
 pub const WAVE_EXPR_FIELDS: [&str; 3] = ["w1Expr", "w2Expr", "w3Expr"];
 pub const WAVE_GRAPH_FIELDS: [&str; 3] = ["w1Graph", "w2Graph", "w3Graph"];
 pub const SMOOTH_FIELDS: [&str; 3] = ["smoothW1", "smoothW2", "smoothW3"];
@@ -71,7 +79,7 @@ pub static DESCRIPTOR: Descriptor = Descriptor {
     schemas,
     ports: stereo_out,
     velocity: Velocity::Level,
-    display: None,
+    display: Some(DisplaySpec { bytes: FRAME_FLOATS * 4 }),
     build,
     // (no tuning probe: the pitch is what the expressions make of `f`)
     tests: TestHints { voices: VOICES, ..TestHints::new() },
@@ -173,6 +181,56 @@ pub struct Xpressive {
     values: [f32; PARAMS.len()],
     knobs: Knobs,
     tempo: f64,
+    /// What the window shows ([`FRAME_FLOATS`]), made at the build
+    frame: Arc<[f32]>,
+}
+
+/// The curve output `k` makes alone, as the window draws it: a note of [`PREVIEW_HZ`] with the knobs as they are, in
+/// [`PREVIEW_POINTS`] columns, each the sample of the largest size in its stretch. Works and allocates: not for the
+/// audio thread
+fn preview(outputs: [&str; 2], tables: &[Vec<f32>; 3], k: usize, rate: u32, values: &[f32], knobs: &Knobs) -> Vec<f32> {
+    let mut alone = ["", ""];
+    alone[k] = outputs[k];
+    let (patch, _) = Patch::new(alone, tables.clone());
+    if !patch.valid(k) {
+        return vec![0.0; PREVIEW_POINTS];
+    }
+    let room = patch.needs();
+    let mut voice = ExprVoice::new(&room, rate);
+    let on = |i: usize| values[P_INTERP + i] >= 0.5;
+    voice.start(
+        &patch,
+        &NoteInit {
+            key: 69.0,
+            base_note: values[P_BASE],
+            volume: 1.0 * VOLUME_PER_VELOCITY,
+            tempo: 120.0,
+            freq: PREVIEW_HZ,
+            release_ms: values[P_REL],
+            interpolate: [on(0), on(1), on(2)],
+            random: 0,
+        },
+    );
+    let total = ((rate as f32 * PREVIEW_SECONDS) as usize).max(PREVIEW_POINTS);
+    let (mut l, mut r) = (vec![0.0f32; total], vec![0.0f32; total]);
+    // (one block: the expression's state does not depend on how the note is cut)
+    let mut centered = *knobs;
+    centered.pan = [0.0, 0.0];
+    voice.render(&patch, &centered, PREVIEW_HZ, &mut l, &mut r);
+    (0..PREVIEW_POINTS)
+        .map(|c| {
+            let (a, b) = (c * total / PREVIEW_POINTS, (c + 1) * total / PREVIEW_POINTS);
+            // (panning 0 gives each side half of the output: the sum is the output itself)
+            let mut best = 0.0f32;
+            for i in a..b.max(a + 1).min(total) {
+                let v = l[i] + r[i];
+                if v.abs() > best.abs() {
+                    best = v;
+                }
+            }
+            best.clamp(-1.0, 1.0)
+        })
+        .collect()
 }
 
 impl Xpressive {
@@ -242,13 +300,23 @@ impl Synth for Xpressive {
         self.patch.needs().fit_in(&old.room)
     }
 
+    fn display(&self, frame: &mut [u8]) {
+        frame.fill(0);
+        for (chunk, v) in frame.chunks_exact_mut(4).zip(self.frame.iter()) {
+            chunk.copy_from_slice(&v.to_le_bytes());
+        }
+    }
+
     fn copies_voices(&self) -> bool {
         // (a voice holds the `last` history and the `integrate` sums of its expressions: copying them allocates)
         false
     }
 }
 
-fn build(state: &Value, cx: &BuildContext<'_>) -> Result<Box<dyn Processor>> {
+/// What a state's parameters, outputs and tables are
+type Read<'a> = ([f32; PARAMS.len()], [&'a str; 2], [Vec<f32>; 3]);
+
+fn read(state: &Value) -> Result<Read<'_>> {
     let s = StateView::new(state);
     let mut values = [0.0f32; PARAMS.len()];
     for (v, (key, ..)) in values.iter_mut().zip(PARAMS) {
@@ -266,6 +334,35 @@ fn build(state: &Value, cx: &BuildContext<'_>) -> Result<Box<dyn Processor>> {
         // (an expression that does not compile leaves the drawn points: see `status` for what the editor shows)
         *table = wave_table(source, &drawn, smoothness).0;
     }
+    Ok((values, outputs, tables))
+}
+
+/// The window's frame ([`FRAME_FLOATS`]) of a state: the flags of the five expressions, then the two outputs' curves.
+/// Works and allocates: the build makes it once
+fn make_frame(state: &Value, read: &Read<'_>, rate: u32) -> Vec<f32> {
+    let (values, outputs, tables) = read;
+    let status = status(state);
+    let flag = |e: &Option<CompileError>| if e.is_some() { 1.0 } else { 0.0 };
+    let mut frame = Vec::with_capacity(FRAME_FLOATS);
+    frame.extend(status.waves.iter().map(flag));
+    frame.extend(status.outputs.iter().map(flag));
+    let knobs = Knobs { a: core::array::from_fn(|i| values[P_A + i]), ..Knobs::default() };
+    for k in 0..2 {
+        frame.extend(preview(*outputs, tables, k, rate, values, &knobs));
+    }
+    frame
+}
+
+/// The live frame a state's window shows (what the plugin publishes on its display)
+pub fn display_frame(state: &Value, rate: u32) -> Result<Vec<f32>> {
+    Ok(make_frame(state, &read(state)?, rate))
+}
+
+fn build(state: &Value, cx: &BuildContext<'_>) -> Result<Box<dyn Processor>> {
+    let s = StateView::new(state);
+    let read = read(state)?;
+    let frame = make_frame(state, &read, cx.spec.sample_rate);
+    let (values, outputs, tables) = read;
     let (patch, _errors) = Patch::new(outputs, tables);
     let room = patch.needs();
     let mut synth = Xpressive {
@@ -275,6 +372,7 @@ fn build(state: &Value, cx: &BuildContext<'_>) -> Result<Box<dyn Processor>> {
         values,
         knobs: Knobs::default(),
         tempo: 120.0,
+        frame: frame.into(),
     };
     synth.update();
     let params = &DESCRIPTOR.schema().params;

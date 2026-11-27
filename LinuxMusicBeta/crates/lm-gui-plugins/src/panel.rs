@@ -96,6 +96,14 @@ struct SurfDrag {
     gesture: Gesture,
 }
 
+/// A marker of a wave view being dragged: one gesture, the points as they are now
+struct MarkerDrag {
+    ctrl: usize,
+    index: usize,
+    points: Vec<f64>,
+    gesture: Gesture,
+}
+
 /// What the value float shows and for whom
 #[derive(Clone, Debug, PartialEq)]
 struct Float {
@@ -174,6 +182,7 @@ pub struct PluginPanel<H: PortHost> {
     /// The panel's own view (a selected tab, graph or string): not saved in the plugin
     view: u8,
     surf: Option<SurfDrag>,
+    marker: Option<MarkerDrag>,
     /// The parameters a surface's drag has moved in the gesture still open (what the tree will hold at its commit)
     overrides: HashMap<&'static str, f64>,
     /// The meters' levels with their fall-off, by control
@@ -232,6 +241,7 @@ impl<H: PortHost> PluginPanel<H> {
             graph: None,
             view: 0,
             surf: None,
+            marker: None,
             overrides: HashMap::new(),
             meters: HashMap::new(),
             waves: HashMap::new(),
@@ -498,7 +508,7 @@ impl<H: PortHost> PluginPanel<H> {
             Bind::Step { param, value } => (self.param(param, cx) - value).abs() < 0.5,
             Bind::Flag { field } => self.field(field, cx).as_bool() == Some(true),
             Bind::View(n) => self.view == n,
-            Bind::Press(_) | Bind::Momentary { .. } | Bind::Open { .. } => false,
+            Bind::Press(_) | Bind::Momentary { .. } | Bind::Open { .. } | Bind::Action { .. } => false,
         }
     }
 
@@ -1104,6 +1114,117 @@ impl<H: PortHost> PluginPanel<H> {
         cx.notify();
     }
 
+    /// The points of a markers field now: the one being dragged, or the tree's list, sorted and kept in 0..1
+    fn marker_points(&self, ctrl: usize, field: &str, cx: &App) -> Vec<f64> {
+        if let Some(d) = &self.marker
+            && d.ctrl == ctrl
+        {
+            return d.points.clone();
+        }
+        let mut v: Vec<f64> = self
+            .field(field, cx)
+            .items()
+            .filter_map(Value::as_real)
+            .filter(|p| p.is_finite())
+            .map(|p| p.clamp(0.0, 1.0))
+            .collect();
+        v.sort_by(f64::total_cmp);
+        v
+    }
+
+    /// The fraction of the resource at surface-local `lx`, for the part of it the view shows
+    fn marker_fraction(&self, ctrl: usize, m: &crate::spec::MarkersSpec, lx: f32) -> f64 {
+        let (from, to) = self.waves.get(&ctrl).map_or((0.0, 1.0), |w| w.window);
+        (from + f64::from(lx - m.x0) * (to - from) / f64::from(m.width.max(1.0))).clamp(0.0, 1.0)
+    }
+
+    /// A press on a wave view with markers: the left button takes the point under it or adds one there and drags it;
+    /// Shift or the right button removes the point under it
+    fn marker_down(
+        &mut self,
+        ctrl: usize,
+        m: crate::spec::MarkersSpec,
+        x: f32,
+        button: MouseButton,
+        shift: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let c = &self.spec.controls[ctrl];
+        let lx = x - c.x;
+        let label = Label::new(c.name.key);
+        let (from, to) = self.waves.get(&ctrl).map_or((0.0, 1.0), |w| w.window);
+        let at = |p: f64| m.x0 + ((p - from) * f64::from(m.width) / (to - from).max(1e-9)) as f32;
+        let mut points = self.marker_points(ctrl, m.field, cx);
+        let near = points
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (i, (at(*p) - lx).abs()))
+            .filter(|(_, d)| *d <= m.grab)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(i, _)| i);
+        let is_end = |i: usize| m.fixed_ends && (i == 0 || i + 1 == points.len());
+        if near.is_some_and(is_end) {
+            return;
+        }
+        if button == MouseButton::Right || shift {
+            if let Some(i) = near {
+                points.remove(i);
+                let op = self.field_op(m.field, Self::samples_value(&points));
+                self.host.update(cx, |h, _| {
+                    h.report(|pt| pt.apply(label, vec![op]));
+                });
+                cx.notify();
+            }
+            return;
+        }
+        if button != MouseButton::Left {
+            return;
+        }
+        let index = match near {
+            Some(i) => i,
+            None => {
+                let f = self.marker_fraction(ctrl, &m, lx);
+                let i = points.partition_point(|p| *p < f);
+                points.insert(i, f);
+                i
+            }
+        };
+        let op = self.field_op(m.field, Self::samples_value(&points));
+        let gesture = self.host.update(cx, |h, _| {
+            let gid = h.gesture_begin(label);
+            h.gesture_apply(gid, vec![op]);
+            gid
+        });
+        self.marker = Some(MarkerDrag { ctrl, index, points, gesture });
+        cx.notify();
+    }
+
+    fn marker_move(&mut self, x: f32, cx: &mut Context<Self>) {
+        let Some(d) = &self.marker else { return };
+        let (ctrl, index) = (d.ctrl, d.index);
+        let Kind::Surface(sf) = &self.spec.controls[ctrl].kind else { return };
+        let Some(m) = sf.markers else { return };
+        let lx = x - self.spec.controls[ctrl].x;
+        // a point stays between its neighbours (the list is sorted)
+        let f = self.marker_fraction(ctrl, &m, lx);
+        let Some(d) = &mut self.marker else { return };
+        let lo = if index > 0 { d.points[index - 1] } else { 0.0 };
+        let hi = d.points.get(index + 1).copied().unwrap_or(1.0);
+        d.points[index] = widgets::fit_between(f, lo, hi.max(lo));
+        let (value, gesture) = (Self::samples_value(&d.points), d.gesture);
+        let op = self.field_op(m.field, value);
+        let host = self.host.clone();
+        host.update(cx, |h, _| h.gesture_apply(gesture, vec![op]));
+        cx.notify();
+    }
+
+    fn marker_up(&mut self, cx: &mut Context<Self>) {
+        if let Some(d) = self.marker.take() {
+            self.host.update(cx, |h, _| h.gesture_commit(d.gesture));
+            cx.notify();
+        }
+    }
+
     fn surface_up(&mut self, cx: &mut Context<Self>) {
         if let Some(d) = self.surf.take() {
             self.host.update(cx, |h, _| h.gesture_commit(d.gesture));
@@ -1184,6 +1305,10 @@ impl<H: PortHost> PluginPanel<H> {
         if let Kind::Surface(s) = &c.kind {
             // a surface without handles only shows; one with takes a handle on the left button and, being the
             // control of its primary parameter, has the middle button and the menu of it
+            if let Some(m) = s.markers {
+                self.marker_down(ctrl, m, x, ev.button, m_shift(ev), cx);
+                return;
+            }
             if s.handles.is_none() {
                 return;
             }
@@ -1201,7 +1326,7 @@ impl<H: PortHost> PluginPanel<H> {
         }
         let press = match &c.kind {
             Kind::Button(ButtonSpec { bind, .. }) | Kind::Toggle(ToggleSpec { bind, .. }) => {
-                matches!(bind, Bind::Press(_) | Bind::Momentary { .. } | Bind::View(_) | Bind::Open { .. })
+                matches!(bind, Bind::Press(_) | Bind::Momentary { .. } | Bind::View(_) | Bind::Open { .. } | Bind::Action { .. })
             }
             _ => false,
         };
@@ -1298,6 +1423,13 @@ impl<H: PortHost> PluginPanel<H> {
             Bind::Momentary { .. } => {
                 self.pressed = Some(ctrl);
                 self.set(ctrl, Value::real(1.0).unwrap_or_default(), cx);
+            }
+            Bind::Action { action } => {
+                self.pressed = Some(ctrl);
+                let params = Value::object([("node", Value::text(self.node.to_string()))]);
+                self.host.update(cx, |h, _| {
+                    h.report(|pt| pt.run_action(action.into(), params));
+                });
             }
             Bind::Press(f) => {
                 // a push button: its active image while held (`PixmapButton::mousePressEvent`), its edits in one step
@@ -1527,6 +1659,10 @@ impl<H: PortHost> PluginPanel<H> {
             self.surface_to(x, y, cx);
             return;
         }
+        if self.marker.is_some() {
+            self.marker_move(x, cx);
+            return;
+        }
         if self.drag.is_some() {
             self.drag_to(y, ev.modifiers.shift, cx);
             return;
@@ -1572,6 +1708,7 @@ impl<H: PortHost> PluginPanel<H> {
         self.end_drag(cx);
         self.graph_up(cx);
         self.surface_up(cx);
+        self.marker_up(cx);
         if let Some(i) = self.pressed
             && let Kind::Button(b) = &self.spec.controls[i].kind
             && let Bind::Momentary { .. } = b.bind
@@ -1676,6 +1813,10 @@ impl<H: PortHost> PluginPanel<H> {
         if let Kind::Surface(s) = &self.spec.controls[ctrl].kind
             && s.peaks.is_some()
         {
+            // (a view with markers shows the whole resource: it does not zoom)
+            if s.markers.is_some() {
+                return;
+            }
             // `AudioFileProcessorWaveView::wheelEvent`: up zooms out
             let up = match ev.delta {
                 ScrollDelta::Lines(d) => d.y > 0.0,
@@ -2525,6 +2666,10 @@ impl<H: PortHost> PluginPanel<H> {
 }
 
 /// The last part of a path, as text
+fn m_shift(ev: &MouseDownEvent) -> bool {
+    ev.modifiers.shift
+}
+
 fn file_name(path: &std::path::Path) -> String {
     path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_owned()
 }

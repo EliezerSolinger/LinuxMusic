@@ -2,6 +2,7 @@
 
 use crate::spec::PanelSpec;
 
+pub mod ampandir;
 pub mod bitinvader;
 pub mod compressor;
 pub mod crossovereq;
@@ -27,6 +28,7 @@ mod sampler_wave;
 pub mod sfxr;
 pub mod shapers;
 pub mod sid;
+pub mod slicert;
 pub mod slewdistortion;
 pub mod spectrumanalyzer;
 pub mod tripleoscillator;
@@ -40,6 +42,7 @@ type SpecFn = fn() -> &'static PanelSpec;
 /// `plugin id → panel`
 pub static ALL: &[(&str, SpecFn)] = &[
     (tripleoscillator::ID, || &tripleoscillator::PANEL),
+    (ampandir::ID, || &ampandir::PANEL),
     (bitinvader::ID, || &bitinvader::PANEL),
     (kicker::ID, || &kicker::PANEL),
     ("bitcrush", || &effects::BITCRUSH_PANEL),
@@ -68,6 +71,7 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (watsyn::ID, || &watsyn::PANEL),
     (xpressive::ID, || &xpressive::PANEL),
     (sampler::ID, || &sampler::PANEL),
+    (slicert::ID, || &slicert::PANEL),
     (slewdistortion::ID, || &slewdistortion::PANEL),
     (multitapecho::ID, || &multitapecho::PANEL),
     (oscilloscope::ID, || &oscilloscope::PANEL),
@@ -107,6 +111,7 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     watsyn::ASSETS,
     xpressive::ASSETS,
     sampler::ASSETS,
+    slicert::ASSETS,
     slewdistortion::ASSETS,
     multitapecho::ASSETS,
     oscilloscope::ASSETS,

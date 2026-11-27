@@ -17,7 +17,7 @@ use lm_expr::key;
 use lm_plugin::testing::{note_off, note_on};
 use lm_plugins_instruments::xpressive::{
     DEFAULT_O1, DEFAULT_O2, DESCRIPTOR, ExpressionKind, SMOOTH_FIELDS, WAVE_EXPR_FIELDS, WAVE_GRAPH_FIELDS, check,
-    edit, status,
+    edit, status, display_frame, FLAGS, FRAME_FLOATS, PREVIEW_POINTS,
 };
 use lm_state::Value;
 
@@ -274,4 +274,23 @@ fn the_release_transition_moves_rel_after_the_note_off() {
     // before the release `rel` is 0
     let out = render(&DESCRIPTOR, &s, RATE, 3, 30_000, &[note_on(0, 1, 69, 1.0), note_off(20_000, 1, 69)]);
     assert!(out[0][..19_000].iter().all(|v| v.abs() < 1e-6));
+}
+
+#[test]
+fn the_display_frame_has_the_flags_and_each_outputs_curve() {
+    // O1 is a constant 0.5 and O2 does not compile: its flag is up and its curve is silence
+    let s = state(&[], &[("o1", Value::text("0.5")), ("o2", Value::text("1 +"))]);
+    let frame = display_frame(&s, RATE).unwrap();
+    assert_eq!(frame.len(), FRAME_FLOATS);
+    assert_eq!(&frame[..FLAGS], &[0.0, 0.0, 0.0, 0.0, 1.0]);
+    let o1 = &frame[FLAGS..FLAGS + PREVIEW_POINTS];
+    assert!(o1.iter().all(|v| (v - 0.5 * 100.0 / 255.0).abs() < 1e-3 || (v - 0.5).abs() < 1e-3), "{o1:?}");
+    let o2 = &frame[FLAGS + PREVIEW_POINTS..];
+    assert!(o2.iter().all(|v| *v == 0.0));
+}
+
+#[test]
+fn the_display_frame_does_not_depend_on_anything_but_the_state() {
+    let s = state(&[("a1", 0.3)], &[]);
+    assert_eq!(display_frame(&s, RATE).unwrap(), display_frame(&s, RATE).unwrap());
 }
