@@ -56,10 +56,10 @@ pub static ASSETS: &[&Asset] = &[
 ];
 
 /// The wave view's size, and its graph (2 pixels in on each side: `s_padding`)
-const W: f32 = 245.0;
-const H: f32 = 75.0;
+pub(super) const W: f32 = 245.0;
+pub(super) const H: f32 = 75.0;
 const PAD: f32 = 2.0;
-const GW: f32 = W - 2.0 * PAD;
+pub(super) const GW: f32 = W - 2.0 * PAD;
 const GH: f32 = H - 2.0 * PAD;
 
 /// The marker x of a fraction of the sample in the window, in whole pixels (`m_startFrameX`)
@@ -77,13 +77,13 @@ fn markers(cx: &SurfaceCx<'_>) -> [f32; 3] {
     ]
 }
 
-fn handles(cx: &SurfaceCx<'_>) -> Vec<SurfaceHandle> {
+pub(super) fn handles(cx: &SurfaceCx<'_>) -> Vec<SurfaceHandle> {
     markers(cx).into_iter().map(|x| SurfaceHandle { x, y: H / 2.0 }).collect()
 }
 
 /// A marker dragged to local `x`: the fraction there in the window, kept in order with the others (the legacy
 /// `checkBound`: start before end by at least 5 ms, the loop point between them)
-fn drag(cx: &SurfaceCx<'_>, handle: usize, x: f32, _y: f32) -> Vec<(&'static str, f64)> {
+pub(super) fn drag(cx: &SurfaceCx<'_>, handle: usize, x: f32, _y: f32) -> Vec<(&'static str, f64)> {
     let (from, to) = cx.window;
     let v = (from + f64::from(x - PAD) * (to - from) / f64::from(GW)).clamp(0.0, 1.0);
     let (start, end) = ((cx.param)("startPoint"), (cx.param)("endPoint"));
@@ -99,13 +99,17 @@ fn drag(cx: &SurfaceCx<'_>, handle: usize, x: f32, _y: f32) -> Vec<(&'static str
 }
 
 fn draw(c: &mut Canvas, cx: &SurfaceCx<'_>) {
+    draw_wave(c, cx, ((cx.param)("amplify") / 100.0) as f32);
+}
+
+/// The wave view with its markers, the waveform scaled by `amp`
+pub(super) fn draw_wave(c: &mut Canvas, cx: &SurfaceCx<'_>, amp: f32) {
     let (from, to) = cx.window;
     // the waveform: a vertical line per column from the peaks' minimum to their maximum, times the amplification
     if let Some(b) = cx.peaks
         && b.length > 0
         && !b.pairs.is_empty()
     {
-        let amp = ((cx.param)("amplify") / 100.0) as f32;
         let len = b.length as f64;
         let (mid, half) = (PAD + GH / 2.0, GH / 2.0 - 1.0);
         for col in 0..GW as usize {
@@ -157,7 +161,7 @@ fn draw(c: &mut Canvas, cx: &SurfaceCx<'_>) {
 }
 
 /// "Sample length: 3.2s": seconds above 2 s (a tenth of a second up to 20 s, whole seconds beyond), else milliseconds
-fn texts(cx: &SurfaceCx<'_>) -> Vec<SurfText> {
+pub(super) fn texts(cx: &SurfaceCx<'_>) -> Vec<SurfText> {
     let ms = cx.peaks.map_or(0.0, |b| b.length as f64 * 1000.0 / cx.rate.max(1.0)) as i64;
     let length = if ms > 20_000 {
         format!("{}s", ms / 1000)

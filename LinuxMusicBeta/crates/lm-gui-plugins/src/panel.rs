@@ -180,6 +180,9 @@ pub struct PluginPanel<H: PortHost> {
     meters: HashMap<usize, [f32; 2]>,
     /// The wave views (surfaces with peaks): the part shown and the peaks of it, by control
     waves: HashMap<usize, WaveState>,
+    /// The lists: the first row shown, and the (format, file) whose listing was last asked for, by control
+    list_scroll: HashMap<usize, usize>,
+    listed: HashMap<usize, (String, String)>,
     /// A live surface's frames of the last seconds, and its zoom (the wheel over a `SURFACE_ZOOM` one)
     history: HashMap<usize, std::collections::VecDeque<(std::time::Instant, Vec<f32>)>>,
     zooms: HashMap<usize, f32>,
@@ -230,6 +233,8 @@ impl<H: PortHost> PluginPanel<H> {
             overrides: HashMap::new(),
             meters: HashMap::new(),
             waves: HashMap::new(),
+            list_scroll: HashMap::new(),
+            listed: HashMap::new(),
             history: HashMap::new(),
             zooms: HashMap::new(),
             surf_hover: None,
@@ -457,6 +462,7 @@ impl<H: PortHost> PluginPanel<H> {
             | Kind::Graph(_)
             | Kind::Surface(_)
             | Kind::TextEdit(_)
+            | Kind::List(_)
             | Kind::Readout(_) => (c.target().key(), 1.0, None, false),
         };
         let p = self.schema.as_ref().and_then(|s| s.find_param(key));
@@ -523,7 +529,7 @@ impl<H: PortHost> PluginPanel<H> {
                 let v = self.field(cb.field, cx);
                 cb.items.iter().find(|i| v.as_text() == Some(i.key)).map(|i| i.text.show()).unwrap_or_default()
             }
-            Kind::Graph(_) | Kind::Surface(_) | Kind::Readout(_) | Kind::TextEdit(_) => String::new(),
+            Kind::Graph(_) | Kind::Surface(_) | Kind::Readout(_) | Kind::TextEdit(_) | Kind::List(_) => String::new(),
             Kind::Slider(sl) => {
                 let v = self.range(ctrl).rounded(self.param(sl.param, cx));
                 format!("{}{}", widgets::qt_number(v), unit(sl.unit))
@@ -906,6 +912,79 @@ impl<H: PortHost> PluginPanel<H> {
         cx.notify();
     }
 
+    /// The entries the core listed for this plugin (`status.pluginInfo.<node>`): the file's key they are of, and
+    /// (bank, program, name) of each
+    fn list_entries(&self, cx: &App) -> (String, Vec<(i64, i64, String)>) {
+        let host = self.host.read(cx);
+        let status = host.port().status();
+        let Some(info) = status.get("pluginInfo").and_then(|i| i.get(&self.node.to_string())) else {
+            return (String::new(), Vec::new());
+        };
+        let key = info.get("key").and_then(Value::as_text).unwrap_or("").to_owned();
+        let entries = info
+            .get("presets")
+            .map(|l| {
+                l.items()
+                    .map(|p| {
+                        (
+                            p.get("bank").and_then(Value::as_int).unwrap_or(0),
+                            p.get("program").and_then(Value::as_int).unwrap_or(0),
+                            p.get("name").and_then(Value::as_text).unwrap_or("").to_owned(),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        (key, entries)
+    }
+
+    /// Asks the core to list the presets of the file a shown list reads, once for each file
+    fn refresh_lists(&mut self, cx: &mut Context<Self>) {
+        for ctrl in 0..self.spec.controls.len() {
+            let c = &self.spec.controls[ctrl];
+            let Kind::List(l) = &c.kind else { continue };
+            if !self.is_shown(c, cx) {
+                continue;
+            }
+            let format = self.field(l.format_field, cx).as_text().unwrap_or("").to_owned();
+            let Some((_, file)) = l.files.iter().find(|(f, _)| *f == format) else { continue };
+            let key = self.field(file, cx).as_resource().map(|r| r.key().to_owned()).unwrap_or_default();
+            let want = (format, key.clone());
+            if self.listed.get(&ctrl) == Some(&want) {
+                continue;
+            }
+            let (have, _) = self.list_entries(cx);
+            self.listed.insert(ctrl, want);
+            if key.is_empty() || have == key {
+                continue;
+            }
+            let params = Value::object([("node", Value::text(self.node.to_string()))]);
+            let action = l.action;
+            self.host.update(cx, |h, _| {
+                let _ = h.port_mut().run_action(action.into(), params);
+            });
+        }
+    }
+
+    /// A click on a row of a list: its bank and program are the plugin's (one undo step)
+    fn list_down(&mut self, ctrl: usize, y: f32, cx: &mut Context<Self>) {
+        let c = &self.spec.controls[ctrl];
+        let Kind::List(l) = &c.kind else { return };
+        let (_, entries) = self.list_entries(cx);
+        let row = ((y - c.y) / l.row).floor();
+        if row < 0.0 {
+            return;
+        }
+        let i = row as usize + self.list_scroll.get(&ctrl).copied().unwrap_or(0);
+        let Some((bank, program, _)) = entries.get(i) else { return };
+        let ops = vec![self.field_op(l.bank, Value::int(*bank)), self.field_op(l.program, Value::int(*program))];
+        let label = Label::new(c.name.key);
+        self.host.update(cx, |h, _| {
+            let _ = h.port_mut().apply(label, ops);
+        });
+        cx.notify();
+    }
+
     /// Runs `f` with what a surface sees of the plugin
     fn with_surface<R>(
         &self,
@@ -1166,6 +1245,7 @@ impl<H: PortHost> PluginPanel<H> {
                     self.click_button(ctrl, bind, ev.click_count, cx);
                 }
                 Kind::Graph(_) | Kind::Surface(_) | Kind::Readout(_) | Kind::TextEdit(_) => {}
+                Kind::List(_) => self.list_down(ctrl, y, cx),
                 Kind::Fader(_) => {
                     if ev.click_count >= 2 {
                         self.end_drag(cx);
@@ -1515,6 +1595,19 @@ impl<H: PortHost> PluginPanel<H> {
         let Some(ctrl) = self.control_at(x, y, cx) else { return };
         if let Kind::Fader(_) = &self.spec.controls[ctrl].kind {
             self.fader_wheel(ctrl, ev, cx);
+            return;
+        }
+        if let Kind::List(l) = &self.spec.controls[ctrl].kind {
+            let (_, entries) = self.list_entries(cx);
+            let max = entries.len().saturating_sub((l.h / l.row) as usize);
+            let down = match ev.delta {
+                ScrollDelta::Lines(d) => d.y < 0.0,
+                ScrollDelta::Pixels(d) => d.y < px(0.),
+            };
+            let at = self.list_scroll.get(&ctrl).copied().unwrap_or(0);
+            let to = if down { (at + 3).min(max) } else { at.saturating_sub(3) };
+            self.list_scroll.insert(ctrl, to);
+            cx.notify();
             return;
         }
         if let Kind::Surface(s) = &self.spec.controls[ctrl].kind
@@ -2080,6 +2173,35 @@ impl<H: PortHost> PluginPanel<H> {
                 (h.finish(), Box::new(move |cv| widgets::draw_graph(cv, &g, &samples, cursor)))
             }
             Kind::Readout(_) => (0, Box::new(|_| {})),
+            Kind::List(l) => {
+                let (_, entries) = self.list_entries(cx);
+                let scroll = self.list_scroll.get(&ctrl).copied().unwrap_or(0);
+                let bank = self.field(l.bank, cx).as_int().unwrap_or(0);
+                let program = self.field(l.program, cx).as_int().unwrap_or(0);
+                let selected = entries.iter().position(|(b, p, _)| *b == bank && *p == program);
+                let (rows, row, len) = ((l.h / l.row) as usize, l.row, entries.len());
+                let mut hh = std::hash::DefaultHasher::new();
+                use std::hash::{Hash, Hasher};
+                (selected, scroll, len, entries.first().map(|e| e.2.clone())).hash(&mut hh);
+                (
+                    hh.finish(),
+                    Box::new(move |cv| {
+                        cv.fill_rect(0.0, 0.0, w, h, Rgba::rgb(0x23, 0x27, 0x2d));
+                        for r in 0..rows {
+                            let i = scroll + r;
+                            if i >= len {
+                                break;
+                            }
+                            let y = r as f32 * row;
+                            if Some(i) == selected {
+                                cv.fill_rect(0.0, y, w, row, Rgba::rgb(0x3d, 0x6f, 0xb0));
+                            } else if r % 2 == 1 {
+                                cv.fill_rect(0.0, y, w, row, Rgba::rgb(0x2a, 0x2f, 0x36));
+                            }
+                        }
+                    }),
+                )
+            }
             Kind::TextEdit(_) => {
                 // a thin outline while it has the keyboard
                 let focused = self.editing == Some(ctrl);
@@ -2137,7 +2259,20 @@ impl<H: PortHost> PluginPanel<H> {
                 let frame = if sf.live { self.display_frame(cx) } else { Vec::new() };
                 // the frames of the last seconds, for a surface that scrolls them
                 let now = std::time::Instant::now();
-                let history: Vec<(f32, Vec<f32>)> = if sf.live && !frame.is_empty() {
+                let fading = sf.tag & crate::spec::SURFACE_FADE != 0;
+                let history: Vec<(f32, Vec<f32>)> = if fading && !frame.is_empty() {
+                    // only the frames that changed, over the last 700 ms (at least the newest)
+                    let h = self.history.entry(ctrl).or_default();
+                    if h.back().is_none_or(|(_, f)| *f != frame) {
+                        h.push_back((now, frame.clone()));
+                    }
+                    while h.len() > 1
+                        && h.front().is_some_and(|(t, _)| now.duration_since(*t) > Duration::from_millis(700))
+                    {
+                        h.pop_front();
+                    }
+                    h.iter().map(|(t, f)| (now.duration_since(*t).as_secs_f32() * 1000.0, f.clone())).collect()
+                } else if sf.live && !frame.is_empty() {
                     let h = self.history.entry(ctrl).or_default();
                     h.push_back((now, frame.clone()));
                     while h.front().is_some_and(|(t, _)| now.duration_since(*t) > Duration::from_secs(6)) {
@@ -2176,7 +2311,13 @@ impl<H: PortHost> PluginPanel<H> {
                 }
                 active.hash(&mut h);
                 zoom.to_bits().hash(&mut h);
-                if !history.is_empty() {
+                if fading {
+                    // a light that fades: drawn again every 33 ms while the last change is recent
+                    if history.last().is_some_and(|(age, _)| *age < 700.0) {
+                        (epoch_ms() / 33).hash(&mut h);
+                    }
+                    history.len().hash(&mut h);
+                } else if !history.is_empty() {
                     // it scrolls with the time: a pixel is 6 ms
                     (epoch_ms() / 6).hash(&mut h);
                     history.len().hash(&mut h);
@@ -2358,6 +2499,24 @@ impl<H: PortHost> PluginPanel<H> {
                         });
                     }
                 }
+                Kind::List(l) => {
+                    let (_, entries) = self.list_entries(cx);
+                    let scroll = self.list_scroll.get(&ci).copied().unwrap_or(0);
+                    let per = (((l.w - 12.0) / (theme::SMALL_FONT_PX * 0.55)).floor() as usize).max(1);
+                    for r in 0..(l.h / l.row) as usize {
+                        let Some((bank, program, name)) = entries.get(scroll + r) else { break };
+                        let number = if *bank == 0 { format!("{program:03}") } else { format!("{bank}:{program}") };
+                        out.push(Txt {
+                            x: c.x + 6.0,
+                            y: c.y + r as f32 * l.row + l.row - 4.0,
+                            px: theme::SMALL_FONT_PX,
+                            text: format!("{number} {name}").chars().take(per).collect(),
+                            color: 0xd1d8e4,
+                            centered: false,
+                            top: false,
+                        });
+                    }
+                }
                 Kind::Button(_) | Kind::Graph(_) => {}
             }
         }
@@ -2496,6 +2655,7 @@ impl<H: PortHost> Render for PluginPanel<H> {
         let (w, h) = spec.size;
         let scale = window.scale_factor();
         let view = self.view;
+        self.refresh_lists(cx);
         let waves_pending = self.refresh_waves(cx);
         if waves_pending {
             window.request_animation_frame();

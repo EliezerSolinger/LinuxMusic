@@ -24,6 +24,7 @@ pub mod opulenz;
 pub mod organic;
 pub mod oscilloscope;
 pub mod patman;
+pub mod sampler;
 pub mod sfxr;
 pub mod shapers;
 pub mod sid;
@@ -69,6 +70,7 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (xpressive::ID, || &xpressive::PANEL),
     (audiofileprocessor::ID, || &audiofileprocessor::PANEL),
     (patman::ID, || &patman::PANEL),
+    (sampler::ID, || &sampler::PANEL),
     (slewdistortion::ID, || &slewdistortion::PANEL),
     (multitapecho::ID, || &multitapecho::PANEL),
     (oscilloscope::ID, || &oscilloscope::PANEL),
@@ -109,6 +111,7 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     xpressive::ASSETS,
     audiofileprocessor::ASSETS,
     patman::ASSETS,
+    sampler::ASSETS,
     slewdistortion::ASSETS,
     multitapecho::ASSETS,
     oscilloscope::ASSETS,

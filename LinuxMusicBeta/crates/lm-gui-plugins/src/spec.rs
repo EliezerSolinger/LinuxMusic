@@ -429,8 +429,33 @@ pub struct TextEditSpec {
     pub color: u32,
 }
 
+/// A list of the entries the core lists for the plugin (the Sampler's presets of a bank file): the core's `action`
+/// puts them into the status tree under `pluginInfo.<node>` (`{key, presets: [{bank, program, name}]}`); a click on
+/// a row sets the `bank` and `program` fields in one step, and the wheel scrolls
+#[derive(Clone, Debug)]
+pub struct ListSpec {
+    pub w: f32,
+    pub h: f32,
+    /// A row's height
+    pub row: f32,
+    pub bank: &'static str,
+    pub program: &'static str,
+    /// The core action that makes the listing (`{node}`), asked again when the file changes
+    pub action: &'static str,
+    /// The choice field that says which file field the listing reads
+    pub format_field: &'static str,
+    /// (the choice's key, the resource field of its file)
+    pub files: &'static [(&'static str, &'static str)],
+}
+
+/// A bit of [`SurfaceSpec::tag`]: the surface shows what the live frame's counters did lately (a hit's light that fades):
+/// its history keeps only the frames that changed, over the last 700 ms, and it is drawn again every 33 ms only while
+/// one is that recent
+pub const SURFACE_FADE: u32 = 1 << 30;
+
 #[derive(Clone, Debug)]
 pub enum Kind {
+    List(ListSpec),
     TextEdit(TextEditSpec),
     Knob(KnobSpec),
     Led(LedSpec),
@@ -495,6 +520,7 @@ impl Control {
             Kind::Toggle(t) => t.bind.target(),
             Kind::Surface(s) => Target::Param(s.primary),
             Kind::Readout(r) => Target::Field(r.field),
+            Kind::List(l) => Target::Field(l.bank),
             Kind::TextEdit(t) => Target::Field(t.fields[0]),
         }
     }
@@ -534,6 +560,7 @@ impl Control {
             Kind::Toggle(t) => (t.w, t.h),
             Kind::Surface(s) => (s.w, s.h),
             Kind::Readout(r) => (r.w, r.px + 4.0),
+            Kind::List(l) => (l.w, l.h),
             Kind::TextEdit(t) => (t.w, t.h),
         }
     }
@@ -1032,6 +1059,22 @@ pub fn text_edit(
         x,
         y,
         kind: Kind::TextEdit(TextEditSpec { fields, w, h, px: crate::widgets::theme::SMALL_FONT_PX, color: 0xffffff }),
+        name: Text::new(name),
+        tip: Text::EMPTY,
+        view: None,
+        when: None,
+        unless: None,
+        only: None,
+    }
+}
+
+/// A list of the plugin's presets at `x`, `y`
+pub fn list(spec: ListSpec, id: &'static str, x: f32, y: f32, name: &'static str) -> Control {
+    Control {
+        id,
+        x,
+        y,
+        kind: Kind::List(spec),
         name: Text::new(name),
         tip: Text::EMPTY,
         view: None,
