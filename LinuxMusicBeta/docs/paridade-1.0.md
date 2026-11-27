@@ -152,7 +152,7 @@ a ação contam como parcial.
 | F-ARR-008 | Zoom | feito | o zoom é lembrado no documento da interface; limites de 4 a 400 px por compasso | lm-gui/src/view.rs,lm-gui/src/pages/composition.rs |
 | F-ARR-009 | Grade | feito | grade proporcional que acompanha o zoom | lm-gui/src/pages/composition/edit.rs |
 | F-ARR-010 | Criar faixas | feito | botões de faixa de instrumento, de áudio e de pasta (a faixa de automação vive no dono do parâmetro) | lm-gui/src/pages/composition.rs |
-| F-ARR-011 | Soltar arquivos no arranjo | parcial | arquivos do sistema: áudio vira faixa de áudio nova, MIDI importa e projeto abre; não há o limite áudio longo/curto com sampler, nem soltar do navegador interno (amostra, instrumento, preset, SoundFont, VST, patch) | lm-gui/src/screens/files.rs,lm-gui/src/pages/composition.rs |
+| F-ARR-011 | Soltar arquivos no arranjo | feito | arquivos do sistema e linhas do navegador soltos no arranjo; o limite áudio longo/curto do legado não existe: áudio é sempre item de áudio, e um instrumento Sampler se solta na faixa de instrumento | lm-gui/src/screens/files.rs,lm-gui/src/pages/composition.rs |
 | F-ARR-012 | Faixa selecionada | feito |  | lm-gui/src/pages/composition.rs |
 | F-ARR-013 | Depois de abrir um projeto | feito |  |  |
 | F-ARR-014 | Grade de fundo | feito |  | lm-gui/src/pages/composition.rs |
@@ -199,62 +199,62 @@ a ação contam como parcial.
 
 | Id | Funcionalidade | Estado | O que falta | Onde |
 |---|---|---|---|---|
-| F-TRK-001 | Propriedades comuns | parcial | nome, cor, mudo, solo, pasta e camadas estão no documento; a altura não é da faixa (só um valor global da página) e cor/camada não têm edição na interface | lm-doc/src/schemas.rs,lm-gui/src/pages/composition.rs |
+| F-TRK-001 | Propriedades comuns | feito | altura por faixa (arrastar a borda de baixo), cor e nome pelo menu da faixa | lm-doc/src/schemas.rs,lm-gui/src/pages/composition.rs |
 | F-TRK-002 | Faixa de instrumento | feito |  | lm-doc/src/schemas.rs,lm-gui/src/screens/instrument.rs |
 | F-TRK-004 | Faixa de áudio | feito |  | lm-doc/src/schemas.rs,lm-gui/src/pages/composition.rs |
-| F-TRK-007 | Pasta | parcial | organizar, recolher, mudo/solo do grupo e entrar/sair da pasta existem; faltam criar pasta na interface e mover a pasta com o conteúdo | lm-gui/src/pages/composition/edit.rs,lm-compile/src/core.rs |
+| F-TRK-007 | Pasta | feito | criar pasta (+ Pasta), recolher, mudo/solo do grupo, entrar/sair e mover a pasta com o conteúdo (track.move) | lm-gui/src/pages/composition/edit.rs,lm-compile/src/core.rs |
 | F-TRK-008 | Camadas da faixa | feito |  | lm-gui/src/pages/composition.rs,lm-doc/src/schemas.rs |
 | F-TRK-010 | Tamanho da faixa | feito |  | lm-gui/src/pages/composition.rs |
-| F-TRK-020 | Número e cor | parcial | a coluna de número sobre a cor existe, mas não é a alça de mover (arrastar a faixa não existe) | lm-gui/src/pages/composition.rs |
+| F-TRK-020 | Número e cor | feito | a coluna do número é a alça de mover (track.move) | lm-gui/src/pages/composition.rs |
 | F-TRK-021 | Armar, nome, M, S | feito |  | lm-gui/src/pages/composition.rs |
 | F-TRK-022 | Knobs de volume e pan | feito |  | lm-gui/src/pages/composition.rs |
 | F-TRK-023 | Botão FX | feito | aberto: respondido em P-28 (o FX abre os inserts do canal da saída principal, open_fx) | lm-gui/src/pages/composition.rs |
 | F-TRK-024 | Botão I/O | feito |  | lm-gui/src/pages/composition/edit.rs |
 | F-TRK-025 | Terceira linha (faixa alta) | feito |  | lm-gui/src/pages/composition/edit.rs |
 | F-TRK-026 | Medidor do canal na borda | feito |  | lm-gui/src/pages/composition.rs |
-| F-TRK-027 | Clique no nome | falta | o nome no cabeçalho não tem clique: não abre a janela do instrumento nem de efeitos, sem renomear no lugar, sem soltar preset no nome | lm-gui/src/pages/composition.rs |
+| F-TRK-027 | Clique no nome | feito | o clique no nome abre a janela do instrumento, o duplo clique renomeia; soltar um preset ou instrumento na faixa carrega no instrumento | lm-gui/src/pages/composition.rs |
 | F-TRK-028 | Indicador de atividade | feito | lâmpada no cabeçalho: verde com som na saída, vermelha com efeito do canal silenciado (áudio corrompido); o clique toca o dó central na faixa de instrumento | lm-gui/src/pages/composition.rs |
-| F-TRK-029 | Mover e copiar faixas | parcial | só entrar/sair da pasta pelo menu da faixa; faltam arrastar para mover (EditOp::Move existe no núcleo mas a faixa não o usa) e copiar com Ctrl | lm-gui/src/pages/composition/edit.rs |
-| F-TRK-030 | Altura e largura | parcial | Shift+clique volta a altura e Ctrl/Shift+Alt+roda mudam; faltam arrastar a borda de baixo, a largura do cabeçalho e a altura por faixa (é um valor global) | lm-gui/src/pages/composition.rs |
-| F-TRK-031 | Menu da faixa | parcial | clonar, remover (com não perguntar), limpar, exportar MIDI e pasta existem; faltam exportar a faixa como áudio e o submenu Cor (mudar, padrão, sortear, zerar cores dos clipes) e ligar/desligar a gravação da automação | lm-gui/src/pages/composition/edit.rs,lm-session/src/clips.rs |
-| F-TRK-032 | Soltar coisas numa faixa | falta | nada recebe soltar numa faixa: só soltar arquivos no arranjo inteiro; o navegador interno arrasta mas só a janela do instrumento e os efeitos aceitam | lm-gui/src/pages/composition.rs,lm-gui/src/screens/browser.rs |
-| F-TRK-033 | Clique na linha vazia | parcial | aberto: respondido em P-29 (item de áudio vazio entra); o clique na linha vazia só cria item MIDI em faixa de instrumento, no áudio só existe Shift+E no cursor da faixa selecionada | lm-gui/src/pages/composition/edit.rs,lm-gui/src/pages/composition.rs |
+| F-TRK-029 | Mover e copiar faixas | feito | arrastar pelo número move, com Ctrl copia | lm-gui/src/pages/composition/edit.rs |
+| F-TRK-030 | Altura e largura | feito | Shift+clique volta a altura, Ctrl/Shift+Alt+roda mudam, a borda de baixo arrasta; a largura do cabeçalho é fixa de propósito (desenho 02) | lm-gui/src/pages/composition.rs |
+| F-TRK-031 | Menu da faixa | feito | clonar, remover, limpar, exportar como MIDI e como áudio, submenu de cor e zerar as cores dos clipes; a gravação de automação é o modo de cada lane | lm-gui/src/pages/composition/edit.rs,lm-session/src/clips.rs |
+| F-TRK-032 | Soltar coisas numa faixa | feito | o navegador interno solta amostra, MIDI, preset e instrumento na faixa sob o ponteiro | lm-gui/src/pages/composition.rs,lm-gui/src/screens/browser.rs |
+| F-TRK-033 | Clique na linha vazia | feito | duplo clique na linha vazia cria o item (MIDI ou áudio) e o abre | lm-gui/src/pages/composition/edit.rs,lm-gui/src/pages/composition.rs |
 | F-TRK-034 | Menu do botão armar (instrumento) | parcial | o campo recordMode (overdub/substituir/camadas) existe no documento e a gravação o usa, mas não há menu no botão armar nem quantizar ao gravar na interface | lm-doc/src/schemas.rs,lm-session/src/midi/record.rs,lm-gui/src/pages/composition.rs |
 
 ## F-CLP: Clipes e itens
 
 | Id | Funcionalidade | Estado | O que falta | Onde |
 |---|---|---|---|---|
-| F-CLP-001 | Propriedades | parcial | início, tamanho, mudo, ganho, fades e camada estão no documento e se editam; nome e cor do clipe não têm edição na interface e não há campo de tamanho automático | lm-doc/src/schemas.rs,lm-gui/src/pages/composition/edit.rs |
+| F-CLP-001 | Propriedades | feito | nome e cor se editam pelo menu e no lugar; o tamanho automático é F-CLP-025 | lm-doc/src/schemas.rs,lm-gui/src/pages/composition/edit.rs |
 | F-CLP-002 | Mover | feito |  | lm-gui/src/pages/composition/edit.rs |
 | F-CLP-003 | Redimensionar e aparar | feito |  | lm-gui/src/pages/composition/edit.rs,lm-session/src/clips.rs |
-| F-CLP-004 | Mover para outra faixa | parcial | arrastar na vertical não leva o clipe para outra faixa; o documento aceita EditOp::Move mas a interface só muda o início | lm-gui/src/pages/composition/edit.rs |
-| F-CLP-005 | Selecionar e copiar com o mouse | parcial | Ctrl+clique alterna a seleção; faltam Ctrl+arrasto copiando e soltar um clipe sobre outro copiando o conteúdo | lm-gui/src/pages/composition/edit.rs |
+| F-CLP-004 | Mover para outra faixa | feito | arrastar na vertical leva o clipe para outra faixa (clip.relocate) | lm-gui/src/pages/composition/edit.rs |
+| F-CLP-005 | Selecionar e copiar com o mouse | feito | Ctrl+arrasto copia (clip.relocate com copy) | lm-gui/src/pages/composition/edit.rs |
 | F-CLP-006 | Mudo e apagar com o mouse | feito |  | lm-gui/src/pages/composition/edit.rs |
-| F-CLP-007 | Faca | parcial | a divisão pela faca existe; falta a divisão destrutiva do MIDI com Shift | lm-gui/src/pages/composition/edit.rs |
-| F-CLP-008 | Menu comum | parcial | faltam exportar o clipe como áudio, Cor, tamanho automático e ouvir esta camada/comp no menu; o resto existe | lm-gui/src/pages/composition/edit.rs |
+| F-CLP-007 | Faca | feito | Shift com a faca corta as notas MIDI do clipe (arrange.split com cutNotes) | lm-gui/src/pages/composition/edit.rs |
+| F-CLP-008 | Menu comum | feito | exportar como áudio e MIDI, cor, tamanho automático (ajustar às notas) e "Ouvir o take N" (o item toca só aquela camada, sem comp) | lm-gui/src/pages/composition/edit.rs |
 | F-CLP-009 | Aparência | feito |  | lm-gui/src/pages/composition.rs |
 | F-CLP-010 | Área de transferência | parcial | a área de transferência é a da sessão (arrange.copy), não a do sistema: não cola em outro projeto ou instância como texto | lm-session/src/arrange.rs,lm-gui/src/pages/composition/edit.rs |
 | F-CLP-011 | Desfazer | feito |  | lm-gui/src/pages/composition/edit.rs |
 | F-CLP-020 | Abrir no editor de notas | feito |  | lm-gui/src/pages/composition/edit.rs |
 | F-CLP-021 | Fantasma | feito |  | lm-gui/src/screens/piano_roll.rs,lm-gui/src/screens/automation.rs |
-| F-CLP-022 | Limpar notas, juntar, cortar o que sobra | parcial | juntar a seleção e limpar notas existem; falta tirar as notas fora dos limites visíveis (cortar o que sobra) | lm-session/src/clips.rs,lm-gui/src/pages/composition/edit.rs |
+| F-CLP-022 | Limpar notas, juntar, cortar o que sobra | feito | juntar, limpar notas e cortar o que sobra (clip.trim_notes) | lm-session/src/clips.rs,lm-gui/src/pages/composition/edit.rs |
 | F-CLP-023 | Transpor | feito |  | lm-session/src/clips.rs,lm-gui/src/pages/composition/edit.rs |
-| F-CLP-024 | Nome | parcial | o campo name existe mas não há renomear nem voltar ao nome padrão na interface | lm-doc/src/schemas.rs |
+| F-CLP-024 | Nome | feito | renomear no lugar e voltar ao nome padrão | lm-doc/src/schemas.rs |
 | F-CLP-025 | Tamanho automático | parcial | só o editor de passos ajusta o tamanho do item ao conteúdo; o piano roll e a gravação não, e não há liga/desliga | lm-gui/src/screens/steps.rs |
 | F-CLP-026 | Desenho | feito |  | lm-gui/src/pages/composition.rs |
-| F-CLP-041 | Crossfades com tensão | falta | aberto: respondido em P-30 (curvas ajustáveis entram); o item só tem fadeIn/fadeOut em amostras sem tensão e sem alças de curva | lm-doc/src/schemas.rs,lm-gui/src/pages/composition/edit.rs |
-| F-CLP-042 | Inverter a amostra | falta | aberto: respondido em P-31 (inverter o item entra, renderizado como recurso novo); não há campo nem ação |  |
+| F-CLP-041 | Crossfades com tensão | feito | curvas com tensão: alça no meio de cada fade do item de áudio (arrasto vertical), `curve` no segmento do comp e crossfade automático de itens sobrepostos em potência igual; a tensão do crossfade de um comp só se edita pelo documento | lm-doc/src/schemas.rs,lm-compile/src/items.rs,lm-render/src/renderer.rs,lm-gui/src/pages/composition/edit.rs |
+| F-CLP-042 | Inverter a amostra | feito | clip.reverse escreve cada camada ao contrário como recurso novo (operação cancelável, o item mostra carregando) e espelha o comp e os fades; menu "Inverter" | lm-io/src/reverse.rs,lm-session/src/clips.rs,lm-gui/src/pages/composition/edit.rs |
 | F-CLP-043 | Exportar a amostra | feito | menu do clipe de áudio "Exportar a amostra" (`clip.export_sample`, F-PRJ-026) |  |
 | F-CLP-044 | Memória | feito | aberto: respondido em P-32 (acima de 30 s toca do disco, automático); não há menu manual RAM/disco | lm-io/src/reader.rs,lm-compile/src/core.rs |
 | F-CLP-046 | Tempo | feito |  | lm-doc/src/schemas.rs,lm-compile/src/items.rs |
 | F-CLP-060 | Propriedades | feito |  | lm-doc/src/schemas.rs,lm-gui/src/pages/composition/edit.rs |
 | F-CLP-061 | Alças no item | feito |  | lm-gui/src/pages/composition/edit.rs |
-| F-CLP-062 | Crossfade automático | feito |  | lm-compile/src/core.rs,lm-gui/src/pages/composition.rs |
+| F-CLP-062 | Crossfade automático | feito | itens sobrepostos se cruzam em potência igual na sobreposição (auto_crossfade, no compilador); um fade mais longo que o da sobreposição fica | lm-compile/src/items.rs,lm-compile/src/core.rs,lm-gui/src/pages/composition.rs |
 | F-CLP-063 | Desenho | feito |  | lm-gui/src/pages/composition.rs |
 | F-CLP-064 | Menu | feito | aberto: memória decidida em P-32 (automático, sem menu); "Zerar ganho e fades" está no menu do clipe | lm-gui/src/pages/composition/edit.rs,lm-io/src/reader.rs |
-| F-CLP-065 | Normalizar | falta | não há ação de normalizar item de áudio (a normalização existente é a do export) |  |
-| F-CLP-066 | Curvas de fade ajustáveis | falta | aberto: respondido em P-30 (curvas ajustáveis entram); sem campo de tensão nem interface | lm-doc/src/schemas.rs |
+| F-CLP-065 | Normalizar | feito | clip.normalize: ganho que leva o pico tocado pelo item a 0 dB (ou ao valor pedido), pelos picos da fonte | lm-session/src/clips.rs,lm-gui/src/pages/composition/edit.rs |
+| F-CLP-066 | Curvas de fade ajustáveis | feito | campos fadeInCurve/fadeOutCurve (-1 a 1) e a alça de tensão no meio do fade; "Zerar ganho e fades" zera as curvas | lm-doc/src/schemas.rs,lm-gui/src/pages/composition/edit.rs |
 | F-CLP-081 | Gravar a automação | feito |  | lm-session/src/midi/automation.rs,lm-gui/src/screens/automation.rs |
 | F-CLP-082 | Abrir, limpar, nome, espelhar | feito |  | lm-gui/src/screens/automation.rs,lm-gui/src/pages/composition.rs |
 

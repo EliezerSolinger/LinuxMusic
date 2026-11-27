@@ -96,6 +96,9 @@ pub struct ItemView {
     pub mute: bool,
     pub fade_in: i64,
     pub fade_out: i64,
+    /// The fades' tension, -1..1 (0: straight)
+    pub fade_in_curve: f64,
+    pub fade_out_curve: f64,
     pub gain: f64,
     pub lanes: Vec<LaneView>,
     pub comp: Vec<CompView>,
@@ -189,6 +192,8 @@ fn item_view(v: &Value) -> Option<ItemView> {
         mute: flag(v, "mute"),
         fade_in: int(v, "fadeIn", 0),
         fade_out: int(v, "fadeOut", 0),
+        fade_in_curve: real(v, "fadeInCurve", 0.0).clamp(-1.0, 1.0),
+        fade_out_curve: real(v, "fadeOutCurve", 0.0).clamp(-1.0, 1.0),
         gain: real(v, "gain", 1.0),
         lanes,
         comp,

@@ -76,6 +76,9 @@ enum ItemZone {
     Move,
     FadeIn,
     FadeOut,
+    /// The handle in the middle of a fade: its tension (F-CLP-066)
+    FadeInCurve,
+    FadeOutCurve,
     Gain,
     /// the right edge: the length (F-CLP-003)
     ResizeEnd,
@@ -1490,7 +1493,17 @@ fn capitalize(s: &str) -> String {
 enum Paint {
     Lane { y: f32, h: f32 },
     Item { y: f32, h: f32, x: f32, w: f32, color: u32, body: Body },
-    Edges { y: f32, h: f32, x: f32, w: f32, fade_in: f32, fade_out: f32, gain: f64, selected: bool },
+    Edges {
+        y: f32,
+        h: f32,
+        x: f32,
+        w: f32,
+        fade_in: f32,
+        fade_out: f32,
+        curves: (f32, f32),
+        gain: f64,
+        selected: bool,
+    },
     Boundary { y: f32, h: f32, x: f32, fade_px: f32 },
     Overlap { y: f32, h: f32, x: f32, w: f32 },
     Curve { y: f32, h: f32, pts: Vec<(f32, f32)> },
@@ -1592,6 +1605,7 @@ impl CompositionPage {
                             w,
                             fade_in: fi,
                             fade_out: fo,
+                            curves: (it.fade_in_curve as f32, it.fade_out_curve as f32),
                             gain: it.gain,
                             selected: self.selected_item == Some(it.id) || self.ed.selection.contains(&it.id),
                         });
@@ -1954,6 +1968,25 @@ impl CompositionPage {
     }
 }
 
+/// The exponent of a fade's gain curve for its tension (the renderer's `fade_power`): 4^tension
+fn fade_power(curve: f32) -> f32 {
+    4f32.powf(curve.clamp(-1.0, 1.0))
+}
+
+/// The tension handle of a fade of `fw` px at `fx` in an item box (`iy`, `ih`): on the curve, in the middle of the fade
+pub(super) fn curve_handle(fx: f32, fw: f32, iy: f32, ih: f32, curve: f32) -> (f32, f32) {
+    let g = 0.5f32.powf(fade_power(curve));
+    (fx + fw / 2.0, iy + (1.0 - g) * ih)
+}
+
+/// The tension that puts the handle at height `y` of the item box: the gain there is `1 - (y - iy) / ih` at the middle
+/// of the fade, `0.5^power`
+pub(super) fn curve_at(y: f32, iy: f32, ih: f32) -> f64 {
+    let g = (1.0 - (y - iy) / ih.max(1.0)).clamp(0.02, 0.98) as f64;
+    // power = ln g / ln 0.5; tension = log4 power
+    ((g.ln() / 0.5f64.ln()).ln() / 4f64.ln()).clamp(-1.0, 1.0)
+}
+
 fn paint_one(window: &mut Window, cache: &mut TileCache, p: &Paint, o: gpui::Point<Pixels>, w: f32) {
     let at = |x: f32, y: f32| point(o.x + px(x), o.y + px(y));
     match p {
@@ -1998,18 +2031,34 @@ fn paint_one(window: &mut Window, cache: &mut TileCache, p: &Paint, o: gpui::Poi
                 }
             }
         }
-        Paint::Edges { y, h, x, w: iw, fade_in, fade_out, gain, selected } => {
+        Paint::Edges { y, h, x, w: iw, fade_in, fade_out, curves, gain, selected } => {
             let (iy, ih) = (y + 3.0, h - 6.0);
-            // fades: a shaded corner triangle each; the handles are in the top 7 px
-            for (fx, fw, left) in [(*x, *fade_in, true), (x + iw - fade_out, *fade_out, false)] {
+            // fades: the part above the fade's curve is shaded; the handles are in the top 7 px, and a small one
+            // sits on the curve in the middle of a selected item's fade (its tension)
+            for (fx, fw, left, curve) in [(*x, *fade_in, true, curves.0), (x + iw - fade_out, *fade_out, false, curves.1)] {
                 if fw > 0.5 {
+                    let power = fade_power(curve);
                     let mut pb = PathBuilder::fill();
-                    pb.move_to(at(fx, iy));
+                    let steps = (fw / 6.0).clamp(1.0, 24.0) as usize;
+                    let point = |k: usize| {
+                        let t = k as f32 / steps as f32;
+                        // the gain at the fraction t of the fade, from its start to its end
+                        let g = if left { t.powf(power) } else { (1.0 - t).powf(power) };
+                        at(fx + t * fw, iy + (1.0 - g) * ih)
+                    };
+                    pb.move_to(point(0));
+                    for k in 1..=steps {
+                        pb.line_to(point(k));
+                    }
                     pb.line_to(at(fx + fw, iy));
-                    pb.line_to(if left { at(fx, iy + ih) } else { at(fx + fw, iy + ih) });
+                    pb.line_to(at(fx, iy));
                     pb.close();
                     if let Ok(path) = pb.build() {
                         window.paint_path(path, gpui::rgba(THEME.scrim));
+                    }
+                    if *selected && fw > 12.0 {
+                        let (hx, hy) = curve_handle(fx, fw, iy, ih, curve);
+                        window.paint_quad(fill(Bounds::new(at(hx - 2.5, hy - 2.5), size(px(5.0), px(5.0))), c(THEME.blue)));
                     }
                 }
             }

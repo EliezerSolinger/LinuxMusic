@@ -36,3 +36,4 @@ Default name = Nome padrão
 + Audio track = + Faixa de áudio
 + Folder = + Pasta
 Folder {0} = Pasta {0}
+Listen to take {0} = Ouvir o take {0}

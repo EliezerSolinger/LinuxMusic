@@ -176,6 +176,12 @@ enum ClipCmd {
     Fit,
     Rename,
     DefaultName,
+    /// Audio: the gain that brings the loudest sample to full scale (F-CLP-065)
+    Normalize,
+    /// Audio: plays backwards (F-CLP-042)
+    Reverse,
+    /// Audio with takes: plays only the take (lane) of that index, no comp (F-CLP-008)
+    Listen(usize),
 }
 
 /// What the track's menu does (F-TRK-031)
@@ -554,15 +560,17 @@ impl CompositionPage {
     pub(super) fn create_clip_at(&mut self, track: NodeId, tick: f64, cx: &mut Context<Self>) {
         let root = self.core.read(cx).port().root().clone();
         let Some(t) = model::tracks(&root).into_iter().find(|t| t.id == track) else { return };
-        if t.instrument.is_none() || t.folder {
+        if t.folder {
             return;
         }
+        // an instrument track makes a MIDI item, an audio track an empty audio item, a bar long (F-TRK-033, P-29)
+        let kind = if t.instrument.is_some() { "midi" } else { "audio" };
         let map = model::tempo_map(&root);
         let bar = map.bar_beat_tick(tick.max(0.0) as i64).bar;
         let start = map.bar_start(bar).unwrap_or(0);
         let length = map.bar_start(bar + 1).unwrap_or(start + 4 * model::ppq(&root) as i64) - start;
         let node = Value::object([
-            ("kind", Value::text("midi")),
+            ("kind", Value::text(kind)),
             ("name", Value::text(t.name.to_string())),
             ("start", Value::int(start)),
             ("length", Value::int(length.max(1))),
@@ -608,7 +616,7 @@ impl CompositionPage {
         if let Some(t) = row {
             self.ed.track = Some(t);
         }
-        let Some((x, y, w, _, item, fi, fo)) = hit else {
+        let Some((x, y, w, ih, item, fi, fo)) = hit else {
             // the empty row: Ctrl or the select tool draws a rectangle; the draw tool makes a clip (F-TRK-033)
             if marquee || self.ed.tool == Tool::Select {
                 if !marquee && !holds("comp.row.extend", &ev.modifiers) {
@@ -672,8 +680,26 @@ impl CompositionPage {
         }
         // the top 7 px: the fade handles at the corners, the gain handle between; the edges resize and trim
         let edge = 6.0;
+        // the tension handle in the middle of a fade (F-CLP-066), on an audio item
+        let audio = self.tracks(cx).iter().flat_map(|t| &t.items).any(|i| i.id == item && i.audio);
+        let near = |hx: f32, hy: f32| (mx - hx).abs() <= 5.0 && (my - hy).abs() <= 5.0;
+        let curve_zone = audio.then(|| self.selected(cx)).flatten().and_then(|(_, it)| {
+            if it.id != item {
+                return None;
+            }
+            let (ci, co) = (it.fade_in_curve as f32, it.fade_out_curve as f32);
+            if fi > 12.0 && { let (hx, hy) = curve_handle(x, fi, y, ih, ci); near(hx, hy) } {
+                Some(ItemZone::FadeInCurve)
+            } else if fo > 12.0 && { let (hx, hy) = curve_handle(x + w - fo, fo, y, ih, co); near(hx, hy) } {
+                Some(ItemZone::FadeOutCurve)
+            } else {
+                None
+            }
+        });
         let zone = if copy {
             ItemZone::Move
+        } else if let Some(z) = curve_zone {
+            z
         } else if my - y <= 7.0 {
             if mx <= x + fi.max(10.0) {
                 ItemZone::FadeIn
@@ -695,6 +721,8 @@ impl CompositionPage {
             ItemZone::ResizeEnd => it.length as f64,
             ItemZone::FadeIn => it.fade_in as f64,
             ItemZone::FadeOut => it.fade_out as f64,
+            ItemZone::FadeInCurve => it.fade_in_curve,
+            ItemZone::FadeOutCurve => it.fade_out_curve,
             ItemZone::Gain => it.gain,
         };
         let others: Vec<(NodeId, i64)> = if zone == ItemZone::Move {
@@ -819,6 +847,16 @@ impl CompositionPage {
             }
             ItemZone::FadeIn => ops.push(EditOp::set(item, &["fadeIn"], Value::int((sv + dx).max(0.0) as i64))),
             ItemZone::FadeOut => ops.push(EditOp::set(item, &["fadeOut"], Value::int((sv - dx).max(0.0) as i64))),
+            ItemZone::FadeInCurve | ItemZone::FadeOutCurve => {
+                // the handle follows the pointer's height inside the item's box
+                let b = *self.timeline_bounds.borrow();
+                let my = ev.position.y.as_f32() - b.origin.y.as_f32();
+                let boxed = self.hits.borrow().iter().find(|h| h.4 == item).map(|h| (h.1, h.3));
+                if let Some((iy, ih)) = boxed {
+                    let key = if zone == ItemZone::FadeInCurve { "fadeInCurve" } else { "fadeOutCurve" };
+                    ops.push(EditOp::set(item, &[key], Value::real(curve_at(my, iy, ih)).unwrap_or_default()));
+                }
+            }
             ItemZone::Gain => ops.push(EditOp::set(
                 item,
                 &["gain"],
@@ -1267,12 +1305,37 @@ impl CompositionPage {
                             EditOp::set(*i, &["gain"], Value::real(1.0).unwrap_or_default()),
                             EditOp::set(*i, &["fadeIn"], Value::int(0)),
                             EditOp::set(*i, &["fadeOut"], Value::int(0)),
+                            EditOp::set(*i, &["fadeInCurve"], Value::real(0.0).unwrap_or_default()),
+                            EditOp::set(*i, &["fadeOutCurve"], Value::real(0.0).unwrap_or_default()),
                         ]
                     })
                     .collect();
                 self.apply("Reset gain and fades", ops, cx);
             }
             ClipCmd::Open => self.open_item(window, cx),
+            ClipCmd::Normalize => {
+                self.action("clip.normalize", Value::object([("items", Self::ids_value(&targets))]), cx)
+            }
+            ClipCmd::Reverse => self.action("clip.reverse", Value::object([("items", Self::ids_value(&targets))]), cx),
+            ClipCmd::Listen(n) => {
+                // the whole item plays that one take: a comp of one segment
+                let tracks = self.tracks(cx);
+                let ops = targets
+                    .iter()
+                    .filter_map(|i| {
+                        let it = tracks.iter().flat_map(|t| &t.items).find(|x| x.id == *i)?;
+                        let lane = it.lanes.get(n)?;
+                        let seg = Value::object([
+                            ("from", Value::int(0)),
+                            ("to", Value::int(it.length)),
+                            ("lane", Value::text(lane.id.to_string())),
+                            ("fade", Value::int(0)),
+                        ]);
+                        Some(EditOp::set(*i, &["comp"], Value::list([seg])))
+                    })
+                    .collect();
+                self.apply("Listen to the take", ops, cx);
+            }
             ClipCmd::TrimNotes => {
                 self.action("clip.trim_notes", Value::object([("items", Self::ids_value(&targets))]), cx)
             }
@@ -1519,6 +1582,14 @@ impl CompositionPage {
                 rows.push(Some((tr_str("Fit to the notes").to_string(), ClipCmd::Fit, true)));
             } else {
                 rows.push(Some((tr_str("Reset gain and fades").to_string(), ClipCmd::ResetGainFades, true)));
+                rows.push(Some((tr_str("Normalize").to_string(), ClipCmd::Normalize, true)));
+                rows.push(Some((tr_str("Reverse").to_string(), ClipCmd::Reverse, true)));
+                if i.lanes.len() > 1 {
+                    rows.push(None);
+                    for n in 0..i.lanes.len().min(12) {
+                        rows.push(Some((trf("Listen to take {0}", &[&(n + 1)]), ClipCmd::Listen(n), true)));
+                    }
+                }
             }
             rows.push(None);
             rows.push(Some((tr_str("Export the clip as audio").to_string(), ClipCmd::ExportAudio, true)));
