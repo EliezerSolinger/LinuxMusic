@@ -339,7 +339,7 @@ impl Export {
                         .flex()
                         .gap(px(10.))
                         .child(stepper("bar-from", trf("from {0}", &[&a]), cx, move |e, d, cx| {
-                            e.bars.0 = (a + d).clamp(1, b - 1);
+                            e.bars.0 = (a + d).min(b - 1).max(1);
                             cx.notify();
                         }))
                         .child(stepper("bar-to", trf("to {0}", &[&(b - 1)]), cx, move |e, d, cx| {

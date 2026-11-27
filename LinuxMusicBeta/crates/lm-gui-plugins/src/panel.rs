@@ -425,8 +425,8 @@ impl<H: PortHost> PluginPanel<H> {
         let c = &self.spec.controls[d.ctrl];
         let Kind::Graph(g) = &c.kind else { return };
         // `Graph::mouseMoveEvent`: the cursor kept inside the graph's 2-pixel border
-        let lx = (x - c.x).clamp(2.0, g.w - 3.0);
-        let ly = (y - c.y).clamp(2.0, g.h - 3.0);
+        let lx = (x - c.x).max(2.0).min(g.w - 3.0);
+        let ly = (y - c.y).max(2.0).min(g.h - 3.0);
         widgets::graph_line(g, &mut d.samples[..n], lx, ly, d.last_x);
         d.last_x = lx;
         d.cursor = (lx, ly);
@@ -889,7 +889,9 @@ impl<H: PortHost> PluginPanel<H> {
     fn wave_zoom(&mut self, ctrl: usize, out: bool, cx: &mut Context<Self>) {
         let Kind::Surface(sf) = &self.spec.controls[ctrl].kind else { return };
         let Some(pk) = sf.peaks else { return };
-        let (start, end) = (self.param(pk.start, cx), self.param(pk.end, cx));
+        // the tree's values are not trusted: `f64::clamp` panics on a minimum above the maximum or on NaN
+        let unit = |v: f64| if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) };
+        let (start, end) = (unit(self.param(pk.start, cx)), unit(self.param(pk.end, cx)));
         let rate = self.project_rate(cx);
         let Some(st) = self.waves.get_mut(&ctrl) else { return };
         let len = st.length.unwrap_or(0).max(1) as f64;
@@ -897,14 +899,14 @@ impl<H: PortHost> PluginPanel<H> {
         let (d_from, d_to) = (start - from, to - end);
         let step = (d_from.max(d_to) / 10.0).max(1.0 / len);
         let (step_from, step_to) = if out { (-step, step) } else { (step, -step) };
-        let bounded_from = (from + step_from).clamp(0.0, start);
-        let bounded_to = (to + step_to).clamp(end, 1.0);
+        let bounded_from = widgets::fit_between(from + step_from, 0.0, start);
+        let bounded_to = widgets::fit_between(to + step_to, end, 1.0);
         let comp = d_from.min(d_to) / d_from.max(d_to).max(1e-12);
         let to_step = step_from * if bounded_to == to { 1.0 } else { comp };
         let cond = (out && d_from < d_to) || (!out && d_to < d_from);
-        let new_from = if cond { bounded_from } else { (from + to_step).clamp(0.0, start) };
+        let new_from = if cond { bounded_from } else { widgets::fit_between(from + to_step, 0.0, start) };
         let from_step = step_to * if bounded_from == from { 1.0 } else { comp };
-        let new_to = if cond { (to + from_step).clamp(end, 1.0) } else { bounded_to };
+        let new_to = if cond { widgets::fit_between(to + from_step, end, 1.0) } else { bounded_to };
         if (new_to - new_from) * len / rate > 0.05 {
             st.window = (new_from, new_to);
             st.asked = None;
@@ -1086,7 +1088,7 @@ impl<H: PortHost> PluginPanel<H> {
         for (k, v) in edits {
             let (lo, hi) =
                 self.schema.as_ref().and_then(|s| s.find_param(k)).map_or((f64::MIN, f64::MAX), |p| (p.min, p.max));
-            let v = v.clamp(lo, hi);
+            let v = widgets::fit_between(v, lo, hi);
             self.overrides.insert(k, v);
             if let Some(op) = self.param_op(k, v) {
                 ops.push(op);
@@ -1645,7 +1647,7 @@ impl<H: PortHost> PluginPanel<H> {
                         .as_ref()
                         .and_then(|s| s.find_param(k))
                         .map_or((f64::MIN, f64::MAX), |p| (p.min, p.max));
-                    if let Some(op) = self.param_op(k, v.clamp(lo, hi)) {
+                    if let Some(op) = self.param_op(k, widgets::fit_between(*v, lo, hi)) {
                         ops.push(op);
                     }
                 }
@@ -1763,7 +1765,7 @@ impl<H: PortHost> PluginPanel<H> {
                 if db < widgets::FADER_MIN_DB { 0.0 } else { widgets::db_to_amp(db) }
             }
         } else {
-            (v + delta).clamp(r.min, r.max)
+            widgets::fit_between(v + delta, r.min, r.max)
         };
         self.set(ctrl, Value::real(nv).unwrap_or_default(), cx);
         self.show_float(ctrl, Some(WHEEL_SHOW), cx);
@@ -1808,7 +1810,7 @@ impl<H: PortHost> PluginPanel<H> {
             return;
         };
         let (lo, hi) = self.entry_bounds(e.ctrl);
-        let typed = typed.clamp(lo, hi);
+        let typed = widgets::fit_between(typed, lo, hi);
         let value = match self.volume_of(e.ctrl) {
             Some(zero) => {
                 let key = self.spec.controls[e.ctrl].target().key();

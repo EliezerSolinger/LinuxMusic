@@ -88,6 +88,11 @@ pub struct Ctl {
     pub shown: Option<String>,
 }
 
+/// `f64::clamp` panics when a plugin's schema has min above max or NaN; this one does not
+fn fit(v: f64, lo: f64, hi: f64) -> f64 {
+    v.max(lo).min(hi)
+}
+
 impl Ctl {
     pub fn key(&self) -> &'static str {
         match self.slot {
@@ -107,11 +112,12 @@ impl Ctl {
     }
 
     fn clamp(&self, v: f64) -> f64 {
+
         match &self.kind {
             // a MIDI controller's value is a whole number
-            CtlKind::Knob { min, max, .. } if matches!(self.slot, Slot::Cc(_)) => v.clamp(*min, *max).round(),
-            CtlKind::Knob { min, max, .. } => v.clamp(*min, *max),
-            CtlKind::Stepper { min, max, .. } => v.clamp(*min, *max).round(),
+            CtlKind::Knob { min, max, .. } if matches!(self.slot, Slot::Cc(_)) => fit(v, *min, *max).round(),
+            CtlKind::Knob { min, max, .. } => fit(v, *min, *max),
+            CtlKind::Stepper { min, max, .. } => fit(v, *min, *max).round(),
             CtlKind::Switch { .. } => f64::from(u8::from(v > 0.5)),
             CtlKind::Volume => v.clamp(-60.0, 12.0),
             CtlKind::Choice { .. } => v,
@@ -610,7 +616,7 @@ pub fn control<C: Clone + 'static, V: ParamHost<C>>(this: &V, c_: Ctl, cx: &Cont
                     move |v: &mut V, _, _, cx| {
                         let core = v.core().clone();
                         let now = current(core.read(cx), &cc);
-                        apply_ops(&core, "Change a parameter", vec![cc.op((now + d).clamp(min, max))], cx);
+                        apply_ops(&core, "Change a parameter", vec![cc.op(fit(now + d, min, max))], cx);
                     },
                 ))
             };

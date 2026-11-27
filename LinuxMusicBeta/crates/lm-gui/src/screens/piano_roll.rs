@@ -906,8 +906,8 @@ impl PianoRoll {
             }
             Drag::Pitch { g, n, origin, from } if self.curve != Curve::Bend => {
                 // a line of the MPE curve (0..1): a key's height of travel is a twelfth of the range
-                let at0 = ((from.0 - origin.start as f64).round() as i64).clamp(0, origin.length);
-                let at1 = ((tick - origin.start as f64).round() as i64).clamp(0, origin.length);
+                let at0 = ((from.0 - origin.start as f64).round() as i64).max(0).min(origin.length.max(0));
+                let at1 = ((tick - origin.start as f64).round() as i64).max(0).min(origin.length.max(0));
                 let dv = f64::from(from.1 - y) / f64::from(self.key_h * 12.0);
                 let pts = piano_roll_curves::line(origin.mpe.get(self.curve), at0, at1, dv);
                 let x = Note { mpe: origin.mpe.with(self.curve, pts), ..origin.clone() };
@@ -915,8 +915,8 @@ impl PianoRoll {
             }
             Drag::Pitch { g, n, origin, from } => {
                 // a line of the bend from where the drag began to the mouse, in semitones by height
-                let at0 = ((from.0 - origin.start as f64).round() as i64).clamp(0, origin.length);
-                let at1 = ((tick - origin.start as f64).round() as i64).clamp(0, origin.length);
+                let at0 = ((from.0 - origin.start as f64).round() as i64).max(0).min(origin.length.max(0));
+                let at1 = ((tick - origin.start as f64).round() as i64).max(0).min(origin.length.max(0));
                 let v0 = origin.bend_at(at0);
                 let v1 = ((from.1 - y) / self.key_h * 4.0).round() as f64 / 4.0 + v0;
                 let (a, b) = if at0 <= at1 { ((at0, v0), (at1, v1)) } else { ((at1, v1), (at0, v0)) };

@@ -102,7 +102,7 @@ pub fn normalize(samples: &mut [f64], n: usize, min: f64, max: f64) {
     }
     let peak = samples[..n].iter().fold(0.0001f64, |m, s| m.max(s.abs()));
     for s in samples.iter_mut().take(n) {
-        *s = (*s / peak).clamp(min, max);
+        *s = crate::widgets::fit_between(*s / peak, min, max);
     }
 }
 

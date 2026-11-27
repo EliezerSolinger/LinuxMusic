@@ -124,6 +124,12 @@ impl KnobStyle {
     }
 }
 
+/// `v` limited to `lo..=hi` without `f64::clamp`'s panic: bounds that come from a plugin's schema or from the
+/// document may be inverted or NaN (a NaN bound is ignored, an inverted pair resolves to `hi`)
+pub fn fit_between(v: f64, lo: f64, hi: f64) -> f64 {
+    v.max(lo).min(hi)
+}
+
 /// The legacy model of a float control: what the knob, the wheel and the drag compute with
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Range {
@@ -149,10 +155,10 @@ impl Range {
 
     /// `AutomatableModel::fittedValue`: clamped, rounded to the step
     pub fn fit(&self, v: f64) -> f64 {
-        let v = v.clamp(self.min, self.max);
+        let v = fit_between(v, self.min, self.max);
         if self.step > 0.0 {
             // rounded at the step, then clamped again (the rounding may pass the end)
-            ((v / self.step).round() * self.step).clamp(self.min, self.max)
+            fit_between((v / self.step).round() * self.step, self.min, self.max)
         } else {
             v
         }
@@ -163,7 +169,7 @@ impl Range {
         if !self.log || self.span() == 0.0 {
             return v;
         }
-        let v = v.clamp(self.min, self.max);
+        let v = fit_between(v, self.min, self.max);
         if self.min < 0.0 {
             let m = self.min.abs().max(self.max.abs());
             return signed_pow(v / m, 1.0 / E) * m;
@@ -768,7 +774,7 @@ pub fn graph_line(g: &crate::spec::GraphSpec, samples: &mut [f64], x: f32, y: f3
     let xscale = len as f32 / (g.w - 4.0);
     let x = (x - 2.0) as i32;
     let y = y - 2.0;
-    let lastx = ((last_x - 2.0) as i32).clamp(0, g.w as i32 - 5);
+    let lastx = ((last_x - 2.0) as i32).max(0).min(g.w as i32 - 5);
     let v = f64::from(y) * (g.min - g.max) / f64::from(g.h - 5.0) + g.max;
     let (begin, end, mut vb, ve) = if lastx > x {
         let b = ((x as f32 * xscale) as i32).max(0) as usize;
@@ -793,8 +799,8 @@ pub fn graph_line(g: &crate::spec::GraphSpec, samples: &mut [f64], x: f32, y: f3
 
 /// `graphModel::drawSampleAt`: clamped to the range, rounded to the step
 fn graph_fit(g: &crate::spec::GraphSpec, v: f64) -> f64 {
-    let v = v.clamp(g.min, g.max);
-    if g.step > 0.0 { ((v / g.step).round() * g.step).clamp(g.min, g.max) } else { v }
+    let v = fit_between(v, g.min, g.max);
+    if g.step > 0.0 { fit_between((v / g.step).round() * g.step, g.min, g.max) } else { v }
 }
 
 #[cfg(test)]
@@ -803,6 +809,16 @@ mod tests {
 
     fn lin(min: f64, max: f64, step: f64) -> Range {
         Range { min, max, step, center: min, log: false }
+    }
+
+    #[test]
+    fn inverted_or_nan_bounds_do_not_panic() {
+        assert_eq!(fit_between(0.5, 1.0, 0.0), 0.0);
+        assert_eq!(fit_between(0.5, f64::NAN, 1.0), 0.5);
+        assert_eq!(fit_between(f64::NAN, 0.0, 1.0), 0.0);
+        let r = lin(10.0, 0.0, 1.0);
+        assert!(r.fit(5.0).is_finite());
+        assert!(r.inverse_scaled(5.0).is_finite());
     }
 
     #[test]
@@ -926,7 +942,7 @@ pub fn fader_knob_y(f: &crate::spec::FaderSpec, value: f64, min: f64, max: f64) 
 pub fn fader_value_at(f: &crate::spec::FaderSpec, y: f32, min: f64, max: f64) -> f64 {
     let (h, k) = (f64::from(f.h), f64::from(FADER_KNOB_H));
     let lower = (f64::from(y) + (k / 2.0).floor()).round();
-    let clamped = lower.clamp(k, h);
+    let clamped = fit_between(lower, k, h);
     if f.linear {
         if lower >= h {
             return 0.0;

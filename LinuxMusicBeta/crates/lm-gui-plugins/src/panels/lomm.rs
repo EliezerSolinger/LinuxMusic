@@ -193,7 +193,7 @@ fn drag(cx: &SurfaceCx<'_>, handle: usize, x: f32, _y: f32) -> Vec<(&'static str
     let (above, below) = BAND_KEYS[(handle / 3).min(2)];
     let fit = |key: &str, v: f64| {
         let (lo, hi) = (cx.range)(key);
-        v.clamp(lo, hi)
+        crate::widgets::fit_between(v, lo, hi)
     };
     let (a, b) = ((cx.param)(above), (cx.param)(below));
     let d = db_of(x);

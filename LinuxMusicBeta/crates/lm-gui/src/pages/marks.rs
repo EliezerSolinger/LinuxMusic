@@ -382,7 +382,7 @@ impl MarksState {
                 let shift = dt.max(-d.from0);
                 vec![set("from", d.from0 + shift), set("to", d.to0 + shift)]
             }
-            Part::RegionStart => vec![set("from", (d.from0 + dt).clamp(0, d.to0 - min))],
+            Part::RegionStart => vec![set("from", (d.from0 + dt).min(d.to0 - min).max(0))],
             Part::RegionEnd => vec![set("to", (d.to0 + dt).max(d.from0 + min))],
             Part::NewRegion => Vec::new(),
         };

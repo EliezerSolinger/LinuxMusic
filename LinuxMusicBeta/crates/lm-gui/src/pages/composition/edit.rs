@@ -811,7 +811,7 @@ impl CompositionPage {
             }
             ItemZone::TrimStart => {
                 let end = sv as i64 + len0;
-                let new = moved(sv, sv + dx).clamp(0, end - 1);
+                let new = moved(sv, sv + dx).min(end - 1).max(0);
                 ops.push(EditOp::set(item, &["start"], Value::int(new)));
                 ops.push(EditOp::set(item, &["length"], Value::int((end - new).max(1))));
             }
