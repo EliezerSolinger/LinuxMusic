@@ -234,8 +234,16 @@ impl SlotState {
 #[derive(Clone, Copy, Debug)]
 struct LiveMidi {
     offset: u32,
+    /// Arrival order, to keep equal offsets stable under an unstable (allocation-free) sort
+    seq: u32,
     port: PortIndex,
     bytes: [u8; 3],
+}
+
+/// By offset, arrival order kept among equal offsets (producers in index order). The unstable sort works in place:
+/// the stable one allocates for long slices, and this runs in the audio block
+fn sort_live(live: &mut [LiveMidi]) {
+    live.sort_unstable_by_key(|m| (m.offset, m.seq));
 }
 
 #[derive(Debug, Default)]
@@ -859,7 +867,7 @@ impl Renderer {
             let (port, at, bytes) = self.held[k];
             let offset = offset_of(at, timing);
             if offset < frames as i64 && self.live.len() < self.live.capacity() {
-                self.live.push(LiveMidi { offset: offset as u32, port, bytes });
+                self.live.push(LiveMidi { offset: offset as u32, seq: self.live.len() as u32, port, bytes });
             } else {
                 if offset < frames as i64 {
                     self.dropped[3] = self.dropped[3].saturating_add(1);
@@ -906,7 +914,7 @@ impl Renderer {
                         }
                         let Some(rx) = self.receivers[p].as_mut() else { break };
                         let Ok(Command::Midi { port, bytes, .. }) = rx.rx.pop() else { break };
-                        self.live.push(LiveMidi { offset: offset as u32, port, bytes });
+                        self.live.push(LiveMidi { offset: offset as u32, seq: self.live.len() as u32, port, bytes });
                     }
                     Next::Preview => {
                         let Some(i) = self.free_preview() else { break };
@@ -922,8 +930,7 @@ impl Renderer {
                 }
             }
         }
-        // Stable by offset (arrival order kept among equal offsets; producers in index order)
-        self.live.sort_by_key(|m| m.offset);
+        sort_live(&mut self.live);
     }
 
     fn command(&mut self, cmd: Command) {
@@ -1502,7 +1509,10 @@ impl Renderer {
         match kind {
             EventKind::NoteOn { note, key, velocity, .. } => {
                 let k = route.fixed_note.unwrap_or(key) & 0x7F;
-                let ch = mpe.start(note.0, k);
+                let (ch, taken) = mpe.start(note.0, k);
+                if let Some(old_key) = taken {
+                    put([0x80 | ch, old_key, 0], 3);
+                }
                 let v = route.fixed_velocity.unwrap_or(((velocity * 127.0).round() as u8).max(1)).clamp(1, 127);
                 put(mpe.bend(ch, 0.0), 3);
                 put([0x90 | ch, k, v], 3);
@@ -3144,5 +3154,21 @@ fn mix_feed(
     }
     if let Some(d) = delay {
         d.pos = (d.pos + n) % d.length;
+    }
+}
+
+#[cfg(test)]
+mod live_sort_tests {
+    use super::*;
+
+    #[test]
+    fn live_midi_sorts_by_offset_keeping_arrival_order_for_a_long_burst() {
+        // Past the size where the stable sort would allocate
+        let n = 1000u32;
+        let mut live: Vec<LiveMidi> = (0..n)
+            .map(|i| LiveMidi { offset: (n - i) % 7, seq: i, port: PortIndex(0), bytes: [0x90, (i % 128) as u8, 1] })
+            .collect();
+        sort_live(&mut live);
+        assert!(live.windows(2).all(|w| (w[0].offset, w[0].seq) < (w[1].offset, w[1].seq)));
     }
 }

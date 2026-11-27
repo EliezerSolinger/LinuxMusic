@@ -145,14 +145,17 @@ impl MpeOut {
     }
 
     /// A channel for a note that starts: a free one, round robin; with none free, the one held the longest
-    /// (the next in the rotation) is taken over, as the specification suggests. `key` is the key it is sent on
-    pub fn start(&mut self, note: u32, key: u8) -> u8 {
+    /// (the next in the rotation) is taken over, as the specification suggests. `key` is the key it is sent on.
+    /// Gives the channel and, when one was taken over, the key of the note that had it: its note-off must go out
+    /// first, or the receiver keeps that note sounding
+    pub fn start(&mut self, note: u32, key: u8) -> (u8, Option<u8>) {
         let n = self.members;
         let index =
             (0..n).map(|k| (self.next + k) % n).find(|i| self.slots[usize::from(*i)].0 == 0).unwrap_or(self.next);
+        let (held, held_key) = self.slots[usize::from(index)];
         self.slots[usize::from(index)] = (note.max(1), key);
         self.next = (index + 1) % n;
-        self.channel_at(index)
+        (self.channel_at(index), (held != 0).then_some(held_key))
     }
 
     fn index_of(&self, note: u32) -> Option<u8> {
@@ -238,9 +241,10 @@ mod tests {
     fn an_output_zone_gives_each_note_a_channel() {
         let p = MpePort::new(PortIndex(1), Zone::Lower, 2);
         let mut out = MpeOut::new(&p);
-        assert_eq!(out.start(10, 60), 1);
-        assert_eq!(out.start(11, 64), 2);
-        assert_eq!(out.start(12, 67), 1, "none free: the one held the longest is taken over");
+        assert_eq!(out.start(10, 60), (1, None));
+        assert_eq!(out.start(11, 64), (2, None));
+        assert_eq!(out.start(12, 67), (1, Some(60)), "none free: the one held the longest is taken over, its key back");
+        assert_eq!(out.end(10), None, "the taken-over note no longer holds a channel");
         assert_eq!(out.channel(11), Some(2));
         assert_eq!(out.end(11), Some((2, 64)));
         assert_eq!(out.channel(11), None);
