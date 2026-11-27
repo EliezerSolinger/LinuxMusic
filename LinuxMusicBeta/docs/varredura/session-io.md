@@ -152,3 +152,22 @@ Os 5 piores:
 - `lm-session/src/journal.rs`: fila limitada com contagem de perdas e marca `incomplete`; `Drop` faz join.
 - `lm-session/src/watchdog.rs`: o `Drop` acorda a thread com `unpark` antes do join.
 - `lm-session/src/core_actions.rs`: `Operation` captura pânico e vira falha (`error.operation.panicked`), sem derrubar o worker.
+
+## Resultado da confirmação
+
+| Achado | Veredito | Commit |
+|---|---|---|
+| C1 caminho arbitrário em ação remota | confirmado e corrigido: `run_action` valida `path`/`file`/`dir` dentro da árvore de projetos para quem não é Admin, `inside_tree` resolve links simbólicos (cobre M8 para `inside_tree`), `browser.*` virou admin | 6c71941ee |
+| C2 erro do log MIDI engolido | confirmado e corrigido: `sync` devolve o erro, o log é fechado (linha parcial corromperia nova tentativa), aviso `midi.record.log_failed`; os eventos continuam em memória e entram na árvore. Os eventos não somem do take, só a proteção contra queda | 3e3fb0e44 |
+| A1 backend derrubado se a thread vigia não nasce | confirmado e corrigido (backend compartilhado, `mem::forget` no erro). Sem teste: não há como simular falha de `spawn` | commit "lm-io: a failed watcher thread..." |
+| A2 `panic!` em `Device::start` | confirmado e não corrigido: a assinatura devolve `(Error, Renderer)` e o renderer não existe nesse caso; exige mudar a interface do device | |
+| A3 `sleep` no laço ALSA em suspensão | falso na prática: sem áudio fluindo durante a suspensão, o sleep de 10 ms é o ritmo do laço (sem ele o poll giraria sem parar) | |
+| A4 conexão meio-aberta | confirmado e corrigido (threads antes do `Open`; teste `a_big_frame_before_the_hello...`) | commit "lm-remote server: register a connection..." |
+| A5 filas ilimitadas | confirmado e corrigido: `sync_channel` de saída (fila cheia fecha a conexão) e de eventos, quadro antes do hello limitado a 64 KiB | idem |
+| A6 limites de conexão | parcialmente corrigido: máx. 128 conexões, timeout de 10 s para o hello. Cota global de upload/disco não feita (muda `ClientLimits` público e política) | idem |
+| A7 devices abandonados acumulam | confirmado e não corrigido: exige política de recusa e novo aviso em `notices` | |
+| M1 sync/append de take ignorados | confirmado e corrigido (`record_error` sticky, `WriteFailed`). Sem teste: depende do harness de falhas de disco do `disk.rs` | 4c62a8e29 |
+| M2 cabeçalho do log MIDI | confirmado e corrigido (junto com C2) | 3e3fb0e44 |
+| M3 `.tmp` que sobram | confirmado e corrigido (`copy_via_tmp`, `.mid.tmp` único e removido; teste em `folder.rs`) | bd662b211 |
+| M4, M5, M6, M7, M9 | não analisados/corrigidos nesta passada | |
+| M8 links simbólicos | corrigido para `inside_tree` (teste); `inside_projects` já canonicalizava o pai | 6c71941ee |
