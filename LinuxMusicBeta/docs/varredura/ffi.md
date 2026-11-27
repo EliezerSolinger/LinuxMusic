@@ -260,3 +260,25 @@ crash.rs (código morto em `arm`), reserve.rs (parâmetro e retorno ignorados), 
 - **Não lidos:** `lm-sys-clap/src/ffi.rs` (declarações, cobertas pelo `tests/layout.rs`), `lm-sys-lilv/src/ffi.rs`, `lm-sys-jack/src/ffi.rs`, `lm-sys-coreaudio/src/ffi.rs`, `lm-sys-gui/src/cocoa.rs`, `lm-sys-vst3/src/testing.rs` (grep apenas), e os blocos de parâmetros/portas de `clap` e `vst3`. Os arquivos de teste (`tests/`) e os `vendor/` de terceiros não entraram na varredura.
 - **Safety sheets (`lib.rs`):** no geral batem com o código lido. Divergências: `lm-sys-jack` afirma que o estado nunca é usado após o erro de `activate` (contradito por C1); `lm-sys-guitarix` afirma que os processos aceitam "at most the block it was started with" (não imposto, C3); `lm-sys-ipc` não menciona o risco de SIGBUS por encolhimento do objeto (A6).
 - **Fora desta área:** `unsafe` em crates que não são `lm-sys-*` não foi verificado (a regra do projeto proíbe, e isso cabe à varredura das outras áreas).
+
+## Resultado da confirmação
+
+Só `cargo check` (macOS). Os trechos só de Linux (`lm-sys-linux/src/crash.rs`, `lm-sys-alsa/src/linux/*`) ficaram SEM `cargo check` (o alvo Linux instalado não tem a `core`); foram revisados à mão.
+
+| Achado | Veredito | Commit |
+|---|---|---|
+| CRÍTICO jack `Client::activate` (uso após liberação) | confirmado e corrigido: os callbacks são desregistrados (permitido com o cliente inativo) antes de liberar o `State`; se algum não puder, o estado é vazado. Sem teste (exige servidor JACK) | ver `git log` (lm-sys-jack) |
+| CRÍTICO coreaudio `Io::drop` | confirmado e corrigido: o estado só é liberado se a parada e a destruição do IO proc deram certo; senão é vazado. Sem teste (exige dispositivo) | lm-sys-coreaudio |
+| CRÍTICO guitarix `process_mono`/`process_stereo` | confirmado e corrigido: a asserção compara com o bloco iniciado em `start`; teste `a_block_larger_than_the_started_one_is_refused` | lm-sys-guitarix |
+| ALTO coreaudio `Watch::drop` | confirmado e corrigido: a closure só é liberada se a remoção deu certo ou o dispositivo sumiu | lm-sys-coreaudio |
+| ALTO linux `install_handlers` (recursão) | confirmado e corrigido (sem `cargo check`): desfaz os handlers já trocados; `chain` ignora o próprio `on_signal`; `write_all` sai com `n == 0`. Sem teste (sinais reais) | lm-sys-linux |
+| ALTO sndfile `Reader::open` (vazamento) | confirmado e corrigido: `sf_close` no caminho de erro. Sem teste (libsndfile não aceita arquivo sem canais) | lm-sys-sndfile |
+| ALTO vst3 `Stream::write`/`seek` | confirmado e corrigido: limite de 256 MiB, `checked_add`, erro acima disso; teste em `host.rs`. O `catch_unwind` nos métodos COM não foi feito | lm-sys-vst3 |
+| ALTO ipc `SharedMemory::open` (par encolhe o objeto) | confirmado e não corrigido: o par é do mesmo usuário e o macOS não tem selos de `memfd`; a correção certa é mudar o desenho do canal (selos no Linux) | - |
+| ALTO lilv `urid:map` com mutex | falso: a especificação LV2 diz que `map` não é de tempo real e plugins mapeiam na instanciação; `try_lock` devolvendo 0 quebraria instanciações simultâneas | - |
+| MÉDIO midi `as_slice`, `value + 8192` | confirmado e corrigido, com teste | lm-sys-alsa |
+| MÉDIO `pcm_hints` nulo, `PcmPoll::new` (`got > count`), `Instant` em seq | confirmado e corrigido (sem `cargo check`; sem teste, exige ALSA) | lm-sys-alsa |
+| MÉDIO clap `stream_write` | confirmado e corrigido (64 MiB), com teste | lm-sys-clap |
+| MÉDIO lilv `state::store` (limite) e `wait_idle` (worker morto) | confirmado e corrigido; sem teste (exige plugin LV2) | lm-sys-lilv |
+| MÉDIO jack `port_name`/`latency` com índice | confirmado e não corrigido: `Port` só nasce no próprio cliente; só erro de uso entre clientes | - |
+| MÉDIO guitarix/sid (`panic!` em `make`/`Clone`), shim.cpp, linux mem/rt, crash `Probe`, x11 `Sync`, `PcmPoll::wait` | não verificados nesta rodada | - |
