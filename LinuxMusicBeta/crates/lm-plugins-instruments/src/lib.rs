@@ -7,15 +7,13 @@
 
 #![forbid(unsafe_code)]
 
-pub mod audio_file_processor;
+pub mod audio;
 pub mod bit_invader;
-pub mod drum_machines;
 pub mod kicker;
 pub mod lb302;
 pub mod monstro;
 pub mod nes;
 pub mod organic;
-pub mod patman;
 pub mod sfxr;
 pub mod slicert;
 pub mod src_port;
@@ -27,15 +25,12 @@ use lm_plugin::Descriptor;
 
 /// Every instrument of this crate, for the registry
 pub static ALL: &[&Descriptor] = &[
-    &audio_file_processor::DESCRIPTOR,
     &bit_invader::DESCRIPTOR,
-    &drum_machines::DESCRIPTOR,
     &kicker::DESCRIPTOR,
     &lb302::DESCRIPTOR,
     &monstro::DESCRIPTOR,
     &nes::DESCRIPTOR,
     &organic::DESCRIPTOR,
-    &patman::DESCRIPTOR,
     &sfxr::DESCRIPTOR,
     &slicert::DESCRIPTOR,
     &vibed::DESCRIPTOR,

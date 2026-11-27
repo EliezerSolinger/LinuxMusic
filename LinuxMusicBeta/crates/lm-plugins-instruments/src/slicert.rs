@@ -24,7 +24,7 @@ use lm_plugin::{BuildContext, Descriptor, PluginKind, StateView, TestHints, Velo
 use lm_render::{Processor, Rng};
 use lm_state::{FieldKind, FieldSpec, NodeSchema, ParamSpec, Scale, Value};
 
-use crate::audio_file_processor::Audio;
+use crate::audio::Audio;
 use crate::src_port::{Converter, Kind};
 use crate::stereo_out;
 

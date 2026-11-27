@@ -136,7 +136,7 @@ impl Session {
                     }
                 };
                 cancel.check()?;
-                let audio = lm_plugins_instruments::audio_file_processor::Audio::of(&data);
+                let audio = lm_plugins_instruments::audio::Audio::of(&data);
                 let found = lm_plugins_instruments::slicert::analyze(&audio, threshold, snap);
                 cancel.check()?;
                 let slices = found.slices.iter().filter_map(|p| Value::real(f64::from(*p)).ok());

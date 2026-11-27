@@ -2,7 +2,6 @@
 
 use crate::spec::PanelSpec;
 
-pub mod audiofileprocessor;
 pub mod bitinvader;
 pub mod compressor;
 pub mod crossovereq;
@@ -23,8 +22,8 @@ pub mod nes;
 pub mod opulenz;
 pub mod organic;
 pub mod oscilloscope;
-pub mod patman;
 pub mod sampler;
+mod sampler_wave;
 pub mod sfxr;
 pub mod shapers;
 pub mod sid;
@@ -68,8 +67,6 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (vibed::ID, || &vibed::PANEL),
     (watsyn::ID, || &watsyn::PANEL),
     (xpressive::ID, || &xpressive::PANEL),
-    (audiofileprocessor::ID, || &audiofileprocessor::PANEL),
-    (patman::ID, || &patman::PANEL),
     (sampler::ID, || &sampler::PANEL),
     (slewdistortion::ID, || &slewdistortion::PANEL),
     (multitapecho::ID, || &multitapecho::PANEL),
@@ -109,8 +106,6 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     vibed::ASSETS,
     watsyn::ASSETS,
     xpressive::ASSETS,
-    audiofileprocessor::ASSETS,
-    patman::ASSETS,
     sampler::ASSETS,
     slewdistortion::ASSETS,
     multitapecho::ASSETS,

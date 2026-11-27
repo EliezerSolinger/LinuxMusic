@@ -1,8 +1,0 @@
-{
-  "plugin:drummachines": {
-    "defaults": {
-      "kit": "tr808"
-    },
-    "version": 1
-  }
-}

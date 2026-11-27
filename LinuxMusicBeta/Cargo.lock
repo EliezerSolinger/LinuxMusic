@@ -3756,18 +3756,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lm-plugins-fluidsynth"
-version = "0.1.0"
-dependencies = [
- "lm-base",
- "lm-dsp",
- "lm-plugin",
- "lm-render",
- "lm-state",
- "lm-sys-fluidsynth",
-]
-
-[[package]]
 name = "lm-plugins-freeboy"
 version = "0.1.0"
 dependencies = [
@@ -3777,18 +3765,6 @@ dependencies = [
  "lm-render",
  "lm-state",
  "serde_json",
-]
-
-[[package]]
-name = "lm-plugins-gigplayer"
-version = "0.1.0"
-dependencies = [
- "lm-base",
- "lm-plugin",
- "lm-render",
- "lm-state",
- "lm-sys-gig",
- "lm-sys-samplerate",
 ]
 
 [[package]]
@@ -3986,9 +3962,7 @@ dependencies = [
  "lm-plugin-proxy",
  "lm-plugins-ampandir",
  "lm-plugins-effects",
- "lm-plugins-fluidsynth",
  "lm-plugins-freeboy",
- "lm-plugins-gigplayer",
  "lm-plugins-guitarix",
  "lm-plugins-instruments",
  "lm-plugins-noteeffects",
@@ -4049,24 +4023,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "lm-sys-fluidsynth"
-version = "0.1.0"
-dependencies = [
- "assert_no_alloc",
- "lm-base",
-]
-
-[[package]]
 name = "lm-sys-fpu"
 version = "0.1.0"
-
-[[package]]
-name = "lm-sys-gig"
-version = "0.1.0"
-dependencies = [
- "cc",
- "lm-base",
-]
 
 [[package]]
 name = "lm-sys-gui"

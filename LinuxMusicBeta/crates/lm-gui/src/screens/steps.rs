@@ -53,9 +53,6 @@ pub(crate) const GM_DRUMS: &[(u8, &str)] = &[
     (56, "Cowbell"),
 ];
 
-/// The instruments whose items are drum kits (a row per piece)
-const KITS: [&str; 2] = ["avldrums", "drummachines"];
-
 /// A row of a group: a piece of a kit, or the pitched steps of a melodic item
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Row {
@@ -481,7 +478,7 @@ fn midi_items(root: &Value) -> Vec<(NodeId, String, bool, bool)> {
     model::tracks(root)
         .iter()
         .flat_map(|t| {
-            let kit = t.instrument.as_ref().is_some_and(|(_, p)| KITS.contains(&p.as_ref()));
+            let kit = t.kit;
             t.items.iter().filter(|i| !i.audio).map(move |i| {
                 let repeats = Clip::read(root, i.id).is_some_and(|c| c.loop_len.is_some());
                 (i.id, format!("{} · {}", t.name, i.name), kit, repeats)

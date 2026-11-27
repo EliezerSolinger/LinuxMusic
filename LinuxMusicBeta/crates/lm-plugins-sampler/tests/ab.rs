@@ -1,5 +1,5 @@
 //! The Sampler against the references of the players it replaces (U34). The references are what the legacy
-//! AvlDrums and Sf2 Player rendered through FluidSynth (`lm-plugins-fluidsynth/ab`). The Sampler is another engine,
+//! AvlDrums and Sf2 Player rendered through FluidSynth (`tests/ab/reference`: pre-rendered files, kept when the FluidSynth player and its harness were removed; `tests/ab/cases.json` is what was played). The Sampler is another engine,
 //! so it cannot null against them: the check is that the same notes make the same event at the same time with
 //! the same loudness (total level within 8 dB, onset within 10 ms, same number of audible hits within one), which is
 //! what the player's replacement owes. The AVL kits and the General MIDI SoundFont are read from the legacy tree
@@ -16,7 +16,7 @@ const LEVEL_DB: f64 = 8.0;
 const ONSET_MS: f64 = 10.0;
 
 fn fluidsynth_ab(file: &str) -> String {
-    format!("{}/../lm-plugins-fluidsynth/ab/{file}", env!("CARGO_MANIFEST_DIR"))
+    format!("{}/tests/ab/{file}", env!("CARGO_MANIFEST_DIR"))
 }
 
 fn num(v: &Value) -> f64 {

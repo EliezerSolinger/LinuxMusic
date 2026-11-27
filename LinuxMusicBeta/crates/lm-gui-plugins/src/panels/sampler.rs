@@ -17,7 +17,7 @@ use std::sync::{LazyLock, OnceLock};
 
 use image::RgbaImage;
 
-use super::audiofileprocessor as afp;
+use super::sampler_wave as afp;
 use crate::asset;
 use crate::assets::{self, Asset};
 use crate::raster::{Canvas, Rgba};
@@ -29,8 +29,8 @@ use crate::widgets::{KnobStyle, LedColor};
 
 pub const ID: &str = "sampler";
 
-static SELECT_FILE: Asset = asset!("patman/select_file.png");
-static SELECT_FILE_ON: Asset = asset!("patman/select_file_on.png");
+static SELECT_FILE: Asset = asset!("sampler/select_file.png");
+static SELECT_FILE_ON: Asset = asset!("sampler/select_file_on.png");
 
 static BLACK_PEARL: Asset = asset!("sampler/black_pearl.png");
 static BLACK_PEARL_MAP: Asset = asset!("sampler/black_pearl.map.png");

@@ -14,8 +14,8 @@ use lm_render::{
 };
 use lm_state::{Resource, Value, from_json};
 
-/// The plugin that plays SoundFonts and MIDI files until the Sampler exists
-pub const SOUNDFONT_PLAYER: &str = "sf2player";
+/// The plugin that plays SoundFonts and MIDI files: the Sampler on a SoundFont
+pub const SOUNDFONT_PLAYER: &str = "sampler";
 /// The block the preview is rendered in
 const BLOCK: usize = 256;
 /// A single note of a preset or a SoundFont: its key, how long it is held, and the tail after it
@@ -137,8 +137,10 @@ pub fn path_key(path: &Path) -> String {
 
 fn soundfont_state(registry: &Registry, path: &Path) -> Result<(Value, ResourceView)> {
     let resource = Resource::new("soundfont", &path_key(path))?;
-    let state = registry
-        .complete(SOUNDFONT_PLAYER, &Value::empty_object().with("soundfont", Value::resource(resource.clone())))?;
+    let state = registry.complete(
+        SOUNDFONT_PLAYER,
+        &Value::empty_object().with("format", Value::text("sf2")).with("soundfont", Value::resource(resource.clone())),
+    )?;
     let view = ResourceView::new().with(resource, Loaded::File(Arc::from(path)));
     Ok((state, view))
 }

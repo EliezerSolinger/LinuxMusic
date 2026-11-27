@@ -1871,7 +1871,7 @@ impl InstrumentWindow {
             out.push(notice(trf("\"{0}\" is not installed; the track is silent", &[&plugin])));
             return out;
         }
-        if matches!(&*plugin, "avldrums" | "drummachines") {
+        if t.kit {
             out.push(self.kit_view(t, &plugin, cx));
         }
         let own: Vec<Ctl> = ctls.iter().filter(|k| !is_function_key(k.key())).cloned().collect();
@@ -1931,7 +1931,7 @@ impl InstrumentWindow {
             .enumerate()
             .map(|(k, o)| (o.port.clone(), live::group_key(&o.port).unwrap_or((36 + k).min(127) as u8)))
             .collect();
-        if plugin == "avldrums" && groups.len() > 1 {
+        if plugin != "drummachines" && groups.len() > 1 {
             groups
         } else {
             super::steps::GM_DRUMS.iter().map(|(k, n)| (Arc::from(tr(n).as_ref()), *k)).collect()

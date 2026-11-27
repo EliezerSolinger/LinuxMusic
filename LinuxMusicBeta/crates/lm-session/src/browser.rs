@@ -147,8 +147,7 @@ pub fn plugin_category(id: &str, instrument: bool) -> (&'static str, &'static st
             "tripleoscillator" | "monstro" | "watsyn" | "bitinvader" | "vibed" | "xpressive" | "lb302" | "organic"
             | "mallets" => ("synth", "Synths"),
             "sid" | "freeboy" | "nes" | "opulenz" | "sfxr" => ("chip", "Chip and retro"),
-            "audiofileprocessor" | "sf2player" | "gigplayer" | "patman" | "slicert" | "drummachines" | "avldrums"
-            | "kicker" => ("sampler", "Samplers and drums"),
+            "sampler" | "slicert" | "kicker" => ("sampler", "Samplers and drums"),
             _ => ("other", "Other"),
         }
     } else {

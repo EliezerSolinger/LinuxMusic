@@ -155,6 +155,8 @@ pub struct TrackView {
     /// the input's channels (1-based): none, one, or a stereo pair; for the input meter and the input menu
     pub input: Vec<i64>,
     pub instrument: Option<(NodeId, Arc<str>)>,
+    /// The instrument plays a drum kit (a row per piece): the Sampler on a kit, or a kit instrument of the fake core
+    pub kit: bool,
     pub outputs: Vec<OutputView>,
     pub items: Vec<ItemView>,
     pub automation: Vec<AutomationView>,
@@ -236,6 +238,11 @@ pub fn tracks(root: &Value) -> Vec<TrackView> {
                     .get("instrument")
                     .filter(|i| !i.is_null())
                     .and_then(|i| Some((id_of(i)?, text(i, "plugin")))),
+                kit: t.get("instrument").filter(|i| !i.is_null()).is_some_and(|i| match text(i, "plugin").as_ref() {
+                    "avldrums" | "drummachines" => true,
+                    "sampler" => i.get("state").and_then(|s| s.get("format")).and_then(Value::as_text) == Some("kit"),
+                    _ => false,
+                }),
                 outputs: list(t, "outputs")
                     .filter_map(|o| {
                         Some(OutputView {

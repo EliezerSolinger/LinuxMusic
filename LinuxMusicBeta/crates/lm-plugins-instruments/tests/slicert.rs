@@ -63,7 +63,7 @@ mod ab {
     use lm_dsp::slicert::{SlicerSample, SlicerSettings, SlicerVoice, release_ms, slice_for};
     use lm_plugin::instrument::GRID;
     use lm_plugin::testing::{note_off, note_on, use_setup};
-    use lm_plugins_instruments::audio_file_processor::Audio;
+    use lm_plugins_instruments::audio::Audio;
     use lm_plugins_instruments::slicert::{BASE_KEY, DESCRIPTOR, analyze};
     use lm_sys_samplerate::{Quality, Resampler};
 

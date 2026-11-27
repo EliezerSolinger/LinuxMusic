@@ -407,8 +407,7 @@ impl LocalPort {
         let instrument = page == BrowsePage::Instruments;
         let want = if instrument { lm_plugin::PluginKind::Instrument } else { lm_plugin::PluginKind::Effect };
         let mut cats: BTreeMap<&'static str, (&'static str, Vec<BrowseEntry>)> = BTreeMap::new();
-        for d in self.session.registry().entries().filter(|d| d.kind == want && !crate::deprecated::is_deprecated(d.id))
-        {
+        for d in self.session.registry().entries().filter(|d| d.kind == want) {
             let (key, label) = if d.third_party {
                 crate::browser::THIRD_PARTY_CATEGORY
             } else {
@@ -907,7 +906,6 @@ impl CorePort for LocalPort {
                 .session
                 .registry()
                 .entries()
-                .filter(|d| !crate::deprecated::is_deprecated(d.id))
                 .map(|d| crate::index::PluginItem {
                     id: d.id.to_owned(),
                     name: d.name.to_owned(),
@@ -1015,7 +1013,6 @@ impl CorePort for LocalPort {
         self.session
             .registry()
             .descriptors()
-            .filter(|d| !crate::deprecated::is_deprecated(d.id))
             .map(|d| lm_port::PluginInfo {
                 id: Arc::from(d.id),
                 name: Arc::from(d.name),
