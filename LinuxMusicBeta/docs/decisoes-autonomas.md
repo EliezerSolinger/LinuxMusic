@@ -2314,6 +2314,29 @@ derruba ou trava o processo principal nem a thread de áudio.
   filtro K com histograma por canal custaria CPU em todos os nós; o LUFS fica no master, onde já estava.
 - **Mudo do master no transporte (F-MIX-015).** O botão do transporte passou a ser o alto-falante (ícone), com a ação
   `transport.master_mute` que já existia.
+- **Pastas de plugins por formato (F-FX-032, F-CFG-015).** Preferência `plugins.folders.{lv2,clap,vst3,ladspa}`
+  (listas de texto, lidas com limite de 64 pastas de 4096 caracteres e só dos quatro formatos hospedados);
+  `HostConfig::format_paths` e `paths_for(formato)`: a varredura de um formato e o auxiliar de uma instância procuram as
+  pastas dele e as de `paths`, e o auxiliar de um grupo (qualquer formato) recebe todas. A página Plugins das
+  configurações escolhe o formato, lista, adiciona, remove e varre (`plugin.scan`). Não há pasta de GIG: o Sampler
+  único abre o arquivo que o usuário escolhe.
+- **VST2 e LADSPA (F-HOST-001/002, F-FX-031/033).** VST2 está cortado: as linhas pedem o desenho antigo e são
+  atendidas pelos quatro formatos do auxiliar. LADSPA fora do processo já existe (`lm-plugin-host/src/ladspa.rs`, só o
+  auxiliar carrega a biblioteca); os conjuntos de LADSPA que vinham com o legado ficam de fora, como decidido em P-03.
+- **LV2 com interface própria: editor genérico na 1.0.** A interface nativa de um LV2 pede `suil` com contêiner X11 (e os
+  módulos GTK/Qt dele), `ui:parent`, `ui:resize`, a interface de idle e a ponte de eventos de portas e átomos entre a
+  janela e o plugin. Nada disso se compila nem se exercita nesta máquina (macOS, sem `suil`), e uma ponte escrita às
+  cegas arriscaria derrubar o auxiliar do plugin. Fica o editor genérico (`has_window = false`: o plugin não oferece
+  janela, o núcleo mostra os parâmetros), que cobre todos os controles de porta. A interface nativa entra quando houver
+  uma máquina Linux para validar, como um módulo `lm-sys-suil` atrás do mesmo `backend::Plugin::window`.
+- **`save` sem silêncio no CLAP.** Antes, um `save` demorado segurava o plugin e a thread de áudio do auxiliar
+  respondia silêncio. No CLAP `state.save` é uma chamada da thread principal que pode correr junto com o `process`
+  (diferente de `activate`/`deactivate`, que continuam sob a trava); agora o auxiliar salva por um `StateSaver`
+  (`lm-sys-clap`) sem segurar o plugin e só o segura o tempo de ler os valores dos parâmetros. O `StateSaver` recusa
+  (`clap.state.gone`) depois da queda da instância, e a queda espera um `save` em andamento. **VST3 fica como está:** a
+  especificação não diz que `getState` pode correr com `process`, então o `save` do VST3 continua com o plugin
+  seguro (silêncio no bloco durante o `save`), e `restore` é exclusivo nos dois.
+
 ## Paridade 1.0 (27/11): projeto e navegador
 
 - **Exportar numa tela só.** O diálogo copiava o assistente de quatro páginas do legado (o quê, formatos, processamento,

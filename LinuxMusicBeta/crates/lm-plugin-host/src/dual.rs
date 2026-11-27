@@ -75,6 +75,10 @@ impl Plugin for Spread {
         self.inner.save()
     }
 
+    fn state_saver(&self) -> Option<crate::backend::StateSaver> {
+        self.inner.state_saver()
+    }
+
     fn restore(&mut self, chunk: &[u8]) -> Result<()> {
         self.inner.restore(chunk)
     }
@@ -173,6 +177,10 @@ impl Plugin for DualMono {
 
     fn save(&mut self) -> Result<Option<Vec<u8>>> {
         self.left.save()
+    }
+
+    fn state_saver(&self) -> Option<crate::backend::StateSaver> {
+        self.left.state_saver()
     }
 
     fn restore(&mut self, chunk: &[u8]) -> Result<()> {

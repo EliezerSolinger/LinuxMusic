@@ -103,6 +103,10 @@ fn a_gain_plays_exactly_and_its_latency_change_reaches_the_core() {
     let chunk = hosted.save_state(Duration::from_secs(5)).unwrap().expect("a state");
     let saved = hosted.saved(Duration::from_secs(5)).unwrap();
     assert!(saved.params.contains(&("p7".to_owned(), 2.0)));
+    // CLAP saves with the plugin not held: the block right after still plays (never the silence of a held plugin)
+    let start_frame = r.frame;
+    let out = r.block(&mut proxy, ramp, &[], true);
+    assert_eq!(out[0][20], ramp(start_frame + 10, 0) * 2.0, "playing after the save");
     drop(proxy);
     drop(hosted);
     let mut req = request(&p[0], &[]);

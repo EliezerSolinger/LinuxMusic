@@ -304,6 +304,8 @@ fn gui_reply(state: &WindowState) -> Value {
 
 /// One plugin instance the helper runs: its plugin, its shared block and its audio thread
 struct Slot {
+    /// Saves without the plugin held (CLAP). Declared first: it is dropped before the plugin it points into
+    saver: Option<crate::backend::StateSaver>,
     plugin: Arc<Shared>,
     shm: Arc<SharedMemory>,
     quit: Arc<AtomicBool>,
@@ -376,6 +378,7 @@ fn load_slot(load: &Value, id: i64, paths: &[PathBuf], fds: &FdChannel) -> Resul
     shm.words()[w::LATENCY].store(plugin.latency(), Ordering::Release);
     shm.words()[w::STATUS].store(STATUS_READY, Ordering::Release);
     let shm = Arc::new(shm);
+    let saver = plugin.state_saver();
     let plugin = Arc::new(Shared::new(plugin));
     let quit = Arc::new(AtomicBool::new(false));
     let audio = {
@@ -385,13 +388,26 @@ fn load_slot(load: &Value, id: i64, paths: &[PathBuf], fds: &FdChannel) -> Resul
             .spawn(move || audio_loop(shm, layout, plugin, quit))
             .map_err(|e| Error::new("plugin_host.thread").arg("error", e.to_string()))?
     };
-    Ok((Slot { plugin, shm, quit, audio: Some(audio) }, ready))
+    Ok((Slot { saver, plugin, shm, quit, audio: Some(audio) }, ready))
 }
 
 /// The answer to one control message for one instance (`None`: the message was `quit`)
 fn answer(slot: &Slot, m: &Value, gui_used: &mut bool) -> Option<Value> {
     let plugin = &slot.plugin;
     Some(match m.get("t").and_then(Value::as_text) {
+        // A format that can save while the audio thread processes does it without the plugin held, so the plugin keeps
+        // playing during a slow save; the parameters are then read in the short hold
+        Some("save") if slot.saver.is_some() => {
+            let saved = slot.saver.as_ref().map(|s| s()).unwrap_or(Ok(None));
+            match (saved, plugin.main(CONTROL_WAIT)) {
+                (Ok(c), Ok(p)) => Value::object([
+                    ("t", Value::text("state")),
+                    ("chunk", c.map_or(Value::NULL, |c| Value::text(hex(&c)))),
+                    ("params", param_values(p.as_ref())),
+                ]),
+                (Err(e), _) | (_, Err(e)) => error(&e),
+            }
+        }
         Some("save") => {
             let mut p = match plugin.main(CONTROL_WAIT) {
                 Ok(p) => p,

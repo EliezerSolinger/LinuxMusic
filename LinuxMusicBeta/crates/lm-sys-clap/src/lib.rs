@@ -701,6 +701,42 @@ const MAX_OUT_EVENTS: usize = 1024;
 /// The most events in one block
 pub const MAX_EVENTS: usize = 4096;
 
+/// The state extension of one plugin, to save from the main thread with no `&mut Instance` ([`Instance::state_saver`])
+pub struct StateSaver {
+    _lib: Arc<Library>,
+    plugin: *const ffi::clap_plugin,
+    state: *const ffi::clap_plugin_state,
+    /// Read-held by a save, write-taken (and set false) by the instance's drop
+    alive: Arc<std::sync::RwLock<bool>>,
+}
+
+impl std::fmt::Debug for StateSaver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StateSaver").finish_non_exhaustive()
+    }
+}
+
+// SAFETY: the pointers are the plugin's and its state extension's, which CLAP lets the main thread call while the
+// audio thread processes; `alive` keeps every use inside the instance's life
+unsafe impl Send for StateSaver {}
+unsafe impl Sync for StateSaver {}
+
+impl StateSaver {
+    /// The plugin's state (main thread)
+    pub fn save(&self) -> Result<Option<Vec<u8>>> {
+        let alive = self.alive.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !*alive {
+            return Err(err("clap.state.gone"));
+        }
+        // SAFETY: the extension was non-null when the handle was made and lives as long as the plugin (`alive`)
+        let Some(save) = unsafe { self.state.as_ref() }.and_then(|s| s.save) else { return Ok(None) };
+        let mut out: Vec<u8> = Vec::new();
+        let stream = ffi::clap_ostream { ctx: (&raw mut out).cast(), write: Some(stream_write) };
+        // SAFETY: main thread; the stream and its ctx live for the call
+        if unsafe { save(self.plugin, &stream) } { Ok(Some(out)) } else { Err(err("clap.state.save")) }
+    }
+}
+
 /// One plugin made, activated, and ready to process
 pub struct Instance {
     _lib: Arc<Library>,
@@ -728,6 +764,8 @@ pub struct Instance {
     in_bufs: Vec<ffi::clap_audio_buffer>,
     out_bufs: Vec<ffi::clap_audio_buffer>,
     steady: i64,
+    /// Closed by the drop before the plugin is destroyed (see [`StateSaver`])
+    alive: Arc<std::sync::RwLock<bool>>,
 }
 
 // SAFETY: a CLAP plugin may be called from different threads as long as its thread classes are kept: `Instance`
@@ -808,6 +846,7 @@ impl Instance {
             in_bufs: Vec::new(),
             out_bufs: Vec::new(),
             steady: 0,
+            alive: Arc::new(std::sync::RwLock::new(true)),
         };
         // SAFETY: a plugin from create_plugin: `init` first, on the main thread
         let ok = unsafe { (*plugin).init.is_some_and(|init| init(plugin)) };
@@ -1215,6 +1254,25 @@ impl Instance {
         if unsafe { save(self.plugin, &stream) } { Ok(Some(out)) } else { Err(err("clap.state.save")) }
     }
 
+    /// A handle that saves the plugin's state without the instance, so the main thread can save while the audio
+    /// thread is inside [`Instance::process`] (CLAP's `state.save` is a main-thread call that the plugin may overlap
+    /// with `process`, unlike `activate` and `deactivate`).
+    ///
+    /// The handle is for the main thread (as `load_state` and `idle` are, so they never overlap it); a handle that
+    /// outlives the instance answers `clap.state.gone`: the instance's drop waits for a save in flight and then
+    /// closes the handle before the plugin is destroyed
+    pub fn state_saver(&self) -> Option<StateSaver> {
+        if self.ext.state.is_null() {
+            return None;
+        }
+        Some(StateSaver {
+            _lib: Arc::clone(&self._lib),
+            plugin: self.plugin,
+            state: self.ext.state,
+            alive: Arc::clone(&self.alive),
+        })
+    }
+
     /// Gives the plugin a state (main thread); the parameters' values follow it
     pub fn load_state(&mut self, chunk: &[u8]) -> Result<()> {
         // SAFETY: null or the plugin's state extension
@@ -1390,6 +1448,8 @@ unsafe extern "C" fn stream_read(stream: *const ffi::clap_istream, buffer: *mut 
 
 impl Drop for Instance {
     fn drop(&mut self) {
+        // A save in flight finishes first; the handles refuse from now on
+        *self.alive.write().unwrap_or_else(std::sync::PoisonError::into_inner) = false;
         if self.processing {
             // CLAP wants stop_processing on the audio thread: the instance is being dropped after the audio side
             // ended, so this thread acts as it

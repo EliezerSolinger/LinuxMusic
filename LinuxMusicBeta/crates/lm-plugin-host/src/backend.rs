@@ -128,6 +128,9 @@ impl WindowState {
     }
 }
 
+/// Saves a plugin's state without holding the plugin (see [`Plugin::state_saver`])
+pub type StateSaver = Box<dyn Fn() -> Result<Option<Vec<u8>>> + Send + Sync>;
+
 /// A plugin instance in the helper
 pub trait Plugin: Send {
     fn params(&self) -> &[Param];
@@ -149,6 +152,13 @@ pub trait Plugin: Send {
         transport: &Transport,
     );
     fn save(&mut self) -> Result<Option<Vec<u8>>>;
+    /// For a format that lets the main thread save while the audio thread processes (CLAP): a function that saves
+    /// without the plugin held, so a slow `save` does not silence it. Used from the main thread only, and dropped
+    /// before the plugin. The other formats answer `None` and are saved with the plugin held (the audio thread
+    /// answers silence meanwhile)
+    fn state_saver(&self) -> Option<StateSaver> {
+        None
+    }
     fn restore(&mut self, chunk: &[u8]) -> Result<()>;
     /// Shows, hides or resizes the plugin's own window (main thread). A plugin without one answers
     /// [`WindowState::none`] with the reason

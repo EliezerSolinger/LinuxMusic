@@ -309,6 +309,11 @@ impl Plugin for Clap {
         self.inst.save_state()
     }
 
+    fn state_saver(&self) -> Option<crate::backend::StateSaver> {
+        let saver = self.inst.state_saver()?;
+        Some(Box::new(move || saver.save()))
+    }
+
     fn restore(&mut self, chunk: &[u8]) -> Result<()> {
         self.inst.load_state(chunk)
     }
