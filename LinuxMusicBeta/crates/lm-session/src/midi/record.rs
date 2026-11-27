@@ -566,8 +566,13 @@ impl Session {
                         None
                     }
                 };
-                if let Some(f) = file.as_mut() {
-                    let _ = f.write_all(header(&info).as_bytes()).and_then(|_| f.sync_data());
+                if let Some(f) = file.as_mut()
+                    && let Err(err) = f.write_all(header(&info).as_bytes()).and_then(|_| f.sync_data())
+                {
+                    // A log without its header cannot be recovered: drop it, the take still records in memory
+                    self.midi_log_failed(&err);
+                    file = None;
+                    let _ = std::fs::remove_file(&path);
                 }
                 self.midi.recorder.take =
                     Some(Take { info, path, file, routes, events: Vec::new(), unsynced: String::new(), last_sync: 0 });
@@ -584,7 +589,9 @@ impl Session {
                     t.info.stop_sample = sample;
                     t.info.stop_frame = frame;
                     t.unsynced.push_str(&format!("stop {sample} {frame}\n"));
-                    sync(&mut t);
+                    if let Err(err) = sync(&mut t) {
+                        self.midi_log_failed(&err);
+                    }
                     self.midi.recorder.ready =
                         Some(Ready { info: t.info, events: t.events, path: t.path, recovered: false });
                 }
@@ -622,11 +629,15 @@ impl Session {
 
     /// Each pump: the log reaches the disk every second; a take without audio enters the tree by itself
     pub(crate) fn record_pump(&mut self, now: HostTime) {
-        if let Some(t) = self.midi.recorder.take.as_mut()
-            && now.0.saturating_sub(t.last_sync) >= SECOND
-        {
-            t.last_sync = now.0;
-            sync(t);
+        let failed = match self.midi.recorder.take.as_mut() {
+            Some(t) if now.0.saturating_sub(t.last_sync) >= SECOND => {
+                t.last_sync = now.0;
+                sync(t).err()
+            }
+            _ => None,
+        };
+        if let Some(err) = failed {
+            self.midi_log_failed(&err);
         }
         // With audio, the MIDI take joins the audio takes' transaction (`commit_recording`); without, it goes alone
         if self.midi.recorder.ready.is_some() && self.recordings.is_empty() {
@@ -635,6 +646,17 @@ impl Session {
                 self.midi_commit_alone(r);
             }
         }
+    }
+
+    /// The crash-safety log stopped writing: say so once; the events stay in memory and still reach the tree
+    fn midi_log_failed(&mut self, err: &std::io::Error) {
+        self.notices.push(
+            "midi.record.log_failed",
+            vec![("error", Value::text(err.to_string()))],
+            lm_port::Severity::Warning,
+            None,
+            Vec::new(),
+        );
     }
 
     fn midi_commit_alone(&mut self, ready: Ready) {
@@ -695,19 +717,50 @@ impl Session {
 }
 
 /// Appends what waits to the log and `fsync`s it
-fn sync(t: &mut Take) {
+///
+/// On failure the log is closed (a half-written line would corrupt a retry) and the error is returned for the
+/// caller to report; the events remain in `t.events`, so the take itself is not lost
+fn sync(t: &mut Take) -> std::io::Result<()> {
     if t.unsynced.is_empty() {
-        return;
+        return Ok(());
     }
-    if let Some(f) = t.file.as_mut() {
-        let _ = f.write_all(t.unsynced.as_bytes()).and_then(|_| f.sync_data());
-    }
+    let r = match t.file.as_mut() {
+        Some(f) => f.write_all(t.unsynced.as_bytes()).and_then(|_| f.sync_data()),
+        None => Ok(()),
+    };
     t.unsynced.clear();
+    if r.is_err() {
+        t.file = None;
+    }
+    r
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_log_write_is_reported_and_keeps_the_events() {
+        let dir = std::env::temp_dir().join(format!("lm-midilog-{}", lm_doc::new_uuid()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("x.midilog");
+        std::fs::write(&path, "").unwrap();
+        // A read-only handle makes every write fail
+        let file = File::open(&path).unwrap();
+        let mut t = Take {
+            info: info(),
+            path: path.clone(),
+            file: Some(file),
+            routes: Vec::new(),
+            events: vec![Rec { track: t(), sample: 1, frame: 1, bytes: [0x90, 60, 100] }],
+            unsynced: "1 1 0 144 60 100\n".to_owned(),
+            last_sync: 0,
+        };
+        assert!(sync(&mut t).is_err());
+        assert!(t.file.is_none());
+        assert_eq!(t.events.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn map() -> TempoMap {
         TempoMap::constant(
