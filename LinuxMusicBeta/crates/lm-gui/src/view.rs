@@ -101,6 +101,90 @@ pub fn meter_fill(peak: f32) -> f32 {
     if peak <= 0.001 { 0.0 } else { ((20.0 * peak.log10() + 60.0) / 60.0).clamp(0.0, 1.0) }
 }
 
+/// What a channel's meter reads (the preference `interface.channelMeter`): the peak, or the RMS with the ballistics
+/// of a VU meter or of a K-system meter (K-20, K-14, K-12)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MeterMode {
+    Peak,
+    Rms,
+    Vu,
+    K20,
+    K14,
+    K12,
+}
+
+impl MeterMode {
+    pub const ALL: [MeterMode; 6] =
+        [MeterMode::Peak, MeterMode::Rms, MeterMode::Vu, MeterMode::K20, MeterMode::K14, MeterMode::K12];
+
+    /// The mode a preference value names (anything else reads the peak)
+    pub fn from_key(key: &str) -> MeterMode {
+        Self::ALL.into_iter().find(|m| m.key() == key).unwrap_or(MeterMode::Peak)
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            MeterMode::Peak => "peak",
+            MeterMode::Rms => "rms",
+            MeterMode::Vu => "vu",
+            MeterMode::K20 => "k20",
+            MeterMode::K14 => "k14",
+            MeterMode::K12 => "k12",
+        }
+    }
+
+    /// The short name on the desk
+    pub fn label(self) -> &'static str {
+        match self {
+            MeterMode::Peak => "PEAK",
+            MeterMode::Rms => "RMS",
+            MeterMode::Vu => "VU",
+            MeterMode::K20 => "K-20",
+            MeterMode::K14 => "K-14",
+            MeterMode::K12 => "K-12",
+        }
+    }
+
+    /// The next one in the cycle
+    pub fn next(self) -> MeterMode {
+        let at = Self::ALL.iter().position(|m| *m == self).unwrap_or(0);
+        Self::ALL[(at + 1) % Self::ALL.len()]
+    }
+
+    /// Which smoothing of the mean square it reads (`Core::rms_sides`): 0 for RMS, 1 for VU, 2 for K
+    pub fn window(self) -> usize {
+        match self {
+            MeterMode::Peak | MeterMode::Rms => 0,
+            MeterMode::Vu => 1,
+            _ => 2,
+        }
+    }
+
+    /// Added to the level in dBFS to read the mode's unit: 0 VU is -18 dBFS; the K meters read the RMS of a sine
+    /// (3 dB above its mean square) from 0 at -20, -14 or -12 dBFS
+    pub fn offset(self) -> f32 {
+        match self {
+            MeterMode::Peak | MeterMode::Rms => 0.0,
+            MeterMode::Vu => 18.0,
+            MeterMode::K20 => 23.0,
+            MeterMode::K14 => 17.0,
+            MeterMode::K12 => 15.0,
+        }
+    }
+
+    /// Whether the reading is past the mode's 0 (red): the peak at full scale, the VU and K meters above their zero
+    pub fn over(self, shown_db: f32) -> bool {
+        match self {
+            MeterMode::Peak => shown_db > -0.1,
+            MeterMode::Rms => shown_db > -3.0,
+            _ => shown_db > 0.0,
+        }
+    }
+}
+
+/// The time constants (s) of the three mean-square smoothings: RMS (300 ms), VU (300 ms to 99 %) and K (600 ms)
+pub const RMS_TAUS: [f32; 3] = [0.3, 0.065, 0.6];
+
 /// The bar falls at ~20 dB/s and rises at once
 pub fn meter_ballistics(shown: f32, target: f32, dt: f32) -> f32 {
     if target >= shown { target } else { (shown - dt * 20.0 / 60.0).max(target) }
@@ -127,6 +211,20 @@ pub fn format_timecode(samples: f64, rate: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_meter_modes_cycle_and_read_from_their_own_zero() {
+        let mut m = MeterMode::Peak;
+        for _ in 0..MeterMode::ALL.len() {
+            assert_eq!(MeterMode::from_key(m.key()), m);
+            m = m.next();
+        }
+        assert_eq!(m, MeterMode::Peak);
+        assert_eq!(MeterMode::from_key("nonsense"), MeterMode::Peak);
+        // -18 dBFS of RMS is 0 VU; -20 dBFS of sine RMS is 0 on K-20
+        assert!(!MeterMode::Vu.over(-18.0 + MeterMode::Vu.offset()));
+        assert!(MeterMode::K20.over(-17.0 + MeterMode::K20.offset() - 3.0 + 0.1));
+    }
 
     #[test]
     fn the_knob_law_round_trips() {

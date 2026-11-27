@@ -214,6 +214,9 @@ pub fn telemetry_to(t: &TelemetryView, only: Option<&[NodeId]>) -> Vec<u8> {
         for p in &m.peak[..ch] {
             o.u16(quantize(*p));
         }
+        for p in &m.rms[..ch] {
+            o.u16(quantize(*p));
+        }
     }
     o.0
 }
@@ -248,6 +251,9 @@ pub fn telemetry_from(b: &[u8], t: &mut TelemetryView) -> Result<()> {
         let dead = i.u8()? != 0;
         let mut m = Meter { channels: ch as u8, dead, ..Meter::default() };
         for p in m.peak.iter_mut().take(ch) {
+            *p = dequantize(i.u16()?);
+        }
+        for p in m.rms.iter_mut().take(ch) {
             *p = dequantize(i.u16()?);
         }
         meters.insert(id, m);

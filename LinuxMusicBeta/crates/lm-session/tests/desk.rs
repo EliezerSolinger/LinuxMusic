@@ -75,6 +75,21 @@ fn set(s: &mut Session, id: NodeId, key: &str, v: Value) {
     settle(s);
 }
 
+/// WIDTH: 0 sums the hard-left input to mono (half on each side), 200 doubles the side (the right goes negative)
+#[test]
+fn the_channel_width_scales_the_side() {
+    let dir = TempDir::new("desk");
+    let mut s = session(&dir);
+    let c = setup(&mut s, &dir);
+    let (l0, _) = render(&s, &dir, "plain.wav");
+    set(&mut s, c, "width", Value::real(0.0).expect("r"));
+    let (l, r) = render(&s, &dir, "narrow.wav");
+    assert!((peak(&l) - peak(&l0) / 2.0).abs() < 1.0e-3 && (peak(&r) - peak(&l0) / 2.0).abs() < 1.0e-3, "width 0");
+    set(&mut s, c, "width", Value::real(200.0).expect("r"));
+    let (l, r) = render(&s, &dir, "wide.wav");
+    assert!((peak(&l) - peak(&l0) * 1.5).abs() < 1.0e-2 && (peak(&r) - peak(&l0) / 2.0).abs() < 1.0e-2, "width 200");
+}
+
 #[test]
 fn trim_mono_phase_swap_and_the_pre_faders() {
     let dir = TempDir::new("desk");

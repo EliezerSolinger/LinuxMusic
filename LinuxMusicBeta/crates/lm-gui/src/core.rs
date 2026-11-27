@@ -24,6 +24,8 @@ pub struct Core {
     pub bench: Bench,
     /// The meters as drawn: the latest telemetry with the fall smoothed per frame (H16), by node
     pub shown: HashMap<NodeId, f32>,
+    /// The meters' mean squares smoothed three ways (`view::RMS_TAUS`), per side, by node
+    integrated: HashMap<NodeId, [[f32; 2]; 3]>,
     /// How many times the pump ran (the tests check H2 with it)
     pub pumps: u64,
     /// The interface's actions mapped MIDI controls reached (I-21.2), for the workspace to run
@@ -76,6 +78,7 @@ impl Core {
             port,
             bench,
             shown: HashMap::new(),
+            integrated: HashMap::new(),
             pumps: 0,
             midi_ui: Vec::new(),
             midi_seen: (0, None),
@@ -320,6 +323,25 @@ impl Core {
             }
         }
         self.shown = next;
+        let mut squares = HashMap::with_capacity(t.meters.len());
+        for (id, m) in &t.meters {
+            let last = (m.channels as usize).max(1) - 1;
+            let mut state = self.integrated.get(id).copied().unwrap_or_default();
+            for (w, tau) in view::RMS_TAUS.iter().enumerate() {
+                let keep = (-dt / tau).exp();
+                for (side, s) in state[w].iter_mut().enumerate() {
+                    let ms = m.rms[side.min(last)].powi(2);
+                    *s = ms + (*s - ms) * keep;
+                }
+            }
+            squares.insert(*id, state);
+        }
+        self.integrated = squares;
+    }
+
+    /// A node's RMS (linear) per side, smoothed as `window` says (`MeterMode::window`)
+    pub fn rms_sides(&self, id: NodeId, window: usize) -> [f32; 2] {
+        self.integrated.get(&id).map_or([0.0; 2], |s| [s[window.min(2)][0].sqrt(), s[window.min(2)][1].sqrt()])
     }
 
     /// A node's meter as drawn (0..1 of the bar)

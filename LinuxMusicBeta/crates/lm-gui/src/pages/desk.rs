@@ -329,8 +329,10 @@ pub fn fader(t: f64, levels: [f32; 2], role: Role, w: f32) -> impl IntoElement {
 }
 
 /// The peak level above the fader (PeakIndicator): the highest peak since the last click, in dB
-pub fn peak_indicator(id: impl Into<gpui::ElementId>, db: f32) -> Stateful<Div> {
-    let text = if db <= -60.0 { "-inf".to_string() } else { format!("{db:.1}") };
+pub fn peak_indicator(id: impl Into<gpui::ElementId>, db: f32, mode: crate::view::MeterMode) -> Stateful<Div> {
+    // the held level in the mode's unit (VU and K read from their own zero)
+    let text = if db <= -60.0 { "-inf".to_string() } else { format!("{:.1}", db + mode.offset()) };
+    let red = mode.over(db + mode.offset());
     div()
         .id(id.into())
         .w(px(PEAK_W))
@@ -340,7 +342,7 @@ pub fn peak_indicator(id: impl Into<gpui::ElementId>, db: f32) -> Stateful<Div> 
         .bg(rgb(col::PEAK_BACKGROUND))
         .text_size(px(8.))
         .line_height(px(12.))
-        .text_color(rgb(if db > -0.1 { col::LED_RED } else { col::TEXT }))
+        .text_color(rgb(if red { col::LED_RED } else { col::TEXT }))
         .cursor_pointer()
         .child(text)
 }

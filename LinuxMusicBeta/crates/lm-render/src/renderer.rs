@@ -117,6 +117,9 @@ struct Slot {
     core: Option<Box<NodeCore>>,
     dead: bool,
     peak: [f32; METER_CHANNELS],
+    /// Sum of squares per channel and the frames it covers, since the last telemetry frame (the meter's RMS)
+    squares: [f32; METER_CHANNELS],
+    square_frames: u32,
     channels: u8,
     mute_gain: f32,
     tail_since: Option<u64>,
@@ -133,6 +136,8 @@ impl Slot {
             core: None,
             dead: false,
             peak: [0.0; METER_CHANNELS],
+            squares: [0.0; METER_CHANNELS],
+            square_frames: 0,
             channels: 0,
             mute_gain: 1.0,
             tail_since: None,
@@ -2633,8 +2638,12 @@ impl Renderer {
                 && let Some(held) = slot.peak.get_mut(ch)
             {
                 *held = held.max(peak);
+                if let Some(sum) = slot.squares.get_mut(ch) {
+                    *sum += io.buffer[o..o + n].iter().filter(|x| x.is_finite()).map(|x| x * x).sum::<f32>();
+                }
             }
         }
+        slot.square_frames = slot.square_frames.saturating_add(n as u32);
         slot.channels = metered as u8;
         if tail && !slot.tail_done {
             let since = *slot.tail_since.get_or_insert(self.frame);
@@ -3056,8 +3065,14 @@ impl Renderer {
             m.generation = s.generation;
             m.channels = s.channels;
             m.peak = s.peak;
+            let frames = s.square_frames.max(1) as f32;
+            for (r, sum) in m.rms.iter_mut().zip(s.squares.iter()) {
+                *r = (sum / frames).sqrt();
+            }
             m.dead = s.dead;
             s.peak = [0.0; METER_CHANNELS];
+            s.squares = [0.0; METER_CHANNELS];
+            s.square_frames = 0;
         }
         // Every bound parameter's value as it plays (automation, the hand, MIDI): the session's MIDI feedback reads
         // them (I-21.3), the interface shows automated values

@@ -2296,3 +2296,21 @@ derruba ou trava o processo principal nem a thread de áudio.
   devolve o mapa do núcleo, guardado por revisão (`lm_port::TempoCache`: refeito só se os pontos, a taxa ou o ppq mudam);
   a leitura é uma só (`lm_port::tempo_map`, a mesma do `lm-session`). `model::tempo_map(root)` ficou só para quem recebeu
   uma árvore sem o port (instantâneos de exportação) e chama a mesma função do núcleo.
+
+## Paridade 1.0 (27/11): mixer e hospedagem
+
+- **Largura do canal (F-MIX-034).** Campo opcional `width` (0 a 200 %, ausente = 100) no canal e parâmetro `width` do
+  rack (automatizável); roda no estágio de entrada, depois do MONO, em médio/lateral com rampa por bloco. Na mesa
+  analógica o knob WIDTH divide a linha do PAN, sem mudar a altura da tira.
+- **Botão PRE do envio (F-MIX-020).** Um botão PRE aceso ao lado da seta do envio do canal selecionado (o campo `pre`
+  do envio); o item do menu continua.
+- **Retornos no projeto novo (F-MIX-023).** `Document::new_desk_project` (o que o programa usa em projeto novo, não os
+  testes de `lm-doc`) nasce com os canais "FX 1" e "FX 2" marcados `return: true`; a marca faz o canal aparecer como
+  retorno antes de alguém enviar a ele (campo opcional, sem versão nova).
+- **Medidor do canal (F-MIX-070, P-22).** O motor publica também o RMS por canal de cada nó (`Meter::rms`, também no
+  fio do `lm-remote`); a GUI suaviza o quadrado médio de três jeitos (RMS 300 ms, VU 65 ms de constante, K 600 ms) e
+  lê em PEAK, RMS, VU, K-20, K-14 ou K-12 (botão no alto da coluna direita, preferência `interface.channelMeter`). O
+  VU do master passa a ter a balística de VU de verdade. **LUFS por canal não existe:** BS.1770 mede o programa, e um
+  filtro K com histograma por canal custaria CPU em todos os nós; o LUFS fica no master, onde já estava.
+- **Mudo do master no transporte (F-MIX-015).** O botão do transporte passou a ser o alto-falante (ícone), com a ação
+  `transport.master_mute` que já existia.

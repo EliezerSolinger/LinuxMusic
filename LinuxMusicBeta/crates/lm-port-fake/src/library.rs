@@ -411,6 +411,7 @@ pub fn preferences() -> Value {
                 ("loopEditMode", Value::text("buttons")),
                 ("scrollMode", Value::text("page")),
                 ("stopBehavior", Value::text("origin")),
+                ("channelMeter", Value::text("peak")),
             ]),
         ),
         ("metronome", o(vec![("when", Value::text("recording")), ("countInBars", Value::int(1))])),

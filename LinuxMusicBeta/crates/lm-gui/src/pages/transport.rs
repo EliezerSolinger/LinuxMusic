@@ -427,7 +427,8 @@ pub fn render(ws: &Workspace, position: Position, cx: &Context<Workspace>) -> im
         .child(level_bar("cpu", "CPU", load))
         .child(level_bar("out", "OUT", out_level))
         .child(
-            tbutton("master-mute", tr("Master"), master_muted, THEME.red)
+            tbutton("master-mute", "", master_muted, THEME.red)
+                .child(icon(if master_muted { "speaker_slash" } else { "speaker" }))
                 .debug_selector(|| "master-mute".into())
                 .on_click(cx.listener(|ws, _, _, cx| toggle_master_mute(ws, cx))),
         )

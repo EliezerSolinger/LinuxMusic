@@ -298,11 +298,36 @@ impl Document {
 
     /// A new, empty project: the master `m:0`, the default tempo map, a new uuid and seed
     pub fn new_project(registry: Arc<SchemaRegistry>, options: Options) -> Result<Document> {
-        let root = registry.defaults(PROJECT)?;
+        Self::new_project_with(registry, options, false)
+    }
+
+    /// A new project the way the program starts one: [`Document::new_project`] and the two effect returns, "FX 1" and
+    /// "FX 2" (P-19), that every channel's FX knobs send to
+    pub fn new_desk_project(registry: Arc<SchemaRegistry>, options: Options) -> Result<Document> {
+        Self::new_project_with(registry, options, true)
+    }
+
+    fn new_project_with(registry: Arc<SchemaRegistry>, options: Options, returns: bool) -> Result<Document> {
+        let mut root = registry.defaults(PROJECT)?;
+        let mut issued = 1u64;
+        if returns {
+            let mut channels = Vec::new();
+            for n in 1..=2u64 {
+                channels.push(
+                    registry
+                        .defaults(types::CHANNEL)?
+                        .with("id", Value::text(NodeId::new(crate::schemas::KIND_CHANNEL, n)?.to_string()))
+                        .with("name", Value::text(format!("FX {n}")))
+                        .with("return", Value::bool(true)),
+                );
+                issued = n + 1;
+            }
+            root = root.with_path(&[PathStep::key("mixer"), PathStep::key("channels")], Value::list(channels))?;
+        }
         let uuid = new_uuid();
         let seed = i64::from_str_radix(&uuid.replace('-', "")[..12], 16).unwrap_or(0);
         let root = root
-            .with_path(&[PathStep::key("meta"), PathStep::key("issued")], Value::int(1))?
+            .with_path(&[PathStep::key("meta"), PathStep::key("issued")], Value::int(issued as i64))?
             .with_path(&[PathStep::key("meta"), PathStep::key("uuid")], Value::text(uuid))?
             .with_path(&[PathStep::key("project"), PathStep::key("seed")], Value::int(seed))?
             .with_path(

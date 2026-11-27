@@ -166,6 +166,8 @@ struct Pair {
     monitoring: Monitoring,
     /// The MONO switch's crossfade: the mix of the last frame (legacy `m_monoMix`)
     mono_mix: f32,
+    /// The WIDTH knob's ramp: the width of the last frame (1 is untouched)
+    width_now: f32,
     correlation: Correlation,
     /// The master's loudness meter (pair 0 of a master segment that ends the chain), with its split buffers
     loudness: Option<Box<lm_dsp::loudness::Loudness>>,
@@ -258,6 +260,7 @@ impl RackProcessor {
                 monitoring: Monitoring::default(),
                 // Built with MONO on, it starts summed (a change while playing is adopted and crossfades)
                 mono_mix: if choices.mono { 1.0 } else { 0.0 },
+                width_now: 1.0,
                 correlation: Correlation::default(),
                 loudness: (master && i == 0 && stages.contains(&Stage::MasterTransformer))
                     .then(|| Box::new(lm_dsp::loudness::Loudness::new(rate))),
@@ -358,6 +361,7 @@ impl RackProcessor {
         let bus = self.bus_settings();
         let c = self.choices;
         let trim = self.value("channel", "trim");
+        let width = (self.value("channel", "width") / 100.0).clamp(0.0, 2.0);
         let pre = [self.value("channel", "preLeft"), self.value("channel", "preRight")];
         let level = self.value("monitor", "level");
         let tolerance = self.tolerance;
@@ -397,6 +401,16 @@ impl RackProcessor {
                         }
                     }
                     p.mono_mix = target;
+                    // WIDTH: the side signal scaled, ramped over the call so a turn does not click
+                    if width != 1.0 || p.width_now != 1.0 {
+                        let count = frames.len().max(1) as f32;
+                        for (i, f) in frames.iter_mut().enumerate() {
+                            let w = p.width_now + (width - p.width_now) * (i + 1) as f32 / count;
+                            let (mid, side) = ((f[0] + f[1]) * 0.5, (f[0] - f[1]) * 0.5 * w);
+                            *f = [mid + side, mid - side];
+                        }
+                    }
+                    p.width_now = width;
                 }
                 Stage::Polarity => {
                     let phase = if c.phase_invert { -1.0 } else { 1.0 };

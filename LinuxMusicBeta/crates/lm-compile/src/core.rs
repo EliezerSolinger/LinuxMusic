@@ -1675,14 +1675,14 @@ impl CompilerCore {
             // The legacy strip's channel-level controls (optional fields) for the stages that run them, and the
             // machine's monitoring for the master's last segment
             let mut channel_controls = Value::empty_object();
-            for k in ["trim", "mono", "phaseInvert", "swap", "preLeft", "preRight"] {
+            for k in ["trim", "mono", "width", "phaseInvert", "swap", "preLeft", "preRight"] {
                 if let Some(v) = c.value.get(k) {
                     channel_controls = channel_controls.with(k, v.clone());
                 }
             }
             let has = |k: &str| channel_controls.get(k).is_some();
             let on = |k: &str| channel_controls.get(k).and_then(Value::as_bool) == Some(true);
-            let wants_input = !c.master && (has("trim") || on("mono"));
+            let wants_input = !c.master && (has("trim") || has("width") || on("mono"));
             let wants_polarity = !c.master && (on("phaseInvert") || on("swap"));
             let wants_pre = c.master && (has("preLeft") || has("preRight"));
             let monitor = if c.master { env.monitor.clone() } else { None };

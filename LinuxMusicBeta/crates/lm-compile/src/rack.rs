@@ -35,8 +35,8 @@ pub enum Stage {
     /// Master: the output transformer, after the fader (`transformer`), then the monitoring (LEVEL, DIM, CUT, MONO,
     /// SIDE: the machine's, `Environment::monitor`, never in an export)
     MasterTransformer,
-    /// Channel: the legacy strip's input, TRIM and MONO, before the rack and every insert. Built in both desk modes,
-    /// when the channel has a `trim` or `mono` is on
+    /// Channel: the legacy strip's input, TRIM and MONO (and the channel's stereo WIDTH), before the rack and every
+    /// insert. Built in both desk modes, when the channel has a `trim` or `width` or `mono` is on
     Input,
     /// Channel: phase invert and swap, after the effects and before the fader (after the pre-fader tap). Built in both
     /// desk modes, when `phaseInvert` or `swap` is on
@@ -161,7 +161,10 @@ fn extra_params(master: bool) -> Vec<RackParam> {
             p("monitor.level", "monitor", "level", Stage::MasterTransformer, -60.0, 6.0, 0.0),
         ]
     } else {
-        vec![p("trim", "channel", "trim", Stage::Input, -60.0, 24.0, 0.0)]
+        vec![
+            p("trim", "channel", "trim", Stage::Input, -60.0, 24.0, 0.0),
+            p("width", "channel", "width", Stage::Input, 0.0, 200.0, 100.0),
+        ]
     }
 }
 

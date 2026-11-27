@@ -53,6 +53,8 @@ pub fn defaults() -> Value {
                 ("loopEditMode", Value::text("buttons")),
                 ("scrollMode", Value::text("page")),
                 ("stopBehavior", Value::text("origin")),
+                // What a mixer channel's meter reads: peak, rms, vu, k20, k14 or k12
+                ("channelMeter", Value::text("peak")),
             ]),
         ),
         ("metronome", o(vec![("when", Value::text("recording")), ("countInBars", Value::int(1))])),

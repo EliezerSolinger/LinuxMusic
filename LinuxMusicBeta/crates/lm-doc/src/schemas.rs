@@ -619,6 +619,12 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::new("mono", FieldKind::Bool).optional())
             .field(FieldSpec::new("phaseInvert", FieldKind::Bool).optional())
             .field(FieldSpec::new("swap", FieldKind::Bool).optional())
+            // `width` is the stereo width in percent (mid/side; 0 is mono, 100 is untouched, 200 doubles the side);
+            // absent is 100
+            .field(FieldSpec::new("width", FieldKind::Real { min: 0.0, max: 200.0 }).optional())
+            // `return` marks an effect return (P-19): a channel made to receive sends, shown as one before anything
+            // sends to it; absent is false (a channel others send to is a return anyway)
+            .field(FieldSpec::new("return", FieldKind::Bool).optional())
             .field(FieldSpec::new("color", FieldKind::Text).optional().nullable())
             .field(object("rack", ty::RACK))
             .field(list_of("inserts", ty::PLUGIN))

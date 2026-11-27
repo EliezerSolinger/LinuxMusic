@@ -591,7 +591,7 @@ impl Session {
         let schemas = Arc::new(plugins.project_schemas()?);
         let mut notices = Notices::default();
         let options = project_options(&plugins, &schemas, config.limits);
-        let document = Document::new_project(schemas.clone(), options)?;
+        let document = Document::new_desk_project(schemas.clone(), options)?;
         let ui_document = interface_document(None)?;
         let folder = ProjectFolder::new(config.untitled.join(format!("untitled-{}", lm_io::new_uuid())));
         folder.create(&config.faults)?;
@@ -2146,7 +2146,7 @@ impl Session {
         self.resources = ResourceStore::new(folder.root().to_path_buf(), self.clock.clone());
         self.resources.set_allowed(allowed_folders(&self.preferences));
         let options = project_options(&self.plugins, &self.schemas, self.limits);
-        let document = Document::new_project(self.schemas.clone(), options)?;
+        let document = Document::new_desk_project(self.schemas.clone(), options)?;
         self.replace_document(document, None)?;
         self.untitled_guard = UntitledGuard(Some(folder.root().to_path_buf()));
         self.project = Project {

@@ -343,7 +343,7 @@ pub fn channels(root: &Value) -> Vec<ChannelView> {
         .iter()
         .filter_map(|c| {
             let id = id_of(c)?;
-            let kind = if sends_to.contains(&id) {
+            let kind = if sends_to.contains(&id) || flag(c, "return") {
                 ChannelKind::Return
             } else if outputs_to.contains(&id) {
                 ChannelKind::Group

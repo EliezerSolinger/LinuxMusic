@@ -27,6 +27,8 @@ pub struct Meter {
     pub channels: u8,
     /// Peak absolute sample since the previous frame, per channel (after the node's gain, i.e. what it sends on)
     pub peak: [f32; METER_CHANNELS],
+    /// Root mean square per channel over the frames since the previous frame (the meter's RMS, VU and K modes)
+    pub rms: [f32; METER_CHANNELS],
     /// The node panicked or produced NaN or infinity and is silenced until it is replaced (I-9.3, U20)
     pub dead: bool,
 }

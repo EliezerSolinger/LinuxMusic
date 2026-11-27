@@ -38,7 +38,7 @@ use crate::keymap;
 use crate::model::{self, ChannelKind, ChannelView};
 use crate::screens::Screen;
 use crate::ui::{THEME, c, midi, tr, trf};
-use crate::view;
+use crate::view::{self, MeterMode};
 use crate::workspace::Workspace;
 
 // --- the controls, as the legacy lays them out -----------------------------------------------------------------
@@ -131,6 +131,8 @@ pub const PAN: Knob = knob("", "pan", "PAN", "Panning", desk::col::PAN, Scale::P
 /// An insert's wet/dry mix (EffectView's W/D): absent is all wet
 pub const WET: Knob = knob("", "wet", "W/D", "Wet/dry", desk::col::GREY, Scale::Lin(0.0, 1.0), 1.0, "");
 
+/// A channel's own stereo width (the master's is `WIDTH`, in its stereo section)
+pub const CH_WIDTH: Knob = knob("", "width", "WIDTH", "Channel width", GREY, Scale::Lin(0.0, 200.0), 100.0, "%");
 pub const WIDTH: Knob = knob("stereo", "width", "WIDTH", "Stereo width", GREY, Scale::Lin(0.0, 200.0), 100.0, "%");
 pub const M_BASS: Knob = knob("stereo", "monoBass", "BASS", "Mono bass", GREY, Scale::Lin(0.0, 100.0), 0.0, "%");
 pub const M_FREQ: Knob =
@@ -145,7 +147,7 @@ pub const B_REL: Knob = knob("dynamics", "release", "REL", "Release", BUS, Scale
 /// Every knob of a channel's analog strip, in the legacy's order (the tests check each key is in the document)
 #[cfg(all(test, debug_assertions))]
 pub const STRIP_KNOBS: &[Knob] =
-    &[GAIN, TRIM, HPF, LPF, BASS, BASS_FREQ, COMP, RATIO, ATK, REL, GATE, RANGE, HI, HMF, LMF, LO, PAN];
+    &[GAIN, TRIM, HPF, LPF, BASS, BASS_FREQ, COMP, RATIO, ATK, REL, GATE, RANGE, HI, HMF, LMF, LO, PAN, CH_WIDTH];
 /// Every knob of the master section
 #[cfg(all(test, debug_assertions))]
 pub const MASTER_KNOBS: &[Knob] = &[WIDTH, M_BASS, M_FREQ, AIR, THR, B_RATIO, MAKE, B_ATK, B_REL];
@@ -314,6 +316,8 @@ pub struct MixingPage {
     clipboard: Option<f64>,
     /// the highest peak since the last click, per channel, in dB (PeakIndicator)
     peaks: HashMap<NodeId, f32>,
+    /// The meter mode the held peaks were taken in (a change clears them)
+    held_mode: MeterMode,
     renaming: Option<(NodeId, Entity<InputState>, Subscription)>,
     /// A channel others use, waiting for "remove it?" (MixerChannelView::confirmRemoval), and "don't ask again"
     confirm_remove: Option<(NodeId, bool)>,
@@ -364,6 +368,7 @@ impl MixingPage {
             menu: None,
             clipboard: None,
             peaks: HashMap::new(),
+            held_mode: MeterMode::Peak,
             renaming: None,
             confirm_remove: None,
             hint: None,
@@ -1020,7 +1025,19 @@ impl MixingPage {
 // -----------------------------------------------------------------------------------------------------------------
 // A strip
 
-fn meter_sides(core: &Core, id: NodeId) -> [f32; 2] {
+/// The channel meter's mode (the preference `interface.channelMeter`)
+fn meter_mode(core: &Core) -> MeterMode {
+    MeterMode::from_key(
+        model::at(core.port().preferences(), &["interface", "channelMeter"]).and_then(Value::as_text).unwrap_or(""),
+    )
+}
+
+/// The two sides of a node's meter, as the bar fill 0..1: the peak with its fall, or the RMS as the mode smooths it
+fn meter_sides(core: &Core, id: NodeId, mode: MeterMode) -> [f32; 2] {
+    if mode != MeterMode::Peak {
+        let [l, r] = core.rms_sides(id, mode.window());
+        return [view::meter_fill(l), view::meter_fill(r)];
+    }
     let shown = core.meter(id);
     let Some(m) = core.port().telemetry().meters.get(&id) else { return [0.0; 2] };
     let last = (m.channels as usize).max(1) - 1;
@@ -1030,8 +1047,13 @@ fn meter_sides(core: &Core, id: NodeId) -> [f32; 2] {
     if max <= 0.0 { [0.0; 2] } else { [shown * l / max, shown * r / max] }
 }
 
-fn peak_db(core: &Core, id: NodeId) -> f32 {
-    let p = core.port().telemetry().peak(id);
+/// What the indicator holds, in dBFS: the peak, or the louder side's RMS (the mode's offset is added when drawn)
+fn peak_db(core: &Core, id: NodeId, mode: MeterMode) -> f32 {
+    let p = if mode == MeterMode::Peak {
+        core.port().telemetry().peak(id)
+    } else {
+        core.rms_sides(id, mode.window()).into_iter().fold(0.0, f32::max)
+    };
     if p <= 0.0 { -100.0 } else { 20.0 * p.log10() }
 }
 
@@ -1415,7 +1437,28 @@ impl MixingPage {
                     cx.listener(move |p, ev, w, cx| p.press(t2.clone(), 160.0, from, ev, w, cx)),
                 )
         })));
-        d = d.child(div().h(px(8.)).when(send_from_selected.is_some(), |d| d.child(desk::send_arrow())));
+        // the arrow into the strip, and PRE: this send taps before the fader (the model's `pre`), lit when it does
+        d = d.child(div().h(px(8.)).flex().justify_center().items_center().gap(px(2.)).children(send_from_selected.map(
+            |s| {
+                let (sid, pre) = (s.id, s.pre);
+                [
+                    desk::send_arrow().w(px(14.)).into_any_element(),
+                    desk::desk_button(
+                        SharedString::from(format!("sendpre-{}", id.number)),
+                        "PRE",
+                        pre,
+                        Light::Amber,
+                        22.0,
+                        8.0,
+                        6.0,
+                    )
+                    .debug_selector(move || format!("sendpre-{}", id.number))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(move |p, _, _, cx| p.toggle(sid, &["pre"], pre, cx)))
+                    .into_any_element(),
+                ]
+            },
+        ).into_iter().flatten()));
         // the number (an effect return has none: the channels are numbered without them)
         d = d.child(div().h(px(13.)).children(number.filter(|_| !is_return).map(desk::lcd)));
         if analog {
@@ -1462,7 +1505,8 @@ impl MixingPage {
     /// The fader row: the peak above the fader, and beside it M, S, Ø, ⇄ and (analog) the effect LEDs
     fn fader_row(&self, ch: &ChannelView, analog: bool, cx: &Context<Self>) -> Div {
         let id = ch.id;
-        let levels = meter_sides(self.core.read(cx), id);
+        let mode = meter_mode(self.core.read(cx));
+        let levels = meter_sides(self.core.read(cx), id, mode);
         let peak = self.peaks.get(&id).copied().unwrap_or(-100.0);
         let role = match ch.kind {
             ChannelKind::Master => Role::Post,
@@ -1502,7 +1546,7 @@ impl MixingPage {
             .items_center()
             .gap(px(2.))
             .child(
-                desk::peak_indicator(SharedString::from(format!("peak-{}", id.number)), peak)
+                desk::peak_indicator(SharedString::from(format!("peak-{}", id.number)), peak, mode)
                     .debug_selector(move || format!("peak-{}", id.number))
                     .on_click(cx.listener(move |p, _, _, cx| {
                         p.peaks.insert(id, -100.0);
@@ -1681,7 +1725,12 @@ impl MixingPage {
             .rounded(px(3.))
             .when(!master, |d| {
                 d.bg(rgb(col::PAN_BACKGROUND)).child(if analog {
-                    self.desk_knob(id, id, PAN, true, cx).into_any_element()
+                    div()
+                        .flex()
+                        .justify_center()
+                        .child(self.desk_knob(id, id, PAN, true, cx))
+                        .child(self.desk_knob(id, id, CH_WIDTH, true, cx))
+                        .into_any_element()
                 } else {
                     let t = Target::Knob(id, PAN);
                     let travel = self.travel_of(&t, cx);
@@ -1922,7 +1971,7 @@ impl MixingPage {
     fn master_section(&self, ch: &ChannelView, analog: bool, cx: &Context<Self>) -> Div {
         let id = ch.id;
         let core = self.core.read(cx);
-        let [l, r] = meter_sides(core, id);
+        let [l, r] = meter_sides(core, id, MeterMode::Vu);
         let prefs = core.port().preferences();
         let mon = |k: &str| model::at(prefs, &["monitor", k]).and_then(Value::as_bool).unwrap_or(false);
         let (dim, cut, mono, side) = (mon("dim"), mon("cut"), mon("mono"), mon("side"));
@@ -2091,6 +2140,7 @@ impl MixingPage {
                     p.apply("Desk mode", vec![op], cx);
                 }))
         };
+        let meter_now = meter_mode(self.core.read(cx));
         let column = div()
             .w(px(desk::RACK_W))
             .flex_none()
@@ -2107,7 +2157,30 @@ impl MixingPage {
                     .pt(px(4.))
                     .pb(px(2.))
                     .child(mode_button("mode-analog", "ANALOG", analog, "analog"))
-                    .child(mode_button("mode-digital", "DIGITAL", !analog, "digital")),
+                    .child(mode_button("mode-digital", "DIGITAL", !analog, "digital"))
+                    // the channel meters' reading: a click goes to the next one
+                    .child(
+                        div()
+                            .id("meter-mode")
+                            .debug_selector(|| "meter-mode".into())
+                            .ml_auto()
+                            .px(px(6.))
+                            .py(px(2.))
+                            .border_1()
+                            .border_color(rgb(col::STROKE_INNER))
+                            .bg(rgb(0x262b30))
+                            .text_size(px(9.))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(rgb(col::TEXT))
+                            .cursor_pointer()
+                            .child(meter_now.label())
+                            .on_click(cx.listener(move |p, _, _, cx| {
+                                let path = vec![PathStep::key("interface"), PathStep::key("channelMeter")];
+                                let to = Value::text(meter_now.next().key());
+                                p.core.update(cx, |core, _| core.report(|pt| pt.set_preference(path, to)));
+                                cx.notify();
+                            })),
+                    ),
             );
         let Some(ch) = self.selected.and_then(|s| chs.iter().find(|c| c.id == s)).or_else(|| chs.last()).cloned()
         else {
@@ -2817,8 +2890,13 @@ impl Render for MixingPage {
         // the peaks since the last click
         {
             let core = self.core.read(cx);
+            let mode = meter_mode(core);
+            if self.held_mode != mode {
+                self.held_mode = mode;
+                self.peaks.clear();
+            }
             for c in &chs {
-                let db = peak_db(core, c.id);
+                let db = peak_db(core, c.id, mode);
                 let e = self.peaks.entry(c.id).or_insert(-100.0);
                 *e = e.max(db);
             }

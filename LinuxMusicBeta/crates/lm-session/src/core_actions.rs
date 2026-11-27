@@ -686,7 +686,7 @@ impl Session {
         if let Some(t) = template.filter(|t| !t.trim().is_empty()) {
             return self.new_from_template(folder, &t);
         }
-        let mut document = lm_doc::Document::new_project(
+        let mut document = lm_doc::Document::new_desk_project(
             self.schemas.clone(),
             project_options(&self.plugins, &self.schemas, self.limits),
         )?;

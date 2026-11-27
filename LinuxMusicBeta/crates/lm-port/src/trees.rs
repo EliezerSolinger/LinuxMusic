@@ -54,7 +54,8 @@
 //! controllers: [ { profile: "generic"|"mcu"|<controllers/<x>.json stem>, port: <alias>, bank: int } ]  (I-21.3)
 //! interface: { followCursor: bool, scale: real, confirmTrackRemoval: bool, loopEditMode: text ("buttons", "nearest",
 //!              "handles"), scrollMode: text ("page", "continuous"; with followCursor), stopBehavior: text ("start",
-//!              "origin", "stay": where the cursor goes on stop, F-REG-004) }
+//!              "origin", "stay": where the cursor goes on stop, F-REG-004), channelMeter: text ("peak", "rms", "vu",
+//!              "k20", "k14", "k12": what a mixer channel's meter reads) }
 //! metronome: { when: text ("always", "recording", "never"), countInBars: int }
 //! recording: { format: text ("rf64-24", "rf64-32f"), folder: text }
 //! keymaps:   { <context>: { preset: text, keys: { <action id>: text|[text] }, mouse: { <mouse action id>: text|[text] } } }

@@ -146,6 +146,7 @@ Show the group's channels = Mostrar os canais do grupo
 Hide the group's channels = Esconder os canais do grupo
 +{0} more = +{0} mais
 Stereo width = Largura estéreo
+Channel width = Largura do canal
 Mono bass frequency = Frequência do grave mono
 Compressor attack = Ataque do compressor
 Compressor ratio = Razão do compressor

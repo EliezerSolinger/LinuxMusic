@@ -322,7 +322,7 @@ a ação contam como parcial.
 
 | Id | Funcionalidade | Estado | O que falta | Onde |
 |---|---|---|---|---|
-| F-MIX-001 | Modo analógico ou digital da mesa inteira | feito | aberto: decidido em P-17 (fica; digital limpo) e feito conforme a decisão; falta só a configuração "projetos novos usam a mesa analógica" | lm-doc/src/schemas.rs,lm-gui/src/pages/mixing.rs |
+| F-MIX-001 | Modo analógico ou digital da mesa inteira | feito | aberto: decidido em P-17 (fica; digital limpo) e feito conforme a decisão; o projeto novo abre na mesa analógica (`mixer.mode` ausente) | lm-doc/src/schemas.rs,lm-gui/src/pages/mixing.rs |
 | F-MIX-003 | Várias faixas num canal | feito |  | lm-doc/src/schemas.rs,lm-gui/src/screens/routing.rs |
 | F-MIX-004 | Criar canal | feito |  | lm-gui/src/pages/mixing.rs,lm-gui/src/actions.rs |
 | F-MIX-005 | Apagar canal | feito |  | lm-gui/src/pages/mixing.rs,lm-doc/src/schemas.rs |
@@ -335,10 +335,10 @@ a ação contam como parcial.
 | F-MIX-012 | Um canal por saída / por peça | feito |  | lm-session/src/arrange.rs,lm-gui/src/screens/routing.rs |
 | F-MIX-013 | Teclado na mesa | feito |  | lm-gui/src/actions.rs,lm-gui/src/pages/mixing.rs |
 | F-MIX-014 | Mudo e solo do canal | feito |  | lm-compile/src/core.rs,lm-gui/src/pages/mixing.rs |
-| F-MIX-015 | Mudo do master no transporte | parcial | só o botão de mudo na tira do master; falta o botão de alto-falante no transporte | lm-gui/src/pages/transport.rs,lm-gui/src/pages/mixing.rs |
-| F-MIX-020 | Envios | parcial | pré/pós só no menu de contexto do envio ("Antes do fader"); falta o botão visível de pré-fader | lm-compile/src/core.rs,lm-gui/src/pages/mixing.rs |
+| F-MIX-015 | Mudo do master no transporte | feito |  | lm-gui/src/pages/transport.rs,lm-gui/src/pages/mixing.rs |
+| F-MIX-020 | Envios | feito |  | lm-compile/src/core.rs,lm-gui/src/pages/mixing.rs |
 | F-MIX-021 | Recusar laços | feito |  | lm-doc/src/rules.rs,lm-compile/src/core.rs |
-| F-MIX-023 | Dois retornos de efeito fixos (FX 1, FX 2) | parcial | aberto: decidido em P-19; há botões de envio para os retornos em todo canal, mas o projeto novo não nasce com os dois canais de retorno (retorno = só quem recebe envios) | lm-gui/src/pages/mixing.rs,lm-gui/src/model.rs |
+| F-MIX-023 | Dois retornos de efeito fixos (FX 1, FX 2) | feito |  | lm-doc/src/document.rs,lm-doc/src/schemas.rs,lm-gui/src/model.rs,lm-gui/src/pages/mixing.rs |
 | F-MIX-024 | Sidechain | feito |  | lm-doc/src/schemas.rs,lm-gui/src/pages/mixing.rs,lm-compile/src/core.rs |
 | F-MIX-025 | Compensação de latência (PDC) | feito |  | lm-compile/src/core.rs |
 | F-MIX-026 | Limpar áudio corrompido | feito |  | lm-render/src/renderer.rs,lm-gui/src/pages/mixing.rs |
@@ -346,7 +346,7 @@ a ação contam como parcial.
 | F-MIX-031 | Mono do canal | feito |  | lm-compile/src/rack.rs,lm-gui/src/pages/mixing.rs |
 | F-MIX-032 | Ponto de inserção dos efeitos | feito | aberto: decidido em P-20 (seis pontos por insert); feito conforme a decisão | lm-compile/src/rack.rs,lm-gui/src/pages/mixing.rs |
 | F-MIX-033 | Inverter fase e trocar L/R | feito |  | lm-compile/src/rack.rs,lm-gui/src/pages/mixing.rs |
-| F-MIX-034 | Largura (width) | falta | aberto: P-20 diz que a largura do canal fica, mas o canal não tem campo width no esquema, no DSP nem na GUI (só o WIDTH do master em rack.stereo) | lm-doc/src/schemas.rs |
+| F-MIX-034 | Largura (width) | feito | | lm-doc/src/schemas.rs,lm-compile/src/rack.rs,lm-session/src/rack.rs,lm-gui/src/pages/mixing.rs |
 | F-MIX-035 | Fader | feito |  | lm-gui/src/pages/mixing.rs,lm-gui/src/ui |
 | F-MIX-036 | Pan | feito |  | lm-doc/src/schemas.rs,lm-gui/src/pages/mixing.rs |
 | F-MIX-040 | GAIN | feito |  | lm-dsp/src/gain_stage.rs,lm-gui/src/pages/mixing.rs |
@@ -374,7 +374,7 @@ a ação contam como parcial.
 | F-MIX-066 | BUS COMP (SSL G) | feito |  | lm-dsp/src/master.rs,lm-gui/src/pages/mixing.rs |
 | F-MIX-067 | Monitoração | feito |  | lm-dsp/src/master.rs,lm-gui/src/pages/mixing.rs |
 | F-MIX-068 | Medidores do master | feito |  | lm-dsp/src/loudness.rs,lm-gui/src/pages/mixing.rs |
-| F-MIX-070 | Medidor do canal | parcial | aberto: decidido em P-22 (pico, RMS, VU, K e LUFS escolhíveis); o medidor do canal tem pico, linha de pico e indicador numérico, mas não há escolha de tipo (VU/K/RMS); o master tem VU e LUFS fixos | lm-gui/src/pages/desk.rs,lm-gui/src/pages/mixing.rs |
+| F-MIX-070 | Medidor do canal | feito | P-22: pico, RMS, VU e K-20/14/12 escolhíveis (preferência `interface.channelMeter`); o LUFS fica no master (BS.1770 mede o programa, ver decisoes-autonomas) | lm-render/src/renderer.rs,lm-gui/src/core.rs,lm-gui/src/pages/mixing.rs |
 | F-MIX-071 | Medidor no cabeçalho da faixa | feito |  | lm-gui/src/pages/composition.rs |
 | F-MIX-072 | Botões da mesa | feito |  | lm-gui/src/pages/desk.rs,lm-gui/src/pages/mixing.rs |
 | F-MIX-073 | Efeitos no canal | feito |  | lm-gui/src/pages/mixing.rs,lm-gui/src/screens/effect.rs,lm-gui/src/screens/browser.rs |

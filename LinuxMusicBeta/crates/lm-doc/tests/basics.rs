@@ -31,6 +31,20 @@ fn a_new_project_is_valid_and_has_the_master() {
     assert_eq!(doc.master().volume(&doc), Some(1.0));
 }
 
+/// The program's new project starts with the two effect returns (P-19), valid, and the counter past their ids
+#[test]
+fn a_desk_project_has_the_two_returns() {
+    let mut doc = lm_doc::Document::new_desk_project(registry(), options()).unwrap();
+    doc.verify_index().unwrap();
+    assert_eq!(doc.issued(), 3);
+    let channels = doc.root().get("mixer").and_then(|m| m.get("channels")).unwrap().clone();
+    let names: Vec<_> = channels.items().filter_map(|c| c.get("name").and_then(|n| n.as_text())).collect();
+    assert_eq!(names, ["FX 1", "FX 2"]);
+    assert!(channels.items().all(|c| c.get("return").and_then(|v| v.as_bool()) == Some(true)));
+    let t = add_track(&mut doc, "a", None);
+    assert_eq!(t.number, 3, "the next id is past the returns");
+}
+
 #[test]
 fn ids_come_from_one_counter_never_given_twice() {
     let mut doc = new_doc();
