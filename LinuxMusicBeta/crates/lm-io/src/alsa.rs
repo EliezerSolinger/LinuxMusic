@@ -520,17 +520,12 @@ fn run_locked(o: &mut Opened, handle: &mut CallbackHandle) -> Exit {
             return Exit::Stopped;
         }
         let outcome = {
-            let mut pcms: [&Pcm; 2] = [o.playback.as_ref().or(o.capture.as_ref()).expect("a stream"); 2];
-            let mut n = 0;
-            if let Some(p) = o.playback.as_ref() {
-                pcms[n] = p;
-                n += 1;
+            match (o.playback.as_ref(), o.capture.as_ref()) {
+                (Some(p), Some(c)) => o.poll.wait(&[p, c], Some(timeout)),
+                (Some(one), None) | (None, Some(one)) => o.poll.wait(&[one], Some(timeout)),
+                // `open` refuses a config without a stream; this is only defensive
+                (None, None) => return Exit::Failed(22, "no stream open"),
             }
-            if let Some(c) = o.capture.as_ref() {
-                pcms[n] = c;
-                n += 1;
-            }
-            o.poll.wait(&pcms[..n], Some(timeout))
         };
         if handle.should_stop() {
             return Exit::Stopped;
@@ -538,9 +533,9 @@ fn run_locked(o: &mut Opened, handle: &mut CallbackHandle) -> Exit {
         let problem = match outcome {
             Err(e) => Some(e),
             Ok(out) if out.is_empty() => {
-                timeouts += 1;
+                timeouts = timeouts.saturating_add(1);
                 let state = o.playback.as_ref().and_then(classify).or_else(|| o.capture.as_ref().and_then(classify));
-                if state.is_none() && timeouts * timeout.as_millis() as u32 > 2_000 {
+                if state.is_none() && timeouts.saturating_mul(timeout.as_millis() as u32) > 2_000 {
                     // Two seconds without a period: the device stalled
                     return Exit::Failed(110, "poll: no period for 2 s");
                 }
