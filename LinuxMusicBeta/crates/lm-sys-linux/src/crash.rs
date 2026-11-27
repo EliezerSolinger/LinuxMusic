@@ -282,6 +282,9 @@ fn note_the_suspect() {
     }
 }
 
+/// The signal handler. It cannot panic, so it has no `catch_unwind` (which would allocate the payload, in a signal
+/// handler): every index is bounded (`bytes[n..]` with `n <= len`, `PREVIOUS[i]` with `i < SIGNALS.len()`, slots
+/// through `get` and `binary_search`), nothing allocates and no arithmetic can overflow
 extern "C" fn on_signal(sig: c_int, info: *mut libc::siginfo_t, context: *mut c_void) {
     // One note per process: a second crash (another thread, or inside this handler) goes straight on
     if !IN_HANDLER.swap(true, Ordering::AcqRel) {

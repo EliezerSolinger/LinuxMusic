@@ -239,7 +239,7 @@ pub(crate) unsafe extern "C" fn retrieve(
     .unwrap_or(std::ptr::null())
 }
 
-/// state:mapPath, both ways: the identity (absolute paths are stored as they are). The plugin frees the copy with
+/// state:mapPath, both ways (no `catch_unwind`: a null check and one libc call, which cannot panic): the identity (absolute paths are stored as they are). The plugin frees the copy with
 /// `free` or state:freePath
 pub(crate) unsafe extern "C" fn map_path(_handle: *mut c_void, path: *const c_char) -> *mut c_char {
     if path.is_null() {

@@ -623,23 +623,31 @@ pub fn jack_time() -> u64 {
     unsafe { ffi::jack_get_time() }
 }
 
+/// Runs a callback body, never unwinding into JACK (a panic across the C frames is not survivable): `default` is what
+/// the callback returns when it panics. Every trampoline below runs its whole body through this
+fn guard<T>(default: T, f: impl FnOnce() -> T) -> T {
+    catch_unwind(AssertUnwindSafe(f)).unwrap_or(default)
+}
+
 unsafe extern "C" fn process_trampoline(frames: ffi::jack_nframes_t, arg: *mut c_void) -> c_int {
     // SAFETY: arg is the State, alive while the client is active (Client::activate)
     let state = unsafe { &*(arg as *const State) };
-    let mut cycle = Cycle { frames, ports: &state.ports, owner: state.owner, client: state.client };
-    cycle.clear_outputs();
-    if state.panicked.load(Ordering::Relaxed) {
-        return 0;
-    }
-    // SAFETY: JACK runs the process callback on one thread at a time, and the State's handler is reached only here
-    // until the client is deactivated: the exclusive reference is unique
-    let process = unsafe { &mut *state.process.get() };
-    if catch_unwind(AssertUnwindSafe(|| process.process(&mut cycle))).is_err() {
-        // (a bug: silence from now on, never unwinding into C)
-        state.panicked.store(true, Ordering::Release);
+    guard(0, || {
+        let mut cycle = Cycle { frames, ports: &state.ports, owner: state.owner, client: state.client };
         cycle.clear_outputs();
-    }
-    0
+        if state.panicked.load(Ordering::Relaxed) {
+            return 0;
+        }
+        // SAFETY: JACK runs the process callback on one thread at a time, and the State's handler is reached only
+        // here until the client is deactivated: the exclusive reference is unique
+        let process = unsafe { &mut *state.process.get() };
+        if catch_unwind(AssertUnwindSafe(|| process.process(&mut cycle))).is_err() {
+            // (a bug: silence from now on, never unwinding into C)
+            state.panicked.store(true, Ordering::Release);
+            cycle.clear_outputs();
+        }
+        0
+    })
 }
 
 unsafe extern "C" fn xrun_trampoline(arg: *mut c_void) -> c_int {
@@ -647,44 +655,54 @@ unsafe extern "C" fn xrun_trampoline(arg: *mut c_void) -> c_int {
     let state = unsafe { &*(arg as *const State) };
     // SAFETY: the client is valid while callbacks come
     let delayed = unsafe { ffi::jack_get_xrun_delayed_usecs(state.client.as_ptr()) };
-    let _ = catch_unwind(AssertUnwindSafe(|| state.notify.xrun(delayed)));
-    0
+    guard(0, || {
+        state.notify.xrun(delayed);
+        0
+    })
 }
 
 unsafe extern "C" fn shutdown_trampoline(_code: ffi::jack_status_t, reason: *const c_char, arg: *mut c_void) {
     // SAFETY: as xrun_trampoline
     let state = unsafe { &*(arg as *const State) };
-    // SAFETY: the reason is a NUL-terminated string for the call (or null)
-    let reason = unsafe { copy_str(reason) };
-    let _ = catch_unwind(AssertUnwindSafe(|| state.notify.shutdown(&reason)));
+    guard((), || {
+        // SAFETY: the reason is a NUL-terminated string for the call (or null)
+        let reason = unsafe { copy_str(reason) };
+        state.notify.shutdown(&reason);
+    })
 }
 
 unsafe extern "C" fn buffer_size_trampoline(frames: ffi::jack_nframes_t, arg: *mut c_void) -> c_int {
     // SAFETY: as xrun_trampoline
     let state = unsafe { &*(arg as *const State) };
-    let _ = catch_unwind(AssertUnwindSafe(|| state.notify.buffer_size(frames)));
-    0
+    guard(0, || {
+        state.notify.buffer_size(frames);
+        0
+    })
 }
 
 unsafe extern "C" fn registration_trampoline(id: u32, register: c_int, arg: *mut c_void) {
     // SAFETY: as xrun_trampoline
     let state = unsafe { &*(arg as *const State) };
-    // SAFETY: the client is valid; a port being unregistered is still known by its id during this call
-    let port = unsafe { ffi::jack_port_by_id(state.client.as_ptr(), id) };
-    // SAFETY: a valid port or null
-    let name = if port.is_null() { String::new() } else { unsafe { copy_str(ffi::jack_port_name(port)) } };
-    let _ = catch_unwind(AssertUnwindSafe(|| state.notify.port_registration(&name, register != 0)));
+    guard((), || {
+        // SAFETY: the client is valid; a port being unregistered is still known by its id during this call
+        let port = unsafe { ffi::jack_port_by_id(state.client.as_ptr(), id) };
+        // SAFETY: a valid port or null
+        let name = if port.is_null() { String::new() } else { unsafe { copy_str(ffi::jack_port_name(port)) } };
+        state.notify.port_registration(&name, register != 0);
+    })
 }
 
 unsafe extern "C" fn connect_trampoline(a: u32, b: u32, connect: c_int, arg: *mut c_void) {
     // SAFETY: as xrun_trampoline
     let state = unsafe { &*(arg as *const State) };
-    let name = |id: u32| {
-        // SAFETY: the client is valid; the ports are known by id during this call
-        let port = unsafe { ffi::jack_port_by_id(state.client.as_ptr(), id) };
-        // SAFETY: a valid port or null
-        if port.is_null() { String::new() } else { unsafe { copy_str(ffi::jack_port_name(port)) } }
-    };
-    let (source, destination) = (name(a), name(b));
-    let _ = catch_unwind(AssertUnwindSafe(|| state.notify.port_connection(&source, &destination, connect != 0)));
+    guard((), || {
+        let name = |id: u32| {
+            // SAFETY: the client is valid; the ports are known by id during this call
+            let port = unsafe { ffi::jack_port_by_id(state.client.as_ptr(), id) };
+            // SAFETY: a valid port or null
+            if port.is_null() { String::new() } else { unsafe { copy_str(ffi::jack_port_name(port)) } }
+        };
+        let (source, destination) = (name(a), name(b));
+        state.notify.port_connection(&source, &destination, connect != 0);
+    })
 }

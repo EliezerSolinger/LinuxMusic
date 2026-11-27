@@ -15,6 +15,13 @@ use vst3::Steinberg::Vst::*;
 use vst3::Steinberg::*;
 use vst3::{Class, ComPtr, ComRef, ComWrapper, Interface};
 
+/// Runs the body of a COM method, never unwinding into the plugin: a panic across the plugin's C frames is not
+/// survivable, so it becomes `default` (for a `tresult`, `kInternalError`; for a pointer, null). Every method of
+/// every class below runs its whole body through this
+pub(crate) fn guard<T>(default: T, f: impl FnOnce() -> T) -> T {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or(default)
+}
+
 /// An interface id as a TUID (the same 16 bytes)
 pub(crate) fn tuid(g: &[u8; 16]) -> TUID {
     g.map(|b| b as std::ffi::c_char)
@@ -57,40 +64,44 @@ impl Class for HostApp {
 
 impl IHostApplicationTrait for HostApp {
     unsafe fn getName(&self, name: *mut String128) -> tresult {
-        if name.is_null() {
-            return kInvalidArgument;
-        }
-        // SAFETY: the plugin gives a String128 to fill
-        put_wide("LinuxMusic", unsafe { &mut *name });
-        kResultOk
+        guard(kInternalError, || {
+            if name.is_null() {
+                return kInvalidArgument;
+            }
+            // SAFETY: the plugin gives a String128 to fill
+            put_wide("LinuxMusic", unsafe { &mut *name });
+            kResultOk
+        })
     }
 
     unsafe fn createInstance(&self, cid: *mut TUID, iid: *mut TUID, obj: *mut *mut c_void) -> tresult {
-        if cid.is_null() || iid.is_null() || obj.is_null() {
-            return kInvalidArgument;
-        }
-        // SAFETY: the plugin gives two TUIDs and an out pointer
-        let (cid, iid) = unsafe { (*cid, *iid) };
-        let made: Option<ComPtr<FUnknown>> = if cid == tuid(&IMessage::IID) && iid == tuid(&IMessage::IID) {
-            ComWrapper::new(Message::default()).to_com_ptr::<FUnknown>()
-        } else if cid == tuid(&IAttributeList::IID) && iid == tuid(&IAttributeList::IID) {
-            ComWrapper::new(Attributes::default()).to_com_ptr::<FUnknown>()
-        } else {
-            None
-        };
-        match made {
-            Some(p) => {
-                let raw = p.as_ptr();
-                let mut iid = iid;
-                // SAFETY: a live object of ours; queryInterface adds the reference the plugin owns
-                unsafe { ((*(*raw).vtbl).queryInterface)(raw, &mut iid, obj) }
+        guard(kInternalError, || {
+            if cid.is_null() || iid.is_null() || obj.is_null() {
+                return kInvalidArgument;
             }
-            None => {
-                // SAFETY: the out pointer the plugin gave
-                unsafe { *obj = std::ptr::null_mut() };
-                kNoInterface
+            // SAFETY: the plugin gives two TUIDs and an out pointer
+            let (cid, iid) = unsafe { (*cid, *iid) };
+            let made: Option<ComPtr<FUnknown>> = if cid == tuid(&IMessage::IID) && iid == tuid(&IMessage::IID) {
+                ComWrapper::new(Message::default()).to_com_ptr::<FUnknown>()
+            } else if cid == tuid(&IAttributeList::IID) && iid == tuid(&IAttributeList::IID) {
+                ComWrapper::new(Attributes::default()).to_com_ptr::<FUnknown>()
+            } else {
+                None
+            };
+            match made {
+                Some(p) => {
+                    let raw = p.as_ptr();
+                    let mut iid = iid;
+                    // SAFETY: a live object of ours; queryInterface adds the reference the plugin owns
+                    unsafe { ((*(*raw).vtbl).queryInterface)(raw, &mut iid, obj) }
+                }
+                None => {
+                    // SAFETY: the out pointer the plugin gave
+                    unsafe { *obj = std::ptr::null_mut() };
+                    kNoInterface
+                }
             }
-        }
+        })
     }
 }
 
@@ -106,26 +117,32 @@ impl Class for Message {
 
 impl IMessageTrait for Message {
     unsafe fn getMessageID(&self) -> FIDString {
-        self.id.borrow().as_ref().map_or(std::ptr::null(), |c| c.as_ptr())
+        guard(std::ptr::null(), || {
+            self.id.borrow().as_ref().map_or(std::ptr::null(), |c| c.as_ptr())
+        })
     }
 
     unsafe fn setMessageID(&self, id: FIDString) {
-        let v = if id.is_null() {
-            None
-        } else {
-            // SAFETY: a NUL-terminated id from the plugin, copied now
-            Some(unsafe { CStr::from_ptr(id) }.to_owned())
-        };
-        *self.id.borrow_mut() = v;
+        guard((), || {
+            let v = if id.is_null() {
+                None
+            } else {
+                // SAFETY: a NUL-terminated id from the plugin, copied now
+                Some(unsafe { CStr::from_ptr(id) }.to_owned())
+            };
+            *self.id.borrow_mut() = v;
+        })
     }
 
     unsafe fn getAttributes(&self) -> *mut IAttributeList {
-        let mut a = self.attributes.borrow_mut();
-        if a.is_none() {
-            *a = ComWrapper::new(Attributes::default()).to_com_ptr::<IAttributeList>();
-        }
-        // Borrowed by the plugin (no reference added, as the SDK's own host does)
-        a.as_ref().map_or(std::ptr::null_mut(), |p| p.as_ptr())
+        guard(std::ptr::null_mut(), || {
+            let mut a = self.attributes.borrow_mut();
+            if a.is_none() {
+                *a = ComWrapper::new(Attributes::default()).to_com_ptr::<IAttributeList>();
+            }
+            // Borrowed by the plugin (no reference added, as the SDK's own host does)
+            a.as_ref().map_or(std::ptr::null_mut(), |p| p.as_ptr())
+        })
     }
 }
 
@@ -153,83 +170,97 @@ fn key(id: IAttributeList_::AttrID) -> Option<Vec<u8>> {
 
 impl IAttributeListTrait for Attributes {
     unsafe fn setInt(&self, id: IAttributeList_::AttrID, value: int64) -> tresult {
-        let Some(k) = key(id) else { return kInvalidArgument };
-        self.map.borrow_mut().insert(k, Attr::Int(value));
-        kResultOk
+        guard(kInternalError, || {
+            let Some(k) = key(id) else { return kInvalidArgument };
+            self.map.borrow_mut().insert(k, Attr::Int(value));
+            kResultOk
+        })
     }
 
     unsafe fn getInt(&self, id: IAttributeList_::AttrID, value: *mut int64) -> tresult {
-        match key(id).and_then(|k| self.map.borrow().get(&k).cloned()) {
-            Some(Attr::Int(v)) if !value.is_null() => {
-                // SAFETY: the plugin's out pointer
-                unsafe { *value = v };
-                kResultOk
+        guard(kInternalError, || {
+            match key(id).and_then(|k| self.map.borrow().get(&k).cloned()) {
+                Some(Attr::Int(v)) if !value.is_null() => {
+                    // SAFETY: the plugin's out pointer
+                    unsafe { *value = v };
+                    kResultOk
+                }
+                _ => kResultFalse,
             }
-            _ => kResultFalse,
-        }
+        })
     }
 
     unsafe fn setFloat(&self, id: IAttributeList_::AttrID, value: f64) -> tresult {
-        let Some(k) = key(id) else { return kInvalidArgument };
-        self.map.borrow_mut().insert(k, Attr::Float(value));
-        kResultOk
+        guard(kInternalError, || {
+            let Some(k) = key(id) else { return kInvalidArgument };
+            self.map.borrow_mut().insert(k, Attr::Float(value));
+            kResultOk
+        })
     }
 
     unsafe fn getFloat(&self, id: IAttributeList_::AttrID, value: *mut f64) -> tresult {
-        match key(id).and_then(|k| self.map.borrow().get(&k).cloned()) {
-            Some(Attr::Float(v)) if !value.is_null() => {
-                // SAFETY: the plugin's out pointer
-                unsafe { *value = v };
-                kResultOk
+        guard(kInternalError, || {
+            match key(id).and_then(|k| self.map.borrow().get(&k).cloned()) {
+                Some(Attr::Float(v)) if !value.is_null() => {
+                    // SAFETY: the plugin's out pointer
+                    unsafe { *value = v };
+                    kResultOk
+                }
+                _ => kResultFalse,
             }
-            _ => kResultFalse,
-        }
+        })
     }
 
     unsafe fn setString(&self, id: IAttributeList_::AttrID, string: *const TChar) -> tresult {
-        let Some(k) = key(id) else { return kInvalidArgument };
-        if string.is_null() {
-            return kInvalidArgument;
-        }
-        let mut v = Vec::new();
-        for i in 0..65_536 {
-            // SAFETY: a NUL-terminated UTF-16 string from the plugin; bounded
-            let c = unsafe { *string.add(i) };
-            if c == 0 {
-                break;
+        guard(kInternalError, || {
+            let Some(k) = key(id) else { return kInvalidArgument };
+            if string.is_null() {
+                return kInvalidArgument;
             }
-            v.push(c);
-        }
-        self.map.borrow_mut().insert(k, Attr::Text(v));
-        kResultOk
+            let mut v = Vec::new();
+            for i in 0..65_536 {
+                // SAFETY: a NUL-terminated UTF-16 string from the plugin; bounded
+                let c = unsafe { *string.add(i) };
+                if c == 0 {
+                    break;
+                }
+                v.push(c);
+            }
+            self.map.borrow_mut().insert(k, Attr::Text(v));
+            kResultOk
+        })
     }
 
     unsafe fn getString(&self, id: IAttributeList_::AttrID, string: *mut TChar, size_in_bytes: uint32) -> tresult {
-        match key(id).and_then(|k| self.map.borrow().get(&k).cloned()) {
-            Some(Attr::Text(v)) if !string.is_null() && size_in_bytes >= 2 => {
-                let room = size_in_bytes as usize / 2;
-                let n = v.len().min(room - 1);
-                // SAFETY: the plugin's buffer of `size_in_bytes` bytes; n + 1 ≤ room characters written
-                unsafe {
-                    std::ptr::copy_nonoverlapping(v.as_ptr(), string, n);
-                    *string.add(n) = 0;
+        guard(kInternalError, || {
+            match key(id).and_then(|k| self.map.borrow().get(&k).cloned()) {
+                Some(Attr::Text(v)) if !string.is_null() && size_in_bytes >= 2 => {
+                    let room = size_in_bytes as usize / 2;
+                    let n = v.len().min(room - 1);
+                    // SAFETY: the plugin's buffer of `size_in_bytes` bytes; n + 1 ≤ room characters written
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(v.as_ptr(), string, n);
+                        *string.add(n) = 0;
+                    }
+                    kResultOk
                 }
-                kResultOk
+                _ => kResultFalse,
             }
-            _ => kResultFalse,
-        }
+        })
     }
 
     unsafe fn setBinary(&self, id: IAttributeList_::AttrID, data: *const c_void, size_in_bytes: uint32) -> tresult {
-        let Some(k) = key(id) else { return kInvalidArgument };
-        let v = if data.is_null() || size_in_bytes == 0 {
-            Vec::new()
-        } else {
-            // SAFETY: the plugin's `size_in_bytes` readable bytes, copied now
-            unsafe { std::slice::from_raw_parts(data.cast::<u8>(), size_in_bytes as usize) }.to_vec()
-        };
-        self.map.borrow_mut().insert(k, Attr::Binary(v));
-        kResultOk
+        guard(kInternalError, || {
+            let Some(k) = key(id) else { return kInvalidArgument };
+            let v = if data.is_null() || size_in_bytes == 0 {
+                Vec::new()
+            } else {
+                // SAFETY: the plugin's `size_in_bytes` readable bytes, copied now
+                unsafe { std::slice::from_raw_parts(data.cast::<u8>(), size_in_bytes as usize) }.to_vec()
+            };
+            self.map.borrow_mut().insert(k, Attr::Binary(v));
+            kResultOk
+        })
     }
 
     unsafe fn getBinary(
@@ -238,19 +269,21 @@ impl IAttributeListTrait for Attributes {
         data: *mut *const c_void,
         size_in_bytes: *mut uint32,
     ) -> tresult {
-        let Some(k) = key(id) else { return kInvalidArgument };
-        let map = self.map.borrow();
-        match map.get(&k) {
-            Some(Attr::Binary(v)) if !data.is_null() && !size_in_bytes.is_null() => {
-                // SAFETY: the plugin's out pointers; the bytes live as long as this list (the SDK's contract)
-                unsafe {
-                    *data = v.as_ptr().cast();
-                    *size_in_bytes = v.len() as uint32;
+        guard(kInternalError, || {
+            let Some(k) = key(id) else { return kInvalidArgument };
+            let map = self.map.borrow();
+            match map.get(&k) {
+                Some(Attr::Binary(v)) if !data.is_null() && !size_in_bytes.is_null() => {
+                    // SAFETY: the plugin's out pointers; the bytes live as long as this list (the SDK's contract)
+                    unsafe {
+                        *data = v.as_ptr().cast();
+                        *size_in_bytes = v.len() as uint32;
+                    }
+                    kResultOk
                 }
-                kResultOk
+                _ => kResultFalse,
             }
-            _ => kResultFalse,
-        }
+        })
     }
 }
 
@@ -286,57 +319,73 @@ impl Class for Handler {
 
 impl IComponentHandlerTrait for Handler {
     unsafe fn beginEdit(&self, id: ParamID) -> tresult {
-        let mut p = self.edits.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _ = p.push(Edit::Begin(id));
-        kResultOk
+        guard(kInternalError, || {
+            let mut p = self.edits.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _ = p.push(Edit::Begin(id));
+            kResultOk
+        })
     }
 
     unsafe fn performEdit(&self, id: ParamID, value: ParamValue) -> tresult {
-        let mut p = self.edits.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _ = p.push(Edit::Set(id, value));
-        kResultOk
+        guard(kInternalError, || {
+            let mut p = self.edits.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _ = p.push(Edit::Set(id, value));
+            kResultOk
+        })
     }
 
     unsafe fn endEdit(&self, id: ParamID) -> tresult {
-        let mut p = self.edits.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _ = p.push(Edit::End(id));
-        kResultOk
+        guard(kInternalError, || {
+            let mut p = self.edits.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _ = p.push(Edit::End(id));
+            kResultOk
+        })
     }
 
     unsafe fn restartComponent(&self, flags: int32) -> tresult {
-        let f = flags as u32;
-        if f & (RestartFlags_::kLatencyChanged as u32) != 0 {
-            self.requests.latency.store(true, Ordering::Release);
-            self.requests.restart.store(true, Ordering::Release);
-        }
-        if f & (RestartFlags_::kIoChanged as u32 | RestartFlags_::kReloadComponent as u32) != 0 {
-            self.requests.restart.store(true, Ordering::Release);
-        }
-        if f & (RestartFlags_::kParamValuesChanged as u32) != 0 {
-            self.requests.params.store(true, Ordering::Release);
-        }
-        kResultOk
+        guard(kInternalError, || {
+            let f = flags as u32;
+            if f & (RestartFlags_::kLatencyChanged as u32) != 0 {
+                self.requests.latency.store(true, Ordering::Release);
+                self.requests.restart.store(true, Ordering::Release);
+            }
+            if f & (RestartFlags_::kIoChanged as u32 | RestartFlags_::kReloadComponent as u32) != 0 {
+                self.requests.restart.store(true, Ordering::Release);
+            }
+            if f & (RestartFlags_::kParamValuesChanged as u32) != 0 {
+                self.requests.params.store(true, Ordering::Release);
+            }
+            kResultOk
+        })
     }
 }
 
 impl IComponentHandler2Trait for Handler {
     unsafe fn setDirty(&self, state: TBool) -> tresult {
-        if state != 0 {
-            self.requests.dirty.store(true, Ordering::Release);
-        }
-        kResultOk
+        guard(kInternalError, || {
+            if state != 0 {
+                self.requests.dirty.store(true, Ordering::Release);
+            }
+            kResultOk
+        })
     }
 
     unsafe fn requestOpenEditor(&self, _name: FIDString) -> tresult {
-        kNotImplemented
+        guard(kInternalError, || {
+            kNotImplemented
+        })
     }
 
     unsafe fn startGroupEdit(&self) -> tresult {
-        kResultOk
+        guard(kInternalError, || {
+            kResultOk
+        })
     }
 
     unsafe fn finishGroupEdit(&self) -> tresult {
-        kResultOk
+        guard(kInternalError, || {
+            kResultOk
+        })
     }
 }
 
@@ -357,44 +406,52 @@ impl Class for Queue {
 
 impl IParamValueQueueTrait for Queue {
     unsafe fn getParameterId(&self) -> ParamID {
-        self.id.get()
+        guard(0, || {
+            self.id.get()
+        })
     }
 
     unsafe fn getPointCount(&self) -> int32 {
-        self.points.borrow().len() as int32
+        guard(0, || {
+            self.points.borrow().len() as int32
+        })
     }
 
     unsafe fn getPoint(&self, index: int32, offset: *mut int32, value: *mut ParamValue) -> tresult {
-        match self.points.borrow().get(index as usize) {
-            Some((o, v)) if !offset.is_null() && !value.is_null() => {
-                // SAFETY: the plugin's out pointers
-                unsafe {
-                    *offset = *o;
-                    *value = *v;
+        guard(kInternalError, || {
+            match self.points.borrow().get(index as usize) {
+                Some((o, v)) if !offset.is_null() && !value.is_null() => {
+                    // SAFETY: the plugin's out pointers
+                    unsafe {
+                        *offset = *o;
+                        *value = *v;
+                    }
+                    kResultOk
                 }
-                kResultOk
+                _ => kInvalidArgument,
             }
-            _ => kInvalidArgument,
-        }
+        })
     }
 
     unsafe fn addPoint(&self, offset: int32, value: ParamValue, index: *mut int32) -> tresult {
-        let mut p = self.points.borrow_mut();
-        if p.len() == p.capacity() {
-            return kResultFalse;
-        }
-        // In order of offset; the same offset replaces
-        let at = p.iter().position(|(o, _)| *o >= offset).unwrap_or(p.len());
-        if p.get(at).is_some_and(|(o, _)| *o == offset) {
-            p[at].1 = value;
-        } else {
-            p.insert(at, (offset, value));
-        }
-        if !index.is_null() {
-            // SAFETY: the plugin's out pointer
-            unsafe { *index = at as int32 };
-        }
-        kResultOk
+        guard(kInternalError, || {
+            let mut p = self.points.borrow_mut();
+            if p.len() == p.capacity() {
+                return kResultFalse;
+            }
+            // In order of offset; the same offset replaces
+            let at = p.iter().position(|(o, _)| *o >= offset).unwrap_or(p.len());
+            if p.get(at).is_some_and(|(o, _)| *o == offset) {
+                p[at].1 = value;
+            } else {
+                p.insert(at, (offset, value));
+            }
+            if !index.is_null() {
+                // SAFETY: the plugin's out pointer
+                unsafe { *index = at as int32 };
+            }
+            kResultOk
+        })
     }
 }
 
@@ -457,27 +514,33 @@ impl Changes {
 
 impl IParameterChangesTrait for Changes {
     unsafe fn getParameterCount(&self) -> int32 {
-        self.used.get() as int32
+        guard(0, || {
+            self.used.get() as int32
+        })
     }
 
     unsafe fn getParameterData(&self, index: int32) -> *mut IParamValueQueue {
-        if index < 0 || index as usize >= self.used.get() {
-            return std::ptr::null_mut();
-        }
-        self.queues[index as usize].as_com_ref::<IParamValueQueue>().map_or(std::ptr::null_mut(), |r| r.as_ptr())
+        guard(std::ptr::null_mut(), || {
+            if index < 0 || index as usize >= self.used.get() {
+                return std::ptr::null_mut();
+            }
+            self.queues[index as usize].as_com_ref::<IParamValueQueue>().map_or(std::ptr::null_mut(), |r| r.as_ptr())
+        })
     }
 
     unsafe fn addParameterData(&self, id: *const ParamID, index: *mut int32) -> *mut IParamValueQueue {
-        if id.is_null() {
-            return std::ptr::null_mut();
-        }
-        // SAFETY: the plugin's id
-        let Some(i) = self.queue_of(unsafe { *id }) else { return std::ptr::null_mut() };
-        if !index.is_null() {
-            // SAFETY: the plugin's out pointer
-            unsafe { *index = i as int32 };
-        }
-        self.queues[i].as_com_ref::<IParamValueQueue>().map_or(std::ptr::null_mut(), |r| r.as_ptr())
+        guard(std::ptr::null_mut(), || {
+            if id.is_null() {
+                return std::ptr::null_mut();
+            }
+            // SAFETY: the plugin's id
+            let Some(i) = self.queue_of(unsafe { *id }) else { return std::ptr::null_mut() };
+            if !index.is_null() {
+                // SAFETY: the plugin's out pointer
+                unsafe { *index = i as int32 };
+            }
+            self.queues[i].as_com_ref::<IParamValueQueue>().map_or(std::ptr::null_mut(), |r| r.as_ptr())
+        })
     }
 }
 
@@ -494,28 +557,34 @@ impl Class for Events {
 
 impl IEventListTrait for Events {
     unsafe fn getEventCount(&self) -> int32 {
-        self.list.borrow().len() as int32
+        guard(0, || {
+            self.list.borrow().len() as int32
+        })
     }
 
     unsafe fn getEvent(&self, index: int32, e: *mut Event) -> tresult {
-        match self.list.borrow().get(index as usize) {
-            Some(ev) if !e.is_null() => {
-                // SAFETY: the plugin's out pointer; Event is plain data
-                unsafe { std::ptr::copy_nonoverlapping(ev, e, 1) };
-                kResultOk
+        guard(kInternalError, || {
+            match self.list.borrow().get(index as usize) {
+                Some(ev) if !e.is_null() => {
+                    // SAFETY: the plugin's out pointer; Event is plain data
+                    unsafe { std::ptr::copy_nonoverlapping(ev, e, 1) };
+                    kResultOk
+                }
+                _ => kInvalidArgument,
             }
-            _ => kInvalidArgument,
-        }
+        })
     }
 
     unsafe fn addEvent(&self, e: *mut Event) -> tresult {
-        let mut l = self.list.borrow_mut();
-        if e.is_null() || l.len() == l.capacity() {
-            return kResultFalse;
-        }
-        // SAFETY: the plugin's event, copied
-        l.push(unsafe { std::ptr::read(e) });
-        kResultOk
+        guard(kInternalError, || {
+            let mut l = self.list.borrow_mut();
+            if e.is_null() || l.len() == l.capacity() {
+                return kResultFalse;
+            }
+            // SAFETY: the plugin's event, copied
+            l.push(unsafe { std::ptr::read(e) });
+            kResultOk
+        })
     }
 }
 
@@ -533,74 +602,82 @@ impl Class for Stream {
 
 impl IBStreamTrait for Stream {
     unsafe fn read(&self, buffer: *mut c_void, n: int32, read: *mut int32) -> tresult {
-        if buffer.is_null() || n < 0 {
-            return kInvalidArgument;
-        }
-        let d = self.data.borrow();
-        let at = self.at.get().min(d.len());
-        let k = (n as usize).min(d.len() - at);
-        // SAFETY: the plugin's buffer of n bytes; k ≤ n
-        unsafe { std::ptr::copy_nonoverlapping(d[at..].as_ptr(), buffer.cast::<u8>(), k) };
-        self.at.set(at + k);
-        if !read.is_null() {
-            // SAFETY: the plugin's out pointer
-            unsafe { *read = k as int32 };
-        }
-        kResultOk
+        guard(kInternalError, || {
+            if buffer.is_null() || n < 0 {
+                return kInvalidArgument;
+            }
+            let d = self.data.borrow();
+            let at = self.at.get().min(d.len());
+            let k = (n as usize).min(d.len() - at);
+            // SAFETY: the plugin's buffer of n bytes; k ≤ n
+            unsafe { std::ptr::copy_nonoverlapping(d[at..].as_ptr(), buffer.cast::<u8>(), k) };
+            self.at.set(at + k);
+            if !read.is_null() {
+                // SAFETY: the plugin's out pointer
+                unsafe { *read = k as int32 };
+            }
+            kResultOk
+        })
     }
 
     unsafe fn write(&self, buffer: *mut c_void, n: int32, written: *mut int32) -> tresult {
-        if buffer.is_null() || n < 0 {
-            return kInvalidArgument;
-        }
-        // SAFETY: the plugin's n readable bytes
-        let bytes = unsafe { std::slice::from_raw_parts(buffer.cast::<u8>(), n as usize) };
-        let mut d = self.data.borrow_mut();
-        let at = self.at.get();
-        // The position and the size come from the plugin: bounded, so a wild seek cannot ask for a huge allocation
-        let Some(end) = at.checked_add(bytes.len()).filter(|e| *e <= MAX_STREAM) else {
-            return kResultFalse;
-        };
-        if d.len() < end {
-            d.resize(end, 0);
-        }
-        d[at..end].copy_from_slice(bytes);
-        self.at.set(end);
-        if !written.is_null() {
-            // SAFETY: the plugin's out pointer
-            unsafe { *written = n };
-        }
-        kResultOk
+        guard(kInternalError, || {
+            if buffer.is_null() || n < 0 {
+                return kInvalidArgument;
+            }
+            // SAFETY: the plugin's n readable bytes
+            let bytes = unsafe { std::slice::from_raw_parts(buffer.cast::<u8>(), n as usize) };
+            let mut d = self.data.borrow_mut();
+            let at = self.at.get();
+            // The position and the size come from the plugin: bounded, so a wild seek cannot ask for a huge allocation
+            let Some(end) = at.checked_add(bytes.len()).filter(|e| *e <= MAX_STREAM) else {
+                return kResultFalse;
+            };
+            if d.len() < end {
+                d.resize(end, 0);
+            }
+            d[at..end].copy_from_slice(bytes);
+            self.at.set(end);
+            if !written.is_null() {
+                // SAFETY: the plugin's out pointer
+                unsafe { *written = n };
+            }
+            kResultOk
+        })
     }
 
     unsafe fn seek(&self, pos: int64, mode: int32, result: *mut int64) -> tresult {
-        let len = self.data.borrow().len() as i64;
-        let base = match mode as u32 {
-            m if m == IBStream_::IStreamSeekMode_::kIBSeekSet => 0,
-            m if m == IBStream_::IStreamSeekMode_::kIBSeekCur => self.at.get() as i64,
-            m if m == IBStream_::IStreamSeekMode_::kIBSeekEnd => len,
-            _ => return kInvalidArgument,
-        };
-        let to = match base.checked_add(pos) {
-            Some(to) => usize::try_from(to.max(0)).ok().filter(|t| *t <= MAX_STREAM),
-            None => None,
-        };
-        let Some(to) = to else { return kInvalidArgument };
-        self.at.set(to);
-        if !result.is_null() {
-            // SAFETY: the plugin's out pointer
-            unsafe { *result = to as int64 };
-        }
-        kResultOk
+        guard(kInternalError, || {
+            let len = self.data.borrow().len() as i64;
+            let base = match mode as u32 {
+                m if m == IBStream_::IStreamSeekMode_::kIBSeekSet => 0,
+                m if m == IBStream_::IStreamSeekMode_::kIBSeekCur => self.at.get() as i64,
+                m if m == IBStream_::IStreamSeekMode_::kIBSeekEnd => len,
+                _ => return kInvalidArgument,
+            };
+            let to = match base.checked_add(pos) {
+                Some(to) => usize::try_from(to.max(0)).ok().filter(|t| *t <= MAX_STREAM),
+                None => None,
+            };
+            let Some(to) = to else { return kInvalidArgument };
+            self.at.set(to);
+            if !result.is_null() {
+                // SAFETY: the plugin's out pointer
+                unsafe { *result = to as int64 };
+            }
+            kResultOk
+        })
     }
 
     unsafe fn tell(&self, pos: *mut int64) -> tresult {
-        if pos.is_null() {
-            return kInvalidArgument;
-        }
-        // SAFETY: the plugin's out pointer
-        unsafe { *pos = self.at.get() as int64 };
-        kResultOk
+        guard(kInternalError, || {
+            if pos.is_null() {
+                return kInvalidArgument;
+            }
+            // SAFETY: the plugin's out pointer
+            unsafe { *pos = self.at.get() as int64 };
+            kResultOk
+        })
     }
 }
 
@@ -637,45 +714,55 @@ impl Class for Frame {
 
 impl IPlugFrameTrait for Frame {
     unsafe fn resizeView(&self, _view: *mut IPlugView, new_size: *mut ViewRect) -> tresult {
-        if new_size.is_null() {
-            return kInvalidArgument;
-        }
-        // SAFETY: the view's rect, valid for the call
-        let r = unsafe { *new_size };
-        let (w, h) = (r.right.saturating_sub(r.left), r.bottom.saturating_sub(r.top));
-        self.resize.set(Some((w.max(1) as u32, h.max(1) as u32)));
-        kResultOk
+        guard(kInternalError, || {
+            if new_size.is_null() {
+                return kInvalidArgument;
+            }
+            // SAFETY: the view's rect, valid for the call
+            let r = unsafe { *new_size };
+            let (w, h) = (r.right.saturating_sub(r.left), r.bottom.saturating_sub(r.top));
+            self.resize.set(Some((w.max(1) as u32, h.max(1) as u32)));
+            kResultOk
+        })
     }
 }
 
 impl Linux::IRunLoopTrait for Frame {
     unsafe fn registerEventHandler(&self, handler: *mut Linux::IEventHandler, fd: Linux::FileDescriptor) -> tresult {
-        // SAFETY: the plugin's handler, valid for the call; `to_com_ptr` takes our own reference
-        let Some(h) = (unsafe { ComRef::from_raw(handler) }) else { return kInvalidArgument };
-        self.handlers.borrow_mut().push((h.to_com_ptr(), fd));
-        kResultOk
+        guard(kInternalError, || {
+            // SAFETY: the plugin's handler, valid for the call; `to_com_ptr` takes our own reference
+            let Some(h) = (unsafe { ComRef::from_raw(handler) }) else { return kInvalidArgument };
+            self.handlers.borrow_mut().push((h.to_com_ptr(), fd));
+            kResultOk
+        })
     }
 
     unsafe fn unregisterEventHandler(&self, handler: *mut Linux::IEventHandler) -> tresult {
-        self.handlers.borrow_mut().retain(|(h, _)| h.as_ptr() != handler);
-        kResultOk
+        guard(kInternalError, || {
+            self.handlers.borrow_mut().retain(|(h, _)| h.as_ptr() != handler);
+            kResultOk
+        })
     }
 
     unsafe fn registerTimer(&self, handler: *mut Linux::ITimerHandler, milliseconds: Linux::TimerInterval) -> tresult {
-        // SAFETY: the plugin's handler, valid for the call; `to_com_ptr` takes our own reference
-        let Some(h) = (unsafe { ComRef::from_raw(handler) }) else { return kInvalidArgument };
-        let every = std::time::Duration::from_millis(milliseconds.max(1));
-        self.timers.borrow_mut().push(Timer {
-            handler: h.to_com_ptr(),
-            every,
-            next: std::time::Instant::now() + every,
-        });
-        kResultOk
+        guard(kInternalError, || {
+            // SAFETY: the plugin's handler, valid for the call; `to_com_ptr` takes our own reference
+            let Some(h) = (unsafe { ComRef::from_raw(handler) }) else { return kInvalidArgument };
+            let every = std::time::Duration::from_millis(milliseconds.max(1));
+            self.timers.borrow_mut().push(Timer {
+                handler: h.to_com_ptr(),
+                every,
+                next: std::time::Instant::now() + every,
+            });
+            kResultOk
+        })
     }
 
     unsafe fn unregisterTimer(&self, handler: *mut Linux::ITimerHandler) -> tresult {
-        self.timers.borrow_mut().retain(|t| t.handler.as_ptr() != handler);
-        kResultOk
+        guard(kInternalError, || {
+            self.timers.borrow_mut().retain(|t| t.handler.as_ptr() != handler);
+            kResultOk
+        })
     }
 }
 

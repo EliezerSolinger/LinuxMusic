@@ -484,6 +484,12 @@ pub enum Event {
 
 type Listener = Box<dyn Fn() + Send + Sync>;
 
+/// Runs a callback body, never unwinding into CoreAudio: `default` is what the callback returns if it panics. Every
+/// trampoline here runs its whole body through this
+fn guard<T>(default: T, f: impl FnOnce() -> T) -> T {
+    catch_unwind(AssertUnwindSafe(f)).unwrap_or(default)
+}
+
 unsafe extern "C" fn listener_trampoline(
     _id: AudioObjectID,
     _count: u32,
@@ -493,8 +499,10 @@ unsafe extern "C" fn listener_trampoline(
     // SAFETY: `client` is the boxed closure of a live `Watch` (freed only after the listener is removed).
     let f: &dyn Fn() = unsafe { &**(client as *const Listener) };
     // Unwinding into CoreAudio is undefined behaviour
-    let _ = catch_unwind(AssertUnwindSafe(f));
-    0
+    guard(0, || {
+        f();
+        0
+    })
 }
 
 /// A registered property listener
@@ -669,32 +677,34 @@ unsafe extern "C" fn io_trampoline(
     // SAFETY: `client` is the `IoState` of a live `Io`, which stops the proc before freeing it. Only this proc
     // touches `callback`.
     let state = unsafe { &mut *(client as *mut IoState) };
-    let host = |t: *const AudioTimeStamp| {
-        // SAFETY: a non-null time stamp is valid for the call.
-        (!t.is_null())
-            .then(|| unsafe { *t })
-            .filter(|t| t.mFlags & kAudioTimeStampHostTimeValid != 0)
-            .map(|t| t.mHostTime)
-    };
-    let mut cycle = Cycle {
-        input,
-        output,
-        now: host(now).unwrap_or_else(host_ticks),
-        input_time: host(input_time),
-        output_time: host(output_time),
-        _life: std::marker::PhantomData,
-    };
-    if state.panicked.load(Ordering::Relaxed) {
-        cycle.silence();
-        return 0;
-    }
-    let r = catch_unwind(AssertUnwindSafe(|| (state.callback)(&mut cycle)));
-    if r.is_err() {
-        state.panicked.store(true, Ordering::Release);
-        cycle.silence();
-    }
-    state.cycles.fetch_add(1, Ordering::Relaxed);
-    0
+    guard(0, || {
+        let host = |t: *const AudioTimeStamp| {
+            // SAFETY: a non-null time stamp is valid for the call.
+            (!t.is_null())
+                .then(|| unsafe { *t })
+                .filter(|t| t.mFlags & kAudioTimeStampHostTimeValid != 0)
+                .map(|t| t.mHostTime)
+        };
+        let mut cycle = Cycle {
+            input,
+            output,
+            now: host(now).unwrap_or_else(host_ticks),
+            input_time: host(input_time),
+            output_time: host(output_time),
+            _life: std::marker::PhantomData,
+        };
+        if state.panicked.load(Ordering::Relaxed) {
+            cycle.silence();
+            return 0;
+        }
+        let r = catch_unwind(AssertUnwindSafe(|| (state.callback)(&mut cycle)));
+        if r.is_err() {
+            state.panicked.store(true, Ordering::Release);
+            cycle.silence();
+        }
+        state.cycles.fetch_add(1, Ordering::Relaxed);
+        0
+    })
 }
 
 /// An IO proc on a device: the closure runs once per buffer on CoreAudio's real-time thread

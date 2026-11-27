@@ -285,7 +285,9 @@ fn flags<'a>(host: *const ffi::clap_host) -> Option<&'a Flags> {
     Some(&b.flags)
 }
 
-/// Runs a callback body, never unwinding into the plugin
+/// Runs a callback body, never unwinding into the plugin. Every host callback below goes through it, except the ones
+/// that only return a constant or do nothing (`host_request_process`, `host_params_clear`, `host_ports_supported`,
+/// `host_note_dialects`, `host_gui_hints`, `host_gui_show`), which cannot panic
 fn guard<T>(default: T, f: impl FnOnce() -> T) -> T {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or(default)
 }
