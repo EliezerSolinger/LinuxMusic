@@ -132,8 +132,17 @@ fn expression_event(time: u32, n: &Note, expression: Expression, value: f64) -> 
     Event::Expression { time, expression: id, note_id: clap_id(n.id), channel: n.channel, key: n.key, value: v }
 }
 
+/// Room kept for the events that end a sound: when a block is full of the others, a note-off still fits (one lost
+/// would leave a note hanging)
+const RELEASE_RESERVE: usize = 256;
+
 fn push(events: &mut Vec<Event>, e: Event) {
-    if events.len() < events.capacity() {
+    let room = if matches!(e, Event::NoteOff { .. } | Event::Choke { .. }) {
+        events.capacity()
+    } else {
+        events.capacity().saturating_sub(RELEASE_RESERVE)
+    };
+    if events.len() < room {
         events.push(e);
     }
 }

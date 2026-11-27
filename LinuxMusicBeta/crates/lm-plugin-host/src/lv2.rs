@@ -35,8 +35,9 @@ fn params_of(info: &PluginInfo, rate: f64) -> Vec<(u32, Param)> {
         .filter(|p| p.kind == PortKind::Control && p.direction == Direction::Input)
         .map(|p| {
             let scale = |x: Option<f32>| x.map(|v| if p.sample_rate { f64::from(v) * rate } else { f64::from(v) });
-            let min = scale(p.minimum).unwrap_or(0.0);
-            let max = scale(p.maximum).unwrap_or(1.0).max(min);
+            // A plugin's file may say NaN or infinity: the range stays finite (`clamp` panics on a NaN bound)
+            let min = scale(p.minimum).filter(|v| v.is_finite()).unwrap_or(0.0);
+            let max = scale(p.maximum).filter(|v| v.is_finite()).unwrap_or(1.0).max(min);
             (
                 p.index,
                 Param {

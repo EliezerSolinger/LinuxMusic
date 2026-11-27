@@ -292,6 +292,13 @@ struct Slot {
     audio: Option<std::thread::JoinHandle<()>>,
 }
 
+impl Drop for Slot {
+    /// A slot that goes (a group's `load` with a number in use replaces the old one) ends its audio thread too
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 impl Slot {
     /// Ends the audio thread (the instance is dropped with the slot)
     fn stop(&mut self) {

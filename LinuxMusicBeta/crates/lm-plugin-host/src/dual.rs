@@ -149,9 +149,17 @@ impl Plugin for DualMono {
         events: &[(u32, EventKind)],
         transport: &Transport,
     ) {
-        let (Some(l_in), Some(r_in)) = (inputs.first(), inputs.get(1)) else { return };
+        if inputs.len() < 2 || outputs.len() < 2 {
+            // Not the two channels it needs: silence, not what the buffers held before
+            for o in outputs.iter_mut() {
+                let n = frames.min(o.len());
+                o[..n].fill(0.0);
+            }
+            return;
+        }
+        let (l_in, r_in) = (&inputs[0], &inputs[1]);
         let (o_l, o_r) = outputs.split_at_mut(1);
-        let (Some(l_out), Some(r_out)) = (o_l.first_mut(), o_r.first_mut()) else { return };
+        let (l_out, r_out) = (&mut o_l[0], &mut o_r[0]);
         self.left.process(frames, std::slice::from_ref(l_in), std::slice::from_mut(l_out), events, transport);
         self.right.process(frames, std::slice::from_ref(r_in), std::slice::from_mut(r_out), events, transport);
         self.seen.clear();
@@ -168,8 +176,16 @@ impl Plugin for DualMono {
     }
 
     fn restore(&mut self, chunk: &[u8]) -> Result<()> {
+        // All or nothing: if the second cannot take it, the first goes back to the state it had
+        let before = self.left.save().ok().flatten();
         self.left.restore(chunk)?;
-        self.right.restore(chunk)
+        if let Err(e) = self.right.restore(chunk) {
+            if let Some(b) = before {
+                let _ = self.left.restore(&b);
+            }
+            return Err(e);
+        }
+        Ok(())
     }
 
     fn window(&mut self, request: WindowRequest) -> Result<WindowState> {
@@ -252,5 +268,63 @@ mod tests {
             p.process(8, &[], &mut outs, &[], &Transport::default());
         }
         assert!(l.iter().chain(&r).all(|x| *x == 0.25));
+    }
+
+    /// A plugin whose state is a number; `fail` makes it refuse a chunk
+    struct Stateful {
+        state: u8,
+        fail: bool,
+    }
+
+    impl Plugin for Stateful {
+        fn params(&self) -> &[Param] {
+            &[]
+        }
+        fn io(&self) -> Option<(usize, usize)> {
+            Some((1, 1))
+        }
+        fn latency(&self) -> u32 {
+            0
+        }
+        fn set_param(&mut self, _: u32, _: f32) {}
+        fn param(&self, _: u32) -> f32 {
+            0.0
+        }
+        fn process(&mut self, frames: usize, _: &[&[f32]], outputs: &mut [&mut [f32]], _: &[(u32, EventKind)], _: &Transport) {
+            outputs[0][..frames].fill(0.5);
+        }
+        fn save(&mut self) -> Result<Option<Vec<u8>>> {
+            Ok(Some(vec![self.state]))
+        }
+        fn restore(&mut self, chunk: &[u8]) -> Result<()> {
+            if self.fail {
+                return Err(Error::new("test.restore"));
+            }
+            self.state = chunk[0];
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_restore_the_second_refuses_leaves_the_first_as_it_was() {
+        let mut p = DualMono::new(
+            Box::new(Stateful { state: 1, fail: false }),
+            Box::new(Stateful { state: 1, fail: true }),
+        );
+        assert!(p.restore(&[9]).is_err());
+        assert_eq!(p.save().unwrap(), Some(vec![1]));
+    }
+
+    #[test]
+    fn missing_channels_give_silence_not_stale_buffers() {
+        let mut p = DualMono::new(
+            Box::new(Stateful { state: 0, fail: false }),
+            Box::new(Stateful { state: 0, fail: false }),
+        );
+        let mut one = vec![0.7f32; 8];
+        let input = vec![0.0f32; 8];
+        let mut outs: Vec<&mut [f32]> = vec![&mut one];
+        p.process(8, &[&input], &mut outs, &[], &Transport::default());
+        assert!(one.iter().all(|x| *x == 0.0));
     }
 }
