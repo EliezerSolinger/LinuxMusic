@@ -319,6 +319,29 @@ fn note_number(n: u64, taken: &mut std::collections::HashSet<u32>) -> u32 {
     m
 }
 
+/// The most events one MIDI item may expand to (a pattern repeated over a long item): more is a document that would
+/// exhaust the compiler's memory, refused as an error
+const MAX_ITEM_EVENTS: usize = 1 << 20;
+
+fn too_many_events() -> lm_base::Error {
+    lm_base::Error::new("compile.item.too_many_events").arg("limit", MAX_ITEM_EVENTS as i64)
+}
+
+/// Refuses a loop whose repeats would expand past the budget, before any of them is made: the cost of a repeat is
+/// at least one event per note (or control point) that starts inside the loop
+fn guard_repeats(item: &Value, looped: Option<i64>, reps: i64) -> Result<()> {
+    let Some(l) = looped else { return Ok(()) };
+    let inside = |v: &Value, key: &str| v.get(key).and_then(Value::as_int).unwrap_or(0) < l;
+    let mut per_rep: usize = item.get("notes").map_or(0, |n| n.entries().filter(|(_, note)| inside(note, "start")).count());
+    for lane in items(item, "controls") {
+        per_rep = per_rep.saturating_add(items(lane, "points").filter(|p| inside(p, "tick")).count());
+    }
+    if (per_rep as u128) * (reps.max(0) as u128) > MAX_ITEM_EVENTS as u128 {
+        return Err(too_many_events());
+    }
+    Ok(())
+}
+
 /// The time-ordered events of a MIDI item. `audio_time`: the item's start and length are in samples (its notes stay
 /// in ticks from the tick where it starts)
 pub(crate) fn midi_events(
@@ -342,7 +365,8 @@ pub(crate) fn midi_events(
     // repeat, no swing)
     let looped = item.get("loop").and_then(Value::as_int).filter(|l| *l >= 1);
     let span = end.saturating_sub(start).max(0);
-    let reps = looped.map_or(1, |l| ((span + l - 1) / l).max(1));
+    let reps = looped.map_or(1, |l| (span / l + i64::from(span % l != 0)).max(1));
+    guard_repeats(item, looped, reps)?;
     let swing = item.get("swing").and_then(Value::as_real).unwrap_or(0.0).clamp(0.0, 1.0);
     let step = item.get("step").and_then(Value::as_int).filter(|s| *s >= 1).unwrap_or(240);
     let swung = |rel: i64| -> i64 {
@@ -357,6 +381,9 @@ pub(crate) fn midi_events(
     if let Some(notes) = item.get("notes") {
         events.reserve(notes.len() * 2 * reps.min(64) as usize);
         for rep in 0..reps {
+            if events.len() > MAX_ITEM_EVENTS {
+                return Err(too_many_events());
+            }
             for (k, note) in notes.entries() {
                 let Some(n) = lm_state::parse_note_key(k) else { continue };
                 let s = int(note, "start", 0);
@@ -388,6 +415,9 @@ pub(crate) fn midi_events(
         let number = (int(lane, "number", 0).clamp(0, 127)) as u8;
         let kind = text(lane, "kind", "cc");
         for rep in 0..reps {
+            if events.len() > MAX_ITEM_EVENTS {
+                return Err(too_many_events());
+            }
             for p in items(lane, "points") {
                 let t = int(p, "tick", 0);
                 if looped.is_some_and(|l| t >= l) {
@@ -610,4 +640,36 @@ pub(crate) fn lane_curve(lane: &Value, tempo: &TempoMap) -> Result<Option<Curve>
 /// A lane's timing points (tick, frame), in their order; empty without any
 fn lane_timing(lane: &Value) -> Vec<(i64, f64)> {
     items(lane, "timing").filter_map(|p| Some((p.get("tick")?.as_int()?, p.get("frame")?.as_real()?))).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use lm_state::note_key;
+
+    use super::*;
+
+    fn item(l: i64, loop_len: i64) -> Value {
+        let note = Value::object([("start", Value::int(0)), ("key", Value::int(60)), ("length", Value::int(1))]);
+        Value::object([
+            ("start", Value::int(0)),
+            ("length", Value::int(l)),
+            ("loop", Value::int(loop_len)),
+            ("notes", Value::object([(note_key(1), note)])),
+        ])
+    }
+
+    #[test]
+    fn a_one_tick_loop_on_a_long_item_is_refused() {
+        let r = midi_events(lm_state::ROOT, &item(3_600_000, 1), &LiveKeys::default(), None);
+        assert_eq!(r.err().map(|e| e.key()), Some("compile.item.too_many_events"));
+        // The extreme length does not overflow
+        let r = midi_events(lm_state::ROOT, &item(i64::MAX, 1), &LiveKeys::default(), None);
+        assert_eq!(r.err().map(|e| e.key()), Some("compile.item.too_many_events"));
+    }
+
+    #[test]
+    fn a_sane_loop_still_expands() {
+        let r = midi_events(lm_state::ROOT, &item(3840, 960), &LiveKeys::default(), None);
+        assert!(r.is_ok());
+    }
 }
