@@ -362,15 +362,41 @@ impl Client {
         // SAFETY: as above (the shutdown hook returns nothing)
         unsafe { ffi::jack_on_info_shutdown(raw, Some(shutdown_trampoline), arg) };
         if codes.iter().any(|&c| c != 0) {
-            return Err((Error::new("jack.callback_failed"), self));
+            return Err((Error::new("jack.callback_failed"), release_callbacks(state, raw, self)));
         }
         // SAFETY: the client is valid with its callbacks set
         let code = unsafe { ffi::jack_activate(raw) };
         if code != 0 {
-            return Err((Error::new("jack.activate_failed").arg("code", i64::from(code)), self));
+            let error = Error::new("jack.activate_failed").arg("code", i64::from(code));
+            return Err((error, release_callbacks(state, raw, self)));
         }
         Ok(ActiveClient { client: Some(self), state: Some(state), active: true })
     }
+}
+
+/// The activation failed: JACK still holds `state`'s address in the callbacks already registered, and the client goes
+/// back to the caller alive. The callbacks are cleared (allowed while inactive) before the state is freed; if any
+/// cannot be, the state is leaked rather than left dangling
+fn release_callbacks(state: Box<State>, raw: *mut ffi::jack_client_t, client: Client) -> Client {
+    // SAFETY: the client is valid and not active; a null callback unregisters
+    let cleared = unsafe {
+        let null = std::ptr::null_mut();
+        let codes = [
+            ffi::jack_set_process_callback(raw, None, null),
+            ffi::jack_set_xrun_callback(raw, None, null),
+            ffi::jack_set_buffer_size_callback(raw, None, null),
+            ffi::jack_set_port_registration_callback(raw, None, null),
+            ffi::jack_set_port_connect_callback(raw, None, null),
+        ];
+        ffi::jack_on_info_shutdown(raw, None, null);
+        codes.iter().all(|&c| c == 0)
+    };
+    if cleared {
+        drop(state);
+    } else {
+        std::mem::forget(state);
+    }
+    client
 }
 
 impl Drop for Client {
