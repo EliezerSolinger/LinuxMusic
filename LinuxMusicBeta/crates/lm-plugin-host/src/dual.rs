@@ -298,7 +298,7 @@ mod tests {
         }
         fn restore(&mut self, chunk: &[u8]) -> Result<()> {
             if self.fail {
-                return Err(Error::new("test.restore"));
+                return Err(lm_base::Error::new("test.restore"));
             }
             self.state = chunk[0];
             Ok(())
