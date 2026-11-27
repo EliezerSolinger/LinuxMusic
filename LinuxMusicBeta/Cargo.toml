@@ -116,6 +116,7 @@ lm-session = { path = "crates/lm-session" }
 lm-remote = { path = "crates/lm-remote" }
 lm-midimap = { path = "crates/lm-midimap" }
 lm-smf = { path = "crates/lm-smf" }
+lm-osc = { path = "crates/lm-osc" }
 lm-sys-guitarix = { path = "crates/lm-sys-guitarix" }
 lm-plugins-guitarix = { path = "crates/lm-plugins-guitarix" }
 

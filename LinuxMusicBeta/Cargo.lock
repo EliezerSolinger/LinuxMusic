@@ -3670,6 +3670,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-osc"
+version = "0.1.0"
+
+[[package]]
 name = "lm-plugin"
 version = "0.1.0"
 dependencies = [
@@ -3964,6 +3968,7 @@ dependencies = [
  "lm-dsp",
  "lm-io",
  "lm-midimap",
+ "lm-osc",
  "lm-plugin",
  "lm-plugin-proxy",
  "lm-plugins-ampandir",

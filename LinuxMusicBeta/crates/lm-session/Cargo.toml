@@ -41,6 +41,7 @@ lm-io.workspace = true
 lm-port.workspace = true
 # MIDI mapping, learning, feedback and the Mackie Control protocol (I-21)
 lm-midimap = { workspace = true, features = ["doc"] }
+lm-osc.workspace = true
 # Third-party plugins in helper processes (I-9.6)
 lm-plugin-proxy.workspace = true
 lm-sys-sndfile.workspace = true
