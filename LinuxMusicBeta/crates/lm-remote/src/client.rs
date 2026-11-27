@@ -163,15 +163,28 @@ struct UploadJob {
     hash: Mutex<Option<(String, u64)>>,
     acked: AtomicU64,
     known: AtomicBool,
-    stop: AtomicBool,
+    /// One number per attempt (M6): a thread runs only while the job's generation is the one it was started with, so
+    /// a thread that has not yet seen a disconnection can never overlap the one a reconnection starts
+    generation: AtomicU64,
     error: Mutex<Option<Error>>,
+}
+
+impl UploadJob {
+    /// Ends the running thread, and any older one, for good
+    fn cancel(&self) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn stopped(&self, generation: u64) -> bool {
+        self.generation.load(Ordering::Acquire) != generation
+    }
 }
 
 /// Bytes of an upload in flight beyond what the server acknowledged
 const UPLOAD_WINDOW: u64 = 8 << 20;
 const UPLOAD_CHUNK: usize = 256 << 10;
 
-fn upload_thread(id: u64, job: Arc<UploadJob>, out: Sender<(u8, Vec<u8>)>) {
+fn upload_thread(id: u64, job: Arc<UploadJob>, generation: u64, out: Sender<(u8, Vec<u8>)>) {
     let fail = |e: Error| {
         *job.error.lock().unwrap_or_else(PoisonError::into_inner) = Some(e);
     };
@@ -187,7 +200,7 @@ fn upload_thread(id: u64, job: Arc<UploadJob>, out: Sender<(u8, Vec<u8>)>) {
                 let mut buf = vec![0u8; 1 << 20];
                 let mut size = 0u64;
                 loop {
-                    if job.stop.load(Ordering::Relaxed) {
+                    if job.stopped(generation) {
                         return Err(Error::new("remote.disconnected"));
                     }
                     let n = f.read(&mut buf).map_err(io)?;
@@ -221,7 +234,7 @@ fn upload_thread(id: u64, job: Arc<UploadJob>, out: Sender<(u8, Vec<u8>)>) {
         return;
     }
     while !job.known.load(Ordering::Acquire) {
-        if job.stop.load(Ordering::Relaxed) {
+        if job.stopped(generation) {
             return;
         }
         std::thread::sleep(Duration::from_millis(1));
@@ -236,7 +249,7 @@ fn upload_thread(id: u64, job: Arc<UploadJob>, out: Sender<(u8, Vec<u8>)>) {
     }
     let mut buf = vec![0u8; UPLOAD_CHUNK];
     while offset < size {
-        if job.stop.load(Ordering::Relaxed) {
+        if job.stopped(generation) {
             return;
         }
         if offset - job.acked.load(Ordering::Acquire).min(offset) >= UPLOAD_WINDOW {
@@ -253,7 +266,7 @@ fn upload_thread(id: u64, job: Arc<UploadJob>, out: Sender<(u8, Vec<u8>)>) {
         offset += want as u64;
     }
     while job.acked.load(Ordering::Acquire) < size {
-        if job.stop.load(Ordering::Relaxed) {
+        if job.stopped(generation) {
             return;
         }
         std::thread::sleep(Duration::from_millis(1));
@@ -381,6 +394,8 @@ pub struct RemotePort {
     live: Option<Live>,
     connection: Connection,
     retry: Option<(Instant, Receiver<Result<Welcome>>)>,
+    /// When the reconnect thread could not be spawned: try again then (M7), the connection stays `Reconnecting`
+    respawn_at: Option<Instant>,
     doc: Document,
     modified: bool,
     can_undo: bool,
@@ -504,6 +519,7 @@ impl RemotePort {
             cfg,
             live: None,
             retry: None,
+            respawn_at: None,
             doc,
             modified: false,
             can_undo: false,
@@ -618,7 +634,7 @@ impl RemotePort {
         for (id, kind) in std::mem::take(&mut self.requests) {
             // An upload goes on after the reconnection, from what the server has (unless it never will)
             if let Some(job) = self.uploads.get(&id) {
-                job.stop.store(true, Ordering::Relaxed);
+                job.cancel();
                 job.known.store(false, Ordering::Release);
                 if !final_now {
                     self.requests.insert(id, kind);
@@ -652,13 +668,26 @@ impl RemotePort {
             std::thread::sleep(after);
             let _ = tx.send(handshake(&cfg));
         });
-        if started.is_ok() {
-            self.retry = Some((Instant::now(), rx));
+        match started {
+            Ok(_) => self.retry = Some((Instant::now(), rx)),
+            Err(e) => {
+                // The next attempt is the pump's job: a failed spawn must not end the reconnection for good
+                if let Connection::Reconnecting { last, .. } = &mut self.connection {
+                    *last = Error::new("remote.connect").arg("error", e.to_string());
+                }
+                self.respawn_at = Some(Instant::now() + Duration::from_secs(1));
+            }
         }
     }
 
     fn poll_retry(&mut self) -> bool {
-        let Some((_, rx)) = &self.retry else { return false };
+        let Some((_, rx)) = &self.retry else {
+            if self.respawn_at.is_some_and(|at| Instant::now() >= at) {
+                self.respawn_at = None;
+                self.start_retry(Duration::ZERO);
+            }
+            return false;
+        };
         let r = match rx.try_recv() {
             Ok(r) => r,
             Err(TryRecvError::Empty) => return false,
@@ -709,10 +738,9 @@ impl RemotePort {
 
     fn start_upload(&mut self, id: RequestId) {
         let (Some(job), Some(live)) = (self.uploads.get(&id), &self.live) else { return };
-        job.stop.store(false, Ordering::Relaxed);
-        let (job, out) = (Arc::clone(job), live.out.clone());
+        let (generation, job, out) = (job.generation.load(Ordering::Acquire), Arc::clone(job), live.out.clone());
         let spawned =
-            std::thread::Builder::new().name("lm-remote-upload".into()).spawn(move || upload_thread(id, job, out));
+            std::thread::Builder::new().name("lm-remote-upload".into()).spawn(move || upload_thread(id, job, generation, out));
         if let Err(e) = spawned {
             self.uploads.remove(&id);
             self.requests.remove(&id);
@@ -869,7 +897,7 @@ impl RemotePort {
                 } else if let Some(kind) = self.requests.remove(&id) {
                     self.peaks_asked.remove(&id);
                     if let Some(job) = self.uploads.remove(&id) {
-                        job.stop.store(true, Ordering::Relaxed);
+                        job.cancel();
                     }
                     self.finished.push((id, finish(kind, r)));
                 }
@@ -1279,7 +1307,7 @@ impl CorePort for RemotePort {
             hash: Mutex::new(None),
             acked: AtomicU64::new(0),
             known: AtomicBool::new(false),
-            stop: AtomicBool::new(false),
+            generation: AtomicU64::new(0),
             error: Mutex::new(None),
         });
         self.uploads.insert(id, job);
@@ -1293,5 +1321,30 @@ impl CorePort for RemotePort {
             Kind::Done,
             Self::message("set_favorite", [("entry", Value::int(entry.0 as i64)), ("on", Value::bool(on))]),
         )
+    }
+}
+
+#[cfg(test)]
+mod upload_generation_tests {
+    use super::*;
+
+    /// M6: a cancelled attempt stays stopped even after a newer one starts from the same job
+    #[test]
+    fn an_old_upload_thread_never_resumes() {
+        let job = UploadJob {
+            path: PathBuf::new(),
+            ext: String::new(),
+            hash: Mutex::new(None),
+            acked: AtomicU64::new(0),
+            known: AtomicBool::new(false),
+            generation: AtomicU64::new(0),
+            error: Mutex::new(None),
+        };
+        let old = job.generation.load(Ordering::Acquire);
+        assert!(!job.stopped(old));
+        job.cancel();
+        let new = job.generation.load(Ordering::Acquire);
+        assert!(job.stopped(old));
+        assert!(!job.stopped(new));
     }
 }
