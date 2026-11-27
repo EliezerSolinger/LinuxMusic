@@ -368,8 +368,15 @@ impl Reader {
         let file = File::open(path).map_err(|e| io_error("sndfile.open_failed", path, &e))?;
         let mut raw = ffi::SfInfo::default();
         let handle = open_fd(&file, ffi::SFM_READ, &mut raw, path)?;
-        let reader = Self { handle, info: Info::from_raw(&raw)?, position: 0, path: path.into(), _file: file };
-        Ok(reader)
+        let info = match Info::from_raw(&raw) {
+            Ok(info) => info,
+            Err(e) => {
+                // SAFETY: the handle was just opened and no Reader owns it yet; `file` outlives the call (dropped after)
+                unsafe { ffi::sf_close(handle.as_ptr()) };
+                return Err(e);
+            }
+        };
+        Ok(Self { handle, info, position: 0, path: path.into(), _file: file })
     }
 
     pub fn info(&self) -> &Info {
