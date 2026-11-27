@@ -92,13 +92,13 @@ Nenhum `unsafe` fora de `lm-sys-*`. Todos os crates têm `#![forbid(unsafe_code)
 | CRÍTICO panel.rs `wave_zoom` clamp | confirmado e corrigido: `start`/`end` limitados a 0..1 (NaN vira 0) e `fit_between` sem pânico | ff9402c5a |
 | Mesmo padrão em outros painéis (graph, schemas de plugin, `Range::fit`, fader, lomm, graphs, instrument) | confirmado e corrigido: `fit_between` / `max().min()`, limites de schema podem vir invertidos ou NaN | ff9402c5a |
 | ALTO tiles.rs cache de blocos sem limite | confirmado e corrigido: teto de 16384 blocos (16 MB); `names` não limpo (só cresce com recursos distintos, sem limpeza) | commit seguinte |
-| ALTO `Finished::Peaks` descartado, repetição por quadro | corrigido: `retry` só repete blocos ainda visíveis e a animação para; deduplicação de pedidos em voo no `RemotePort` (f0d35be06); o lado da GUI fechado na rodada de desenho: `Core` trata `Finished::Peaks`, `TileCache` pede uma vez por bloco em voo e para ao falhar | f0d35be06 + GESTURES |
+| ALTO `Finished::Peaks` descartado, repetição por quadro | corrigido: `retry` só repete blocos ainda visíveis e a animação para; deduplicação de pedidos em voo no `RemotePort` (f0d35be06); o lado da GUI fechado na rodada de desenho: `Core` trata `Finished::Peaks`, `TileCache` pede uma vez por bloco em voo e para ao falhar | f0d35be06 + c927ebaba |
 | MÉDIO marks.rs:385 clamp | confirmado e corrigido | ff9402c5a |
 | MÉDIO piano_roll.rs:909/918 clamp com `length < 0` | confirmado e corrigido | ff9402c5a |
 | Novos achados do mesmo padrão: export.rs bars, edit.rs TrimStart, piano_roll.rs:980 cast | confirmado e corrigido | ff9402c5a / commit seguinte |
-| MÉDIO gestos abertos (panel, piano_roll, tempo_drag) | corrigido na rodada de desenho: registro único de gestos, fechados ao soltar o mouse em qualquer lugar ou perder o foco | GESTURES |
-| MÉDIO `Clip::read` por evento | corrigido na rodada de desenho: `ClipCache` invalidado quando a lista `tracks` muda de nó | GESTURES |
-| MÉDIO mapas `imported`/`entries`/`previews` | corrigido na rodada de desenho: registro de pedidos pendentes, `forget_request`, validade de 2 min; `names` do `TileCache` com teto e `forget` | GESTURES |
-| MÉDIO `let _ = port...` sistêmico | corrigido na rodada de desenho: `Core::report`/`PortHost::report` mostram o erro como aviso curto | GESTURES |
-| MÉDIO `tempo_map` na GUI | corrigido na rodada de desenho: `CorePort::tempo_map()` do núcleo, guardado por revisão | GESTURES |
+| MÉDIO gestos abertos (panel, piano_roll, tempo_drag) | corrigido na rodada de desenho: registro único de gestos, fechados ao soltar o mouse em qualquer lugar ou perder o foco | c927ebaba |
+| MÉDIO `Clip::read` por evento | corrigido na rodada de desenho: `ClipCache` invalidado quando a lista `tracks` muda de nó | c927ebaba |
+| MÉDIO mapas `imported`/`entries`/`previews` | corrigido na rodada de desenho: registro de pedidos pendentes, `forget_request`, validade de 2 min; `names` do `TileCache` com teto e `forget` | c927ebaba |
+| MÉDIO `let _ = port...` sistêmico | corrigido na rodada de desenho: `Core::report`/`PortHost::report` mostram o erro como aviso curto | c927ebaba |
+| MÉDIO `tempo_map` na GUI | corrigido na rodada de desenho: `CorePort::tempo_map()` do núcleo, guardado por revisão | c927ebaba |
 | MÉDIO main.rs:130 `session.open` | falso: `open` devolve `OperationId` (operação mostrada na UI), não `Result` | n/a |

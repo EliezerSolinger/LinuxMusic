@@ -2864,6 +2864,30 @@ pub mod music {
         }
     }
 
+    #[cfg(test)]
+    mod clip_cache_tests {
+        use super::*;
+        use lm_port::{CorePort, EditOp, Label};
+        use lm_port_fake::{Config, FakePort};
+
+        #[test]
+        fn a_clip_is_read_once_until_the_tracks_change() {
+            let mut port = FakePort::new(Config { tracks: 3, slow_delay: None, slow_track: usize::MAX }).expect("demo");
+            let id = first_midi(port.root()).expect("a MIDI item");
+            let mut cache = ClipCache::default();
+            let first = cache.get(port.root(), id).expect("the clip");
+            let again = cache.get(port.root(), id).expect("the clip");
+            // the same notes, not read again
+            assert!(Arc::ptr_eq(&first.notes, &again.notes));
+            assert_eq!(cache.len(), 1);
+            // an edit reaches the tracks: what was kept is dropped
+            let track = model::list(port.root(), "tracks").next().and_then(model::id_of).expect("a track");
+            let _ = port.apply(Label::new("t"), vec![EditOp::set(track, &["name"], Value::text("renamed"))]);
+            let fresh = cache.get(port.root(), id).expect("the clip");
+            assert!(!Arc::ptr_eq(&first.notes, &fresh.notes));
+        }
+    }
+
     pub fn first_midi(root: &Value) -> Option<NodeId> {
         model::list(root, "tracks")
             .flat_map(|t| model::list(t, "items"))
