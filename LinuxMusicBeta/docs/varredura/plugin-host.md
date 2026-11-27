@@ -193,3 +193,30 @@ Achados: A-7, M-11, M-12, B-8, B-9.
 - `lm-doc/src/edit.rs`, `index.rs`, `rules.rs`, `refs.rs`, `ops.rs` e `schemas.rs` foram lidos por busca de padrões (laços, `as`, indexação, `unwrap`) e por leitura dos trechos relevantes, não linha a linha. Os trechos de `schemas.rs` que são só declarações não foram revisados.
 - `lm-state/src/value.rs` (partes de acesso e edição de listas) e `schema.rs` (checagem de valores) foram lidos por padrão; o contrato de cada função de edição não foi testado.
 - Nenhum build ou teste foi executado, então os achados são de leitura: confirmar C-1 e A-6 com um helper de teste (`test` format com latência e janela) antes de corrigir.
+
+## Resultado da confirmação
+
+Commits: `f56190a83` (proxy), `bdc71e9f8` e `1d1952299` (host), o do documento está listado abaixo. Nada foi executado (só `cargo check`).
+
+| Achado | Veredito | Commit |
+|---|---|---|
+| C-1 latência do helper sem limite | Confirmado e corrigido: `clamp_latency` (teto de 2^18 quadros) aplicado uma vez em `start_in`, em `Proxy::new` e na leitura do `LATENCY` da memória compartilhada; teste de integração em `tests/host.rs` | f56190a83 |
+| A-1 NaN/inf nas saídas e nos parâmetros | Confirmado e corrigido: `scrub` zera não finitos após `get()`; `ParamChanged` não finito é descartado; `Saved` descarta valores que viram inf em f32 | f56190a83 |
+| A-2 `Deadline::Wait` sem fim | Confirmado e corrigido: `WAIT_LIMIT` de 10 s por bloco conta como bloco perdido (após 16, o plugin é dado como travado) | f56190a83 |
+| A-3 escrita bloqueante no stdin sob mutex | Confirmado e corrigido: thread escritora com fila limitada (`try_send`); `send` e `Hosted::drop` nunca bloqueiam | f56190a83 |
+| A-4 fila de mensagens sem limite | Confirmado e corrigido: `sync_channel` de 256, o leitor descarta com `try_send` | f56190a83 |
+| A-5 mensagens da varredura sem limite | Confirmado e corrigido: teto de 100 000 mensagens, o helper é morto (`plugin_host.flood`); campos de texto, chaves (160 B), parâmetros (2048) e faixas (±1e9, finitas) limitados em `scanned_from` | f56190a83 |
+| A-6 thread de áudio e controle disputam o `Mutex` do plugin | Confirmado e não corrigido: a correção certa é dar posse exclusiva do plugin à thread de áudio e mandar `save`/`restore`/`window`/`idle` por mensagem a ela, o que muda a estrutura do helper e o contrato de thread principal do CLAP/VST3 (janela e `idle` precisam da thread principal); fica como projeto próprio | n/a |
+| A-7 `max_id + 1` com ids do arquivo | Confirmado e corrigido: `first_free` recusa o arquivo com `doc.id.exhausted` se o contador não couber em 2^53-1 (cobre também M-11) | 362f80836 |
+| M-1 leitor do controle morre e o helper segue vivo | Confirmado e corrigido: ao sair o leitor, o helper é morto | f56190a83 |
+| M-2 `try_wait` com erro abandona o helper | Confirmado e corrigido: mata, recolhe e junta a leitora | f56190a83 |
+| M-3 helper órfão sem `PDEATHSIG` | Confirmado e não corrigido: exige `pre_exec`/`prctl` (unsafe, só Linux) fora do escopo desta passada | n/a |
+| M-4 eventos descartados, inclusive note-off | Parcialmente confirmado e corrigido no helper (CLAP e VST3 reservam 256 vagas para note-off/choke/release); o corte `take(max_events)` do proxy (4096 por bloco) fica: exigiria dividir o bloco | bdc71e9f8 |
+| M-5 restore pela metade no dual mono | Confirmado e corrigido: a esquerda volta ao estado anterior se a direita recusar; teste | bdc71e9f8 |
+| M-6 chaves internadas sem limite | Confirmado e corrigido na fronteira: teto de comprimento e de quantidade por plugin em `scanned_from` (o interner em si é de `lm-base`, não alterado) | f56190a83 |
+| M-7 bloqueio permanente por timeout | Confirmado e não corrigido: é política da sessão (`lm-session`), outra área | n/a |
+| M-8, M-9 (`lm-base` operation) | Não verificado: fora da área (`lm-base`) | n/a |
+| M-10 escritor JSON sem profundidade | Não verificado: fora da área (`lm-state`) | n/a |
+| M-11 contador acima de 2^53 | Confirmado e corrigido junto com A-7 | 362f80836 |
+| M-12 razão de escala inf/NaN | Não verificado: fora da área (`lm-doc/tuning.rs`) | n/a |
+| Extras do relatório: B-1 (Slot sem Drop), B-2 (`from_secs_f64`), B-12 (clamp com NaN no LV2), B-13 (saídas velhas no dual) | Confirmados e corrigidos | bdc71e9f8, f56190a83 |
