@@ -35,6 +35,9 @@ pub struct HostConfig {
     pub load_timeout: Duration,
     /// Folders the helper searches for plugins besides the system's (an LV2 bundle or a folder of them)
     pub paths: Vec<PathBuf>,
+    /// Folders of one format only (`"lv2"`, `"clap"`, `"vst3"`, `"ladspa"`): a helper started for that format, or its
+    /// scan, searches them and the `paths`; a helper that serves a group (any format) gets all of them
+    pub format_paths: BTreeMap<String, Vec<PathBuf>>,
     /// Whether the system's plugin folders are searched too (the tests search only `paths`)
     pub system_paths: bool,
 }
@@ -54,8 +57,20 @@ impl HostConfig {
             deadline: Deadline::default(),
             load_timeout: Duration::from_secs(20),
             paths: Vec::new(),
+            format_paths: BTreeMap::new(),
             system_paths: true,
         }
+    }
+
+    /// The folders to search for plugins of `format` (`None`: every format, for a helper that serves a group)
+    pub fn paths_for(&self, format: Option<&str>) -> Vec<PathBuf> {
+        let mut out = self.paths.clone();
+        for (f, folders) in &self.format_paths {
+            if format.is_none_or(|x| x == f) {
+                out.extend(folders.iter().cloned());
+            }
+        }
+        out
     }
 }
 
@@ -199,13 +214,13 @@ pub struct Process {
 }
 
 impl Process {
-    fn spawn(config: &HostConfig, group: bool, until: Instant) -> Result<Arc<Process>> {
+    fn spawn(config: &HostConfig, group: bool, format: Option<&str>, until: Instant) -> Result<Arc<Process>> {
         let mut command = Command::new(&config.binary);
         command.arg("run");
         if group {
             command.arg("--group");
         }
-        for p in &config.paths {
+        for p in &config.paths_for(format) {
             command.arg("--path").arg(p);
         }
         let (fds, helper_end) = FdChannel::pair()?;
@@ -359,7 +374,7 @@ impl Group {
         {
             return Ok(p);
         }
-        let p = Process::spawn(config, true, until)?;
+        let p = Process::spawn(config, true, None, until)?;
         *slot = Arc::downgrade(&p);
         Ok(p)
     }
@@ -379,7 +394,7 @@ pub fn start_in(config: &HostConfig, req: &LoadRequest, group: Option<&Group>) -
     let until = Instant::now() + config.load_timeout;
     let process = match group {
         Some(g) => g.process(config, until)?,
-        None => Process::spawn(config, false, until)?,
+        None => Process::spawn(config, false, Some(&req.format), until)?,
     };
     let id = process.next.fetch_add(1, Ordering::AcqRel);
     let (tx, rx) = sync_channel(REPLY_QUEUE);

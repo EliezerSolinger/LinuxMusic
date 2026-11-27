@@ -143,6 +143,35 @@ fn plugins_pref(prefs: &crate::prefs::Preferences) -> Value {
     prefs.get(&["plugins"]).cloned().unwrap_or_else(Value::empty_object)
 }
 
+/// The formats a plugin folder can be set for
+pub const FOLDER_FORMATS: [&str; 4] = ["lv2", "clap", "vst3", "ladspa"];
+/// The most folders kept per format, and the longest folder name (a preference is the user's file: bounded)
+const MAX_FOLDERS: usize = 64;
+const MAX_FOLDER_LEN: usize = 4096;
+
+/// The folders the user set for each format (`plugins.folders.<format>`), what is not a folder name dropped
+fn folders_of(prefs: &Value) -> std::collections::BTreeMap<String, Vec<std::path::PathBuf>> {
+    let mut out = std::collections::BTreeMap::new();
+    let Some(folders) = prefs.get("folders") else { return out };
+    for format in FOLDER_FORMATS {
+        let list: Vec<std::path::PathBuf> = list_of(folders, format)
+            .iter()
+            .filter_map(Value::as_text)
+            .map(str::trim)
+            .filter(|t| !t.is_empty() && t.len() <= MAX_FOLDER_LEN && !t.contains('\0'))
+            .take(MAX_FOLDERS)
+            .map(|t| match t.strip_prefix("~/") {
+                Some(rest) => std::env::var_os("HOME").map_or_else(|| t.into(), |h| std::path::Path::new(&h).join(rest)),
+                None => t.into(),
+            })
+            .collect();
+        if !list.is_empty() {
+            out.insert(format.to_owned(), list);
+        }
+    }
+    out
+}
+
 fn list_of(v: &Value, key: &str) -> Vec<Value> {
     v.get(key).map(|l| l.items().cloned().collect()).unwrap_or_default()
 }
@@ -236,11 +265,24 @@ impl Session {
     pub fn set_plugin_host(&mut self, mut config: HostConfig) {
         let prefs = plugins_pref(&self.preferences);
         config.paths.extend(list_of(&prefs, "paths").iter().filter_map(Value::as_text).map(std::path::PathBuf::from));
+        config.format_paths = folders_of(&prefs);
         let config = Arc::new(config);
         self.external.config = Some(Arc::clone(&config));
         let scanned: Vec<Scanned> = list_of(&prefs, "scanned").iter().filter_map(scanned_from).collect();
         if let Err(e) = self.add_externals(&scanned) {
             self.notices.error(&e, None, None);
+        }
+    }
+
+    /// The folders of the preferences go to the helper's configuration: the next scan and the next plugin started
+    /// search them (a plugin already running is not moved)
+    pub(crate) fn refresh_plugin_folders(&mut self) {
+        let Some(config) = self.external.config.clone() else { return };
+        let folders = folders_of(&plugins_pref(&self.preferences));
+        if config.format_paths != folders {
+            let mut next = (*config).clone();
+            next.format_paths = folders;
+            self.external.config = Some(Arc::new(next));
         }
     }
 
@@ -677,6 +719,23 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_folders_of_each_format_are_read_and_bounded() {
+        let many: Vec<Value> = (0..MAX_FOLDERS + 5).map(|i| Value::text(format!("/p/{i}"))).collect();
+        let prefs = Value::object([(
+            "folders",
+            Value::object([
+                ("lv2", Value::list([Value::text(" /a "), Value::text(""), Value::int(3)])),
+                ("clap", Value::list(many)),
+                ("vst2", Value::list([Value::text("/ignored")])),
+            ]),
+        )]);
+        let f = folders_of(&prefs);
+        assert_eq!(f["lv2"], [std::path::PathBuf::from("/a")]);
+        assert_eq!(f["clap"].len(), MAX_FOLDERS);
+        assert!(!f.contains_key("vst2") && !f.contains_key("vst3"), "only the hosted formats");
+    }
 
     fn entry(format: &str, uri: &str, reason: &str) -> Value {
         Value::object([

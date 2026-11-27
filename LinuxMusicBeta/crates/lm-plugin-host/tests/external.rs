@@ -19,6 +19,7 @@ fn a_scanned_plugin_in_the_registry() {
         deadline: Deadline::Wait,
         load_timeout: Duration::from_secs(20),
         paths: Vec::new(),
+        format_paths: Default::default(),
         system_paths: true,
     });
     let report =
@@ -56,6 +57,7 @@ fn a_mono_plugin_on_a_stereo_channel_runs_as_two_instances() {
         deadline: Deadline::Wait,
         load_timeout: Duration::from_secs(20),
         paths: Vec::new(),
+        format_paths: Default::default(),
         system_paths: true,
     });
     let report =

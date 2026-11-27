@@ -22,6 +22,7 @@ fn config() -> HostConfig {
         deadline: Deadline::Live(0.6),
         load_timeout: Duration::from_secs(20),
         paths: Vec::new(),
+        format_paths: Default::default(),
         system_paths: true,
     }
 }

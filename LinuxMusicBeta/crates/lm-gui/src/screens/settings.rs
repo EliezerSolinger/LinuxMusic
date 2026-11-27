@@ -280,6 +280,9 @@ fn text_of(v: &Value, k: &str) -> String {
     v.get(k).and_then(Value::as_text).unwrap_or("").to_string()
 }
 
+/// The formats whose search folders the user sets, with their names on the page
+const PLUGIN_FORMATS: [(&str, &str); 4] = [("lv2", "LV2"), ("clap", "CLAP"), ("vst3", "VST3"), ("ladspa", "LADSPA")];
+
 const RATES: [i64; 5] = [44_100, 48_000, 88_200, 96_000, 192_000];
 const BLOCKS: [i64; 8] = [32, 64, 128, 256, 512, 1024, 2048, 4096];
 
@@ -290,6 +293,9 @@ pub struct Settings {
     projects_dir: Entity<InputState>,
     soundfont: Entity<InputState>,
     new_folder: Entity<InputState>,
+    /// The Plugins page: the format whose folders show (an index of `PLUGIN_FORMATS`) and the folder being typed
+    plugin_format: usize,
+    plugin_folder: Entity<InputState>,
     /// The alias being typed, per MIDI port of the preferences (by index)
     aliases: Vec<Entity<InputState>>,
     devices: Option<Vec<DeviceInfo>>,
@@ -323,6 +329,7 @@ impl Settings {
         let projects_dir = input(text_at(&["projectsFolder"]), "", window, cx);
         let soundfont = input(text_at(&["folders", "soundfont"]), "/usr/share/sounds/sf2/FluidR3_GM.sf2", window, cx);
         let new_folder = input(String::new(), "/a/folder/to/allow", window, cx);
+        let plugin_folder = input(String::new(), "/a/folder/of/plugins", window, cx);
         let ksearch = input(String::new(), "Search shortcuts…", window, cx);
         let kname = input(String::new(), "Name", window, cx);
         let ports: Vec<Value> =
@@ -356,6 +363,11 @@ impl Settings {
                     s.add_folder(cx);
                 }
             }),
+            cx.subscribe(&plugin_folder, |s: &mut Settings, _, ev: &InputEvent, cx| {
+                if matches!(ev, InputEvent::PressEnter { .. }) {
+                    s.add_plugin_folder(cx);
+                }
+            }),
         ];
         for (i, a) in aliases.iter().enumerate() {
             subs.push(cx.subscribe(a, move |s: &mut Settings, st, ev: &InputEvent, cx| {
@@ -372,6 +384,8 @@ impl Settings {
             projects_dir,
             soundfont,
             new_folder,
+            plugin_format: 0,
+            plugin_folder,
             aliases,
             devices: None,
             capturing: None,
@@ -489,6 +503,17 @@ impl Settings {
         if (v.starts_with('/') || v.starts_with("~/")) && !all.contains(&v) {
             all.push(v);
             self.set(cx, &["folders", "allowed"], Value::list(all.into_iter().map(Value::text)));
+        }
+    }
+
+    /// A folder to search for the plugins of the format shown on the Plugins page (`plugins.folders.<format>`)
+    fn add_plugin_folder(&mut self, cx: &mut Context<Self>) {
+        let v = self.plugin_folder.read(cx).value().trim().to_string();
+        let format = PLUGIN_FORMATS[self.plugin_format.min(PLUGIN_FORMATS.len() - 1)].0;
+        let mut all = self.list_at(cx, &["plugins", "folders", format]);
+        if (v.starts_with('/') || v.starts_with("~/")) && !all.contains(&v) {
+            all.push(v);
+            self.set(cx, &["plugins", "folders", format], Value::list(all.into_iter().map(Value::text)));
         }
     }
 
@@ -1212,7 +1237,68 @@ impl Settings {
                     })))
             })
             .collect();
+        let (format, format_name) = PLUGIN_FORMATS[self.plugin_format.min(PLUGIN_FORMATS.len() - 1)];
+        let folders: Vec<_> = self
+            .list_at(cx, &["plugins", "folders", format])
+            .into_iter()
+            .enumerate()
+            .map(|(i, f)| {
+                let gone = f.clone();
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(div().w(px(360.)).text_size(px(12.)).font_family("Menlo").child(f))
+                    .child(button(("plugin-folder", i), tr("Remove"), false, 0).on_click(cx.listener(
+                        move |s, _, _, cx| {
+                            let rest: Vec<Value> = s
+                                .list_at(cx, &["plugins", "folders", format])
+                                .into_iter()
+                                .filter(|x| *x != gone)
+                                .map(Value::text)
+                                .collect();
+                            s.set(cx, &["plugins", "folders", format], Value::list(rest));
+                        },
+                    )))
+            })
+            .collect();
         vec![
+            wide(
+                "Plugin folders",
+                Some(Apply::Now),
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .child(segmented(
+                        "plugin-format",
+                        PLUGIN_FORMATS.iter().enumerate().map(|(i, (_, n))| ((*n).into(), i == self.plugin_format, true)).collect(),
+                        cx,
+                        |s, i, _, cx| {
+                            s.plugin_format = i;
+                            cx.notify();
+                        },
+                    ))
+                    .children(folders)
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(6.))
+                            .child(div().w(px(360.)).child(crate::ui::text_entry(Input::new(&self.plugin_folder))))
+                            .child(
+                                button("add-plugin-folder", tr("Add"), false, 0)
+                                    .debug_selector(|| "add-plugin-folder".into())
+                                    .on_click(cx.listener(|s, _, _, cx| s.add_plugin_folder(cx))),
+                            )
+                            .child(
+                                button("scan-plugins", format!("{} {format_name}", tr("Scan")), false, 0)
+                                    .debug_selector(|| "scan-plugins".into())
+                                    .on_click(cx.listener(move |s, _, _, cx| {
+                                        port_action(&s.scx, "plugin.scan", obj(vec![("format", Value::text(format))]), cx);
+                                    })),
+                            ),
+                    ),
+            ),
             self.toggle("Plugin windows on top", "plugin-top", &["plugins", "windowsOnTop"], false, cx),
             wide(
                 "Blocked plugins",

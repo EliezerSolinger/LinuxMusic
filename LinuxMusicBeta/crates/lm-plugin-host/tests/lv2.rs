@@ -53,6 +53,7 @@ fn an_lv2_plugin_out_of_process() {
         deadline: Deadline::Wait,
         load_timeout: Duration::from_secs(20),
         paths: vec![bundle.clone()],
+        format_paths: Default::default(),
         system_paths: false,
     };
     // The scan: listed from the Turtle, probed in a helper

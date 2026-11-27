@@ -99,6 +99,16 @@ pub fn defaults() -> Value {
             "plugins",
             o(vec![
                 ("paths", Value::empty_list()),
+                // The folders searched for one format's plugins, besides the system's
+                (
+                    "folders",
+                    o(vec![
+                        ("lv2", Value::empty_list()),
+                        ("clap", Value::empty_list()),
+                        ("vst3", Value::empty_list()),
+                        ("ladspa", Value::empty_list()),
+                    ]),
+                ),
                 ("scanned", Value::empty_list()),
                 ("blocked", Value::empty_list()),
                 ("grouped", Value::empty_list()),

@@ -2457,6 +2457,9 @@ impl Session {
         {
             self.param_write(lm_doc::MASTER, "monitor.level", v as f32);
         }
+        if path.first() == Some(&PathStep::key("plugins")) {
+            self.refresh_plugin_folders();
+        }
         let file = self.preferences.file().cloned();
         if let Some(file) = file {
             let tree = self.preferences.tree().clone();

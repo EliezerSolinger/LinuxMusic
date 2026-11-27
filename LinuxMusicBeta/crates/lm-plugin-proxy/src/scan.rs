@@ -246,7 +246,7 @@ pub fn scan(
     cancel: &Cancel,
     progress: &Progress,
 ) -> Result<ScanReport> {
-    let paths: Vec<PathBuf> = config.paths.iter().chain(extra).cloned().collect();
+    let paths: Vec<PathBuf> = config.paths_for(Some(format)).into_iter().chain(extra.iter().cloned()).collect();
     let with_paths = |mut args: Vec<String>| {
         for p in &paths {
             args.push("--path".into());
@@ -329,6 +329,18 @@ pub fn scan(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_format_searches_its_own_folders_and_the_shared_ones() {
+        let mut config = HostConfig::find();
+        config.paths = vec!["/shared".into()];
+        config.format_paths.insert("lv2".into(), vec!["/lv2".into()]);
+        config.format_paths.insert("clap".into(), vec!["/clap".into()]);
+        assert_eq!(config.paths_for(Some("lv2")), [PathBuf::from("/shared"), PathBuf::from("/lv2")]);
+        assert_eq!(config.paths_for(Some("vst3")), [PathBuf::from("/shared")]);
+        // a group's helper serves any format: every folder
+        assert_eq!(config.paths_for(None).len(), 3);
+    }
 
     fn plugin(params: Vec<Value>) -> Value {
         Value::object([

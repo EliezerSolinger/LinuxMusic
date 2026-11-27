@@ -33,6 +33,7 @@ fn config() -> HostConfig {
         deadline: Deadline::Wait,
         load_timeout: Duration::from_secs(20),
         paths: vec![dir()],
+        format_paths: Default::default(),
         system_paths: false,
     }
 }

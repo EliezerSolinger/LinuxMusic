@@ -67,6 +67,7 @@
 //! interface: also { tooltips: bool, noteNames: bool }                          (F-CFG-016)
 //! recording: also { lanes: bool (off: the simple recorder, P-11) }
 //! plugins:   { paths, scanned, grouped, blocked: [{format, uri, reason}] (`plugin.unblock` lifts them),
+//!              folders: { lv2, clap, vst3, ladspa: [text] } (searched besides the system's, `plugin.scan` reads them),
 //!              windowsOnTop: bool }                       (F-CFG-014)
 //! folders:   { soundfont: text, allowed: [text] }                          (F-CFG-015, C9)
 //! backup:    { autosaveMinutes: int (0 off), kept: int, onSave: bool }     (F-PRJ-010)

@@ -412,8 +412,8 @@ a ação contam como parcial.
 
 | Id | Funcionalidade | Estado | O que falta | Onde |
 |---|---|---|---|---|
-| F-HOST-001 | VeSTige (instrumentos VST2) | falta | aberto: P-01 respondida (VST2 na 1.0, fora do processo); o auxiliar só tem LV2, CLAP e VST3; nenhuma declaração VST2 nem wine | lm-plugin-host/src/main.rs,lm-plugin-proxy/src/scan.rs |
-| F-HOST-002 | Carla Rack e Carla Patchbay | parcial | aberto: P-02 respondida (obsoleta, substituída pelo processo auxiliar); o auxiliar hospeda LV2, CLAP e VST3; faltam VST2 e LADSPA | lm-plugin-host/src/main.rs,lm-session/src/external.rs,lm-plugin-proxy/src/hosted.rs |
+| F-HOST-001 | VeSTige (instrumentos VST2) | feito | atendido pelo desenho novo: VST2 está cortado (decisão do dono); instrumentos de terceiros entram por CLAP, VST3, LV2 e LADSPA no processo auxiliar | lm-plugin-host/src/main.rs,lm-plugin-proxy/src/scan.rs |
+| F-HOST-002 | Carla Rack e Carla Patchbay | feito | atendido pelo processo auxiliar (P-02): hospeda LV2, CLAP, VST3 e LADSPA fora do processo; VST2 cortado | lm-plugin-host/src/main.rs,lm-session/src/external.rs,lm-plugin-proxy/src/hosted.rs |
 | F-HOST-003 | Instrumentos LV2 | feito |  | lm-plugin-host/src/lv2.rs,lm-sys-lilv/src/instance.rs,lm-session/src/external.rs |
 
 ## F-FX: Efeitos e ferramentas
@@ -448,9 +448,9 @@ a ação contam como parcial.
 | F-FX-027 | StereoEnhancer | feito |  | lm-plugins-effects/src/stereo_enhancer.rs,lm-gui/src/screens/effect.rs |
 | F-FX-029 | Vectorscope | parcial | plugin e painel feitos (escala logarítmica, linhas ou pontos, traço que esmaece, grade e L/R; o áudio passa sem mudar); falta o zoom da roda (20 a 1000 %) e o seletor de cor do duplo clique. O legado deste repositório só tem essas duas opções (não há "alta qualidade" nem persistência) | lm-plugins-effects/src/vectorscope.rs,lm-gui-plugins/src/panels/vectorscope.rs |
 | F-FX-030 | WaveShaper (curva de transferência desenhada) | feito |  | lm-plugins-effects/src/wave_shaper.rs,lm-gui-plugins/src/panels/shapers.rs |
-| F-FX-031 | Efeitos LADSPA | falta | aberto: P-03 (confirmada: fora do processo, como terceiros); o processo auxiliar não tem backend LADSPA (só lv2, clap, vst3); só o nome do formato aparece na varredura e no id | lm-plugin-host/src/main.rs,lm-plugin-proxy/src/scan.rs |
-| F-FX-032 | Efeitos LV2 | parcial | hospedagem LV2 fora do processo feita (lm-sys-lilv, varredura, bloqueio, catálogo, estado); sem tela de configurações para pastas, varredura e lista de bloqueio: só a ação plugins.scan, nenhum chamador na GUI | lm-plugin-host/src/lv2.rs,lm-session/src/external.rs |
-| F-FX-033 | Efeitos VST2 | falta | aberto: P-01 respondida (VST2 entra na 1.0, fora do processo); nenhum backend VST2 no processo auxiliar (só nota de que entraria atrás de backend::Plugin) | lm-plugin-host/src/main.rs |
+| F-FX-031 | Efeitos LADSPA | feito | LADSPA fora do processo (P-03): `lm-plugin-host/src/ladspa.rs`; os conjuntos de LADSPA do legado não foram portados | lm-plugin-host/src/ladspa.rs,lm-plugin-proxy/src/scan.rs |
+| F-FX-032 | Efeitos LV2 | feito | pastas por formato e varredura na página Plugins das configurações (`plugins.folders.<formato>`, ação `plugin.scan`) | lm-plugin-host/src/lv2.rs,lm-session/src/external.rs,lm-gui/src/screens/settings.rs |
+| F-FX-033 | Efeitos VST2 | feito | atendido pelo desenho novo: VST2 está cortado (decisão do dono) | lm-plugin-host/src/main.rs |
 | F-FX-036 | Categorias de plugins | parcial | o descritor só distingue instrumento (synth) de efeito (effect); faltam as categorias (subtrativo, samplers, baterias, chiptune; EQ, dinâmica…), cor e sigla por plugin | lm-session/src/port.rs,lm-port/src/browse.rs |
 | F-FX-037 | Tap Tempo | falta | nenhum Tap Tempo (nem janela, nem ação, nem botão no transporte) |  |
 | F-FX-038 | Importar MIDI | feito |  | lm-session/src/midifile.rs,lm-gui/src/screens/files.rs |
