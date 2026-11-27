@@ -405,7 +405,7 @@ impl Instance {
     /// Processes a mono unit: `input` into `output` (the same length, at most the block it was started with). The
     /// input may be changed (some units work in place on it). No allocation
     pub fn process_mono(&mut self, input: &mut [f32], output: &mut [f32]) {
-        assert!(!self.stereo && input.len() == output.len() && input.len() <= MAX_BLOCK);
+        assert!(!self.stereo && input.len() == output.len() && input.len() <= self.block as usize);
         // SAFETY: a started mono unit, two buffers of `len` samples, used by this thread only
         unsafe {
             ffi::lmgx_mono(self.def.as_ptr(), input.len() as c_int, input.as_mut_ptr(), output.as_mut_ptr());
@@ -415,7 +415,7 @@ impl Instance {
     /// Processes a stereo unit (all four buffers of the same length, at most the block). No allocation
     pub fn process_stereo(&mut self, input: [&mut [f32]; 2], output: [&mut [f32]; 2]) {
         let n = input[0].len();
-        assert!(self.stereo && n <= MAX_BLOCK && [input[1].len(), output[0].len(), output[1].len()] == [n, n, n]);
+        assert!(self.stereo && n <= self.block as usize && [input[1].len(), output[0].len(), output[1].len()] == [n, n, n]);
         let [i0, i1] = input;
         let [o0, o1] = output;
         // SAFETY: a started stereo unit, four buffers of `n` samples, used by this thread only

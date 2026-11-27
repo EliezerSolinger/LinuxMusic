@@ -87,3 +87,15 @@ fn parameters_reach_the_unit() {
     let (a, b) = (level(0.0), level(-6.0));
     assert!((20.0 * (b / a).log10() + 6.0).abs() < 0.1, "{a} {b}");
 }
+
+#[test]
+#[should_panic]
+fn a_block_larger_than_the_started_one_is_refused() {
+    // The units size their buffers at start: more frames than that would write past them
+    let unit = units().iter().find(|u| u.id == "gain").unwrap();
+    let mut i = Instance::new(unit.index).unwrap();
+    i.start(48_000, 64);
+    let mut input = vec![0.0f32; 128];
+    let mut output = vec![0.0f32; 128];
+    i.process_mono(&mut input, &mut output);
+}
