@@ -5,6 +5,13 @@ use super::MouseDef;
 
 pub const MOUSE: &[MouseDef] = &[
     MouseDef {
+        id: "comp.tempo.fine",
+        ctx: "Composition",
+        label: "Tempo, hundredths",
+        target: "Tempo point",
+        gestures: &["alt-drag"],
+    },
+    MouseDef {
         id: "comp.item.toggle_select",
         ctx: "Composition",
         label: "Toggle in the selection",
@@ -242,6 +249,13 @@ pub const MOUSE: &[MouseDef] = &[
         gestures: &["shift-click"],
     },
     MouseDef {
+        id: "pr.note.sticky",
+        ctx: "PianoRoll",
+        label: "Stretch, pushing the next notes",
+        target: "Note edge",
+        gestures: &["secondary-shift-click"],
+    },
+    MouseDef {
         id: "pr.note.stretch",
         ctx: "PianoRoll",
         label: "Stretch the group",
@@ -264,6 +278,13 @@ pub const MOUSE: &[MouseDef] = &[
         gestures: &["shift-click"],
     },
     MouseDef { id: "pr.grid.erase", ctx: "PianoRoll", label: "Erase", target: "Grid", gestures: &["right-click"] },
+    MouseDef {
+        id: "pr.strum.curve",
+        ctx: "PianoRoll",
+        label: "Bend the staircase",
+        target: "Note",
+        gestures: &["shift-drag"],
+    },
     MouseDef {
         id: "pr.knife.drop_short",
         ctx: "PianoRoll",

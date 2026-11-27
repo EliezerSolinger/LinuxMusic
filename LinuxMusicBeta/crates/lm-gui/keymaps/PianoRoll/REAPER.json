@@ -221,6 +221,9 @@
     ],
     "pr.view.scroll": [
       "alt-wheel"
+    ],
+    "pr.note.sticky": [
+      "secondary-alt-shift-drag"
     ]
   },
   "unsure": {
@@ -244,6 +247,7 @@
     "pr.ruler.select": "REAPER: dragging the ruler makes a time selection; confirm",
     "pr.view.zoom": "REAPER: the wheel zooms horizontally in the MIDI editor; confirm",
     "pr.view.scroll_h": "REAPER: Shift+wheel scrolls sideways; confirm",
-    "pr.view.scroll": "REAPER: Alt+wheel scrolls vertically; confirm"
+    "pr.view.scroll": "REAPER: Alt+wheel scrolls vertically; confirm",
+    "pr.note.sticky": "REAPER has no equivalent; placeholder"
   }
 }

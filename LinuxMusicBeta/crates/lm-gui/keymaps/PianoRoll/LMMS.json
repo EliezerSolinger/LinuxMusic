@@ -221,6 +221,9 @@
     ],
     "pr.view.scroll": [
       "wheel"
+    ],
+    "pr.note.sticky": [
+      "secondary-shift-click"
     ]
   }
 }

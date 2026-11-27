@@ -31,9 +31,9 @@ use crate::ui::{THEME, button, c, knob_face, loading_component, meter, midi, tr,
 use crate::view::{self, TimelineView};
 
 mod edit;
+mod gestures;
 mod ruler;
 mod tempo;
-mod gestures;
 
 use self::edit::EditState;
 use self::gestures::{fires, holds, pick_wheel};

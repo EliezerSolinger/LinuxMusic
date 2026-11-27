@@ -17,8 +17,8 @@
 mod actions;
 mod bench;
 mod core;
-mod menus;
 mod keymap;
+mod menus;
 mod model;
 mod pages;
 mod screens;

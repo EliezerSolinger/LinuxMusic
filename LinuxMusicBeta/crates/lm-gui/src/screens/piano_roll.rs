@@ -940,7 +940,7 @@ impl PianoRoll {
                 }
                 // Shift bends the staircase: the pointer's height is the curve (up: the late notes crowd at the
                 // end, down: at the start)
-                let curve = if ev.modifiers.shift {
+                let curve = if holds("pr.strum.curve", &ev.modifiers) {
                     2f64.powf(f64::from(*from_y - y) / f64::from(self.key_h) / 4.0)
                 } else {
                     1.0

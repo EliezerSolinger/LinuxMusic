@@ -416,7 +416,7 @@ impl CompositionPage {
         // up and down: the BPM, whole unless Alt
         let (lo, hi) = d.range;
         let mut bpm = d.bpm0 + f64::from(d.y0 - y) * (hi - lo) / f64::from(TEMPO_H - 8.0);
-        bpm = if ev.modifiers.alt { (bpm * 100.0).round() / 100.0 } else { bpm.round() };
+        bpm = if holds("comp.tempo.fine", &ev.modifiers) { (bpm * 100.0).round() / 100.0 } else { bpm.round() };
         let bpm = bpm.clamp(1.0, 1000.0);
         if let Ok(b) = Bpm::parse(&format!("{bpm:.2}")) {
             pts[d.index].bpm = b.to_string();
