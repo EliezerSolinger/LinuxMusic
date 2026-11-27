@@ -42,7 +42,8 @@
 //! projectsFolder:    text
 //! askBeforeClosing:  bool
 //! audio:     { system: text ("alsa", "jack", "coreaudio"), input: text (device id), output: text (device id),
-//!              rate: int, block: int, driftCorrection: bool, latencyFrames: int,
+//!              rate: int, block: int, driftCorrection: bool,
+//!              manualOffsets: [ { devices: "<input>|<output>", frames: int } ],
 //!              calibrations: [ { devices: "<input>|<output>", rate: int, edgeConverter: bool, residual: int,
 //!                                spread: int, measured: text } ] }                    (H19)
 //! midi:      { inputs: [text], clock: bool,

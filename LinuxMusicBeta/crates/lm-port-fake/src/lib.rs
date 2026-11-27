@@ -242,6 +242,7 @@ impl FakePort {
                 inputs: vec![0.0; 8],
                 recording: Vec::new(),
                 counting_in: false,
+                pre_roll: false,
                 xruns: 0,
                 xrun_marks: Vec::new(),
                 load: 0.0,

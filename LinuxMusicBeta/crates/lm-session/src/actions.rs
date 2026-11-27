@@ -147,6 +147,13 @@ pub static ACTIONS: &[ActionSpec] = &[
         },
         enabled: always,
     },
+    // Records a track's output (inserts, volume and pan) onto a new audio track (F-REC-011)
+    ActionSpec {
+        id: "track.resample",
+        label: "action.track.resample",
+        run: |s, p| s.resample_track(NodeId::parse(&text(p, "track")?)?),
+        enabled: writable,
+    },
     // MIDI files (agent D, midifile.rs): { path, at: tick } and { path, track: "t:N" }
     ActionSpec {
         id: "midi.import",

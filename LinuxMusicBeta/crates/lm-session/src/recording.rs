@@ -235,7 +235,13 @@ pub fn timing_points(map: &TempoMap, from_tick: i64, to_tick: i64) -> Vec<(i64, 
 
 /// The audio item the plan makes: on the timeline at `shift` samples (the latency and the PDC) before where it was
 /// heard, `resource` the take's file
-pub fn audio_item(map: Option<&TempoMap>, planned: &PlannedItem, resource: &Resource, shift: i64) -> Value {
+pub fn audio_item(
+    map: Option<&TempoMap>,
+    planned: &PlannedItem,
+    resource: &Resource,
+    shift: i64,
+    gaps: &[lm_io::TakeGap],
+) -> Value {
     let mut start = planned.start - shift;
     let mut frames = planned.frames;
     let mut clipped = 0;
@@ -258,6 +264,20 @@ pub fn audio_item(map: Option<&TempoMap>, planned: &PlannedItem, resource: &Reso
             ("source", Value::resource(resource.clone())),
             ("sourceOffset", Value::int((offset + clipped).max(0))),
         ];
+        // The xrun gaps that fall inside what this lane plays
+        let from = (offset + clipped).max(0);
+        let to = from + frames;
+        let marked: Vec<Value> = gaps
+            .iter()
+            .filter_map(|g| {
+                let (a, b) = (i64::try_from(g.file_frame).ok()?, i64::try_from(g.file_frame.saturating_add(g.frames)).ok()?);
+                (b > from && a < to && b > a)
+                    .then(|| Value::object([("frame", Value::int(a)), ("frames", Value::int(b - a))]))
+            })
+            .collect();
+        if !marked.is_empty() {
+            lane.push(("gaps", Value::list(marked)));
+        }
         if timing.len() >= 2 {
             let points = timing.iter().filter_map(|(tick, frame)| {
                 Some(Value::object([("tick", Value::int(*tick)), ("frame", Value::real(*frame).ok()?)]))
@@ -368,11 +388,30 @@ mod tests {
     fn the_item_is_moved_back_by_the_latency_and_clipped_at_zero() {
         let planned = PlannedItem { start: 300, frames: 1000, lanes: vec![50] };
         let resource = Resource::of_content("audio", b"x").expect("resource");
-        let item = audio_item(None, &planned, &resource, 500);
+        let item = audio_item(None, &planned, &resource, 500, &[]);
         assert_eq!(item.get("start").and_then(Value::as_int), Some(0));
         let lane = item.get("lanes").and_then(|l| l.items().next().cloned()).expect("lane");
         // 200 frames fell before the start of the song: the source starts that much later
         assert_eq!(lane.get("sourceOffset").and_then(Value::as_int), Some(250));
+    }
+
+    #[test]
+    fn xrun_gaps_inside_the_lane_are_marked_on_it() {
+        let planned = PlannedItem { start: 0, frames: 1000, lanes: vec![100] };
+        let resource = Resource::of_content("audio", b"x").expect("resource");
+        let gaps = [
+            lm_io::TakeGap { file_frame: 400, frames: 64 },
+            // before the part the lane plays
+            lm_io::TakeGap { file_frame: 10, frames: 20 },
+            // after it
+            lm_io::TakeGap { file_frame: 5000, frames: 20 },
+        ];
+        let item = audio_item(None, &planned, &resource, 0, &gaps);
+        let lane = item.get("lanes").and_then(|l| l.items().next().cloned()).expect("lane");
+        let marked: Vec<_> = lane.get("gaps").expect("gaps").items().cloned().collect();
+        assert_eq!(marked.len(), 1);
+        assert_eq!(marked[0].get("frame").and_then(Value::as_int), Some(400));
+        assert_eq!(marked[0].get("frames").and_then(Value::as_int), Some(64));
     }
 
     #[test]

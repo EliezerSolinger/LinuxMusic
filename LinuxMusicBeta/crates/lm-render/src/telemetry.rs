@@ -58,6 +58,8 @@ pub struct TelemetryFrame {
     pub protection: bool,
     /// The count-in or the pre-roll is running (F-REC-026)
     pub counting_in: bool,
+    /// The pre-roll (the run-up before a punch-in or a take) is the part running, not the count-in (F-REC-026)
+    pub pre_roll: bool,
     /// The peak of each device input channel since the previous frame (linear): the input meters (F-REC-009)
     pub inputs: Box<[f32]>,
     pub meters: Box<[Meter]>,
@@ -82,6 +84,7 @@ impl TelemetryFrame {
             flushing_denormals: false,
             protection: false,
             counting_in: false,
+            pre_roll: false,
             inputs: vec![0.0; INPUT_METERS].into_boxed_slice(),
             meters: vec![Meter::default(); max_nodes].into_boxed_slice(),
             params: vec![0.0; max_params].into_boxed_slice(),

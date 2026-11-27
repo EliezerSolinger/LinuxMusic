@@ -29,7 +29,8 @@ pub fn defaults() -> Value {
                 ("rate", Value::int(48_000)),
                 ("block", Value::int(256)),
                 ("driftCorrection", Value::bool(false)),
-                ("latencyFrames", Value::int(0)),
+                // The hand-set offset per device pair: `[{devices: "<input>|<output>", frames}]`
+                ("manualOffsets", Value::empty_list()),
                 ("calibrations", Value::empty_list()),
             ]),
         ),

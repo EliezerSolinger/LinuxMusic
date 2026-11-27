@@ -330,7 +330,7 @@ pub fn preferences() -> Value {
                 ("rate", Value::int(48000)),
                 ("block", Value::int(256)),
                 ("driftCorrection", Value::bool(false)),
-                ("latencyFrames", Value::int(0)),
+                ("manualOffsets", Value::empty_list()),
                 // H19: the residual per device pair, rate and edge converter
                 (
                     "calibrations",

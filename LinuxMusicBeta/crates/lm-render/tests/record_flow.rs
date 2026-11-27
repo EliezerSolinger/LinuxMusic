@@ -86,7 +86,9 @@ fn the_count_in_is_reported_and_sounds_with_the_metronome_off() {
     let mut counting = false;
     for _ in 0..40 {
         block(&mut dummy, 256);
-        counting |= control.frame().counting_in;
+        let frame = control.frame();
+        counting |= frame.counting_in;
+        assert!(!frame.pre_roll, "a count-in is not a pre-roll");
     }
     assert!(counting);
 }

@@ -23,6 +23,7 @@ pub mod prefs;
 pub mod preview;
 pub mod rack;
 mod recording;
+mod resample;
 mod sampler_presets;
 mod session;
 pub mod slice;

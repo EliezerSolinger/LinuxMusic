@@ -512,6 +512,7 @@ impl RemotePort {
             inputs: Vec::new(),
             recording: Vec::new(),
             counting_in: false,
+            pre_roll: false,
             xruns: 0,
             xrun_marks: Vec::new(),
             load: 0.0,

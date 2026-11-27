@@ -55,6 +55,7 @@ pub mod types {
     pub const ITEM: &str = "item";
     pub const LANE: &str = "item.lane";
     pub const LANE_TIMING_POINT: &str = "item.lane.timing";
+    pub const LANE_GAP: &str = "item.lane.gap";
     pub const COMP: &str = "item.comp";
     pub const NOTE: &str = "note";
     pub const NOTE_BEND: &str = "note.bend";
@@ -501,7 +502,12 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             // The tempo the take was played at (F-REC-046, F-REC-090) [none: the source plays as it is]: the source
             // frame (from `sourceOffset`) at each tick from the item's start; the lane of a musical item follows the
             // tempo map by a stretch rendered from the original
-            .field(list_of("timing", ty::LANE_TIMING_POINT).optional()),
+            .field(list_of("timing", ty::LANE_TIMING_POINT).optional())
+            // The silence a capture xrun left in the take (F-REC-084) [none]: in source frames, like `sourceOffset`
+            .field(list_of("gaps", ty::LANE_GAP).optional()),
+        NodeSchema::new(ty::LANE_GAP, 1)
+            .field(FieldSpec::int("frame", 0, MAX, 0))
+            .field(FieldSpec::int("frames", 1, MAX, 1)),
         NodeSchema::new(ty::LANE_TIMING_POINT, 1)
             .field(FieldSpec::int("tick", -MAX, MAX, 0))
             .field(FieldSpec::real("frame", -1.0e15, 1.0e15, 0.0)),

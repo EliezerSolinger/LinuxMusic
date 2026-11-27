@@ -3057,6 +3057,7 @@ impl Renderer {
         f.flushing_denormals = crate::spec::flushing_denormals();
         f.protection = self.protection.engaged;
         f.counting_in = self.counting.is_some() || self.transport.record_from.is_some();
+        f.pre_roll = self.counting.is_none() && self.transport.record_from.is_some();
         for (d, p) in f.inputs.iter_mut().zip(self.input_peaks.iter_mut()) {
             *d = *p;
             *p = 0.0;

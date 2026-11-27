@@ -188,7 +188,7 @@ pub fn telemetry_to(t: &TelemetryView, only: Option<&[NodeId]>) -> Vec<u8> {
     o.i64(p.samples);
     o.u64(p.host_time.0);
     o.u32(p.sample_rate);
-    o.u8(u8::from(p.playing) | (u8::from(p.recording) << 1) | (u8::from(t.counting_in) << 2));
+    o.u8(u8::from(p.playing) | (u8::from(p.recording) << 1) | (u8::from(t.counting_in) << 2) | (u8::from(t.pre_roll) << 3));
     o.u32(t.xruns);
     let marks = &t.xrun_marks[t.xrun_marks.len().saturating_sub(64)..];
     o.u32(marks.len() as u32);
@@ -261,6 +261,7 @@ pub fn telemetry_from(b: &[u8], t: &mut TelemetryView) -> Result<()> {
     i.end()?;
     t.position = Position { samples, host_time, sample_rate, playing: flags & 1 != 0, recording: flags & 2 != 0 };
     t.counting_in = flags & 4 != 0;
+    t.pre_roll = flags & 8 != 0;
     t.xruns = xruns;
     t.xrun_marks = marks;
     t.inputs = inputs;

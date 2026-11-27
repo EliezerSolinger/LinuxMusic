@@ -294,6 +294,8 @@ pub struct TelemetryView {
     pub recording: Vec<RecordingTake>,
     /// The count-in is running: recording armed, the cursor still before the take's start
     pub counting_in: bool,
+    /// Of the above, the pre-roll part (no count-in running)
+    pub pre_roll: bool,
     /// Xruns so far, always shown (P-14), and where they happened (F-CLP-063)
     pub xruns: u32,
     pub xrun_marks: Vec<i64>,
@@ -550,6 +552,7 @@ mod tests {
             inputs: Vec::new(),
             recording: Vec::new(),
             counting_in: false,
+            pre_roll: false,
             xruns: 0,
             xrun_marks: Vec::new(),
             load: 0.0,

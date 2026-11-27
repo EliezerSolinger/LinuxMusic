@@ -1664,6 +1664,7 @@ impl Session {
                 r,
             ) => self.core_op_finished(kind, target, r),
             ("midi_import", Ok(result)) => self.midi_import_finished(result),
+            ("resample", Ok(result)) => self.resample_finished(result),
             ("slicert.analyze", Ok(result)) => {
                 if let Err(e) = self.slicert_finished(&result) {
                     self.notices.error(&e, Some(target), None);
@@ -1736,6 +1737,7 @@ impl Session {
         self.telemetry.xruns = u32::try_from(frame.xruns).unwrap_or(u32::MAX).max(self.xruns);
         self.telemetry.load = frame.load;
         self.telemetry.counting_in = frame.counting_in;
+        self.telemetry.pre_roll = frame.pre_roll;
         // The input meters (F-REC-009): one peak per device input channel, falling smoothly
         let inputs = self.device.as_ref().and_then(|d| d.info()).map_or(0, |i| i.inputs).min(frame.inputs.len());
         self.telemetry.inputs.resize(inputs, 0.0);
@@ -2647,7 +2649,10 @@ impl Session {
             i64::from(self.spec.sample_rate),
             reported.1,
         );
-        let manual = self.preferences.int(&["audio", "latencyFrames"]).unwrap_or(0).clamp(-48_000, 48_000);
+        let manual = manual_offset(
+            self.preferences.get(&["audio", "manualOffsets"]),
+            &format!("{}|{}", pair("input"), pair("output")),
+        );
         reported.0 + residual + manual
     }
 
@@ -2792,7 +2797,7 @@ impl Session {
             let track = take.tracks.first().and_then(|t| NodeId::parse(t).ok()).filter(|t| self.document.exists(*t));
             for planned in crate::recording::plan_items(take, layered) {
                 let item =
-                    crate::recording::audio_item(map.as_ref().ok(), &planned, &resource, take.latency + take.pdc);
+                    crate::recording::audio_item(map.as_ref().ok(), &planned, &resource, take.latency + take.pdc, &take.gaps);
                 placed.push((track, item));
             }
         }
@@ -3019,6 +3024,7 @@ pub(crate) fn empty_telemetry(rate: u32) -> TelemetryView {
         inputs: Vec::new(),
         recording: Vec::new(),
         counting_in: false,
+        pre_roll: false,
         xruns: 0,
         xrun_marks: Vec::new(),
         load: 0.0,
@@ -3101,6 +3107,17 @@ pub(crate) fn plugin_content(c: &lm_io::Content) -> lm_plugin::Loaded {
 }
 
 /// The residual stored by `device.calibrate` for this device pair, rate and edge converter (0 when not calibrated)
+/// The hand-set offset of a device pair (0 when none), limited at the boundary
+pub(crate) fn manual_offset(offsets: Option<&Value>, pair: &str) -> i64 {
+    offsets
+        .into_iter()
+        .flat_map(Value::items)
+        .find(|c| c.get("devices").and_then(Value::as_text) == Some(pair))
+        .and_then(|c| c.get("frames").and_then(Value::as_int))
+        .unwrap_or(0)
+        .clamp(-48_000, 48_000)
+}
+
 pub(crate) fn calibration_residual(calibrations: Option<&Value>, pair: &str, rate: i64, edge: bool) -> i64 {
     calibrations
         .into_iter()
@@ -3117,6 +3134,16 @@ pub(crate) fn calibration_residual(calibrations: Option<&Value>, pair: &str, rat
 #[cfg(test)]
 mod calibration_tests {
     use super::*;
+
+    #[test]
+    fn the_manual_offset_is_per_device_pair_and_limited() {
+        let entry = |pair: &str, frames: i64| Value::object([("devices", Value::text(pair)), ("frames", Value::int(frames))]);
+        let list = Value::list([entry("a|b", 32), entry("c|d", 90_000)]);
+        assert_eq!(manual_offset(Some(&list), "a|b"), 32);
+        assert_eq!(manual_offset(Some(&list), "c|d"), 48_000);
+        assert_eq!(manual_offset(Some(&list), "x|y"), 0);
+        assert_eq!(manual_offset(None, "a|b"), 0);
+    }
 
     #[test]
     fn the_stored_residual_is_found_by_pair_rate_and_converter() {
