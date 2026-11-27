@@ -140,3 +140,23 @@ Ver o CRÍTICO de `lm-dsp/src/sfxr.rs:492`: a correção principal fica no lado 
 Lido por completo: `lm-plugin/src/instrument/mod.rs`, `notes.rs`, `shaping.rs`, `note_effect.rs`, `stream.rs` (caminho de render); `lm-plugins-effects/src/effect.rs`; `lm-plugins-noteeffects/src/arpeggiator.rs`, `chords.rs`, `scale.rs`; `lm-plugins-tripleoscillator/src/lib.rs`; `lm-dsp/src/delay.rs`, `modulation_effects.rs` (MultitapLine, MonoDelay), `granular_pitch_shifter.rs`, `frequency_shifter.rs` (núcleo), `oscillator.rs` (tabelas e `update`), `reverb_sc.rs` (núcleo), `sample_player.rs` (`play`/`render`), `sfxr.rs` (render); `lm-plugins-instruments/src/src_port.rs`, `sfxr.rs`; `lm-expr/src/parser.rs`, `vm.rs`, `ops.rs`, `lexer.rs`, `compile.rs`, `xpressive.rs` (host state); `lm-dsp/src/xpressive.rs` (smooth).
 
 Por padrão (grep de alocação, pânico, casts de índice, divisões) e leitura dirigida apenas: `lm-dsp/src/dynamics.rs`, `lb302.rs`, `monstro.rs`, `nes.rs`, `organic.rs`, `watsyn.rs`, `kicker.rs`, `drum_machines.rs`, `slicert.rs`, `vibed.rs`, `drumsynth.rs`, `patman.rs`, `loudness.rs`, `tube.rs`, `gain_stage.rs`, `channel_strip.rs`, `master.rs`, `eq.rs`, `filters.rs`, `basic_filters.rs`, `envelope.rs`, `sound_shaping.rs`, `small_effects.rs`, `distortion_effects.rs`, `slew_distortion.rs`, `oversampling.rs`, `filter_effects.rs`, `dynamics_processor.rs`, `compressor.rs`, `lomm.rs`; efeitos `oscilloscope.rs`, `vectorscope.rs`, `eq.rs` e demais wrappers de `lm-plugins-effects`; instrumentos `lb302.rs`, `monstro.rs`, `kicker.rs`, `watsyn.rs`, `vibed.rs`, `organic.rs`, `nes.rs`, `bit_invader.rs`, `xpressive.rs`, `monstro.rs`. Esses arquivos podem ter achados que não apareceram nesta passada; a próxima varredura deve lê-los inteiros.
+
+## Resultado da confirmação
+
+| Achado | Veredito | Commit |
+|---|---|---|
+| CRÍTICO sfxr.rs laço com afinação absurda | confirmado e corrigido (pitch limitado a [1/64, 64], não finito vira silêncio) | 9f56158aa |
+| CRÍTICO LB302 tabelas na primeira nota | confirmado e corrigido (`Lb302::new` chama `prepare()`) | 9f56158aa |
+| amp.rs `.nam` com cabeçalho hostil | confirmado e corrigido (arquivo > 64 MiB e taxa fora de 8 kHz a 768 kHz ou razão fora de 1/64..64 viram `Err`) | ver log (NAM amp) |
+| ALTO effect.rs parâmetros não finitos | confirmado e corrigido (rejeita não finito em `event` e `Knobs::set`); o clamp à faixa do esquema não foi feito: `BuildContext` não traz as faixas, exigiria mudar a interface | 1e617dda2 |
+| ALTO velocity NaN / Tuning / Pan | confirmado e corrigido (velocidade, Tuning limitado a ±120, não finito ignorado, `Expressions::set`) | 1e617dda2 |
+| MÉDIO oscillator.rs `69 + semitones` | confirmado e corrigido (`saturating_add`) | ver log (Bound band index) |
+| MÉDIO Lfo::set_frequency NaN | confirmado e corrigido | idem |
+| MÉDIO xpressive smooth sem limite | confirmado e corrigido (`SMOOTH_MAX`) | idem |
+| MÉDIO lm-expr mais de 255 argumentos | confirmado e corrigido (parser rejeita) | idem |
+| MÉDIO ScaleFx `sent` cheio | confirmado e corrigido (nota descartada em vez de NoteOff errado) | idem |
+| MÉDIO vibed `(sr/pitch) as i32 + 1` | confirmado e não corrigido: coberto em parte pelo limite de Tuning; não revisado a fundo | - |
+| MÉDIO dynamics `solve()` por amostra | não corrigido: custo de CPU, não corretude; mudar mexeria no som | - |
+| MÉDIO granular grãos sem teto | não verificado | - |
+| MÉDIO Instrument::new / NES | falso na prática: o esquema rejeita valores fora da faixa (como o relatório admite) | - |
+| MÉDIO lm-expr profundidade de árvore | não verificado | - |
