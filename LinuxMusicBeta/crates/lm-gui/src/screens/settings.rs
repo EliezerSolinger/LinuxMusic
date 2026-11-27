@@ -457,6 +457,16 @@ impl Settings {
         self.set_path(cx, path(p), v);
     }
 
+    /// The hand-set latency of one device pair (it is kept per pair, so it follows the devices)
+    fn set_manual_offset(&mut self, cx: &mut Context<Self>, all: &[Value], pair: &str, frames: i64) {
+        let entry = Value::object([("devices", Value::text(pair)), ("frames", Value::int(frames.clamp(-48_000, 48_000)))]);
+        let mut list: Vec<Value> = all.iter().filter(|k| text_of(k, "devices") != pair).cloned().collect();
+        if frames != 0 {
+            list.push(entry);
+        }
+        self.set(cx, &["audio", "manualOffsets"], Value::list(list));
+    }
+
     /// A field of the `i`-th entry of a list (`midi.ports[i].alias`, `controllers[i].bank`)
     fn set_in(&mut self, cx: &mut Context<Self>, list: &[&str], i: usize, key: &str, v: Value) {
         let mut p = path(list);
@@ -619,7 +629,14 @@ impl Settings {
         let drift = self.get_bool(cx, &["audio", "driftCorrection"], false);
         let block = self.get_int(cx, &["audio", "block"], 256);
         let rate = self.get_int(cx, &["audio", "rate"], 48_000);
-        let offset = self.get_int(cx, &["audio", "latencyFrames"], 0);
+        let offsets: Vec<Value> =
+            self.get(cx, &["audio", "manualOffsets"]).map(|l| l.items().cloned().collect()).unwrap_or_default();
+        let device_pair = format!("{input}|{output}");
+        let offset = offsets
+            .iter()
+            .find(|k| text_of(k, "devices") == device_pair)
+            .and_then(|k| k.get("frames").and_then(Value::as_int))
+            .unwrap_or(0);
         let status = self.status(cx).clone();
         let opened = status.get("device").filter(|d| !d.is_null()).cloned();
         let port = self.scx.core.read(cx).port();
@@ -873,12 +890,27 @@ impl Settings {
                     .flex()
                     .items_center()
                     .gap(px(10.))
-                    .child(stepper("latency-offset", trf("{0} frames", &[&offset]), cx, move |s, d, cx| {
-                        s.set(cx, &["audio", "latencyFrames"], Value::int((offset + d * 8).clamp(-48_000, 48_000)))
+                    .child(stepper("latency-offset", trf("{0} frames", &[&offset]), cx, {
+                        let (offsets, pair) = (offsets.clone(), device_pair.clone());
+                        move |s, d, cx| s.set_manual_offset(cx, &offsets, &pair, offset + d * 8)
+                    }))
+                    .child(stepper("latency-offset-ms", tr("1 ms"), cx, {
+                        let (offsets, pair) = (offsets.clone(), device_pair.clone());
+                        let ms = (rate.max(1) / 1000).max(1);
+                        move |s, d, cx| s.set_manual_offset(cx, &offsets, &pair, offset + d * ms)
                     }))
                     .child(caption(trf("{0} ms", &[&format!("{:+.2}", offset as f64 * 1000.0 / rate.max(1) as f64)]))),
             )
             .hint(tr("Added to the calibration, so that recordings line up with what was heard")),
+        );
+        let low_latency = self.get_bool(cx, &["lowLatencyMonitoring"], false);
+        rows.push(
+            row(
+                "Low-latency monitoring",
+                Apply::Now,
+                switch("low-latency", low_latency, cx, |s, v, cx| s.set(cx, &["lowLatencyMonitoring"], b(v))),
+            )
+            .hint(tr("Bypasses the effects that add latency on the armed track while it is monitored")),
         );
         // real-time permission on Linux (H1)
         let rt = status.get("realtime").cloned().unwrap_or(Value::NULL);

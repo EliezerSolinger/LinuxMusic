@@ -234,12 +234,22 @@ pub fn render(ws: &Workspace, position: Position, cx: &Context<Workspace>) -> im
         DisplayFormat::Samples => format!("{:>10}", samples.max(0.0) as i64),
         DisplayFormat::Timecode => view::format_timecode(samples, rate),
     };
-    let (word, word_color, border) = if tele.counting_in {
+    // Stopped where it was left (the stop behaviour "stay"): paused
+    let paused = !position.playing
+        && !position.recording
+        && samples > 0.0
+        && port.preferences().get("interface").and_then(|i| i.get("stopBehavior")).and_then(Value::as_text)
+            == Some("stay");
+    let (word, word_color, border) = if tele.pre_roll {
+        (tr("Pre-roll").to_string(), THEME.yellow, THEME.yellow)
+    } else if tele.counting_in {
         (tr("Count-in").to_string(), THEME.yellow, THEME.yellow)
     } else if position.recording {
         (tr("Recording").to_string(), THEME.red, THEME.red)
     } else if position.playing {
         (tr("Playing").to_string(), THEME.green, THEME.green)
+    } else if paused {
+        (tr("Paused").to_string(), THEME.text2, THEME.line)
     } else {
         (tr("Stopped").to_string(), THEME.text3, THEME.line)
     };

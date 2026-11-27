@@ -2367,3 +2367,21 @@ derruba ou trava o processo principal nem a thread de áudio.
 - **Painéis novos: SlicerT e Amp & IR.** SlicerT tem desenho próprio no legado (fatias na onda): painel de 516x400 com a onda, os pontos de fatia editáveis (`MarkersSpec`: clique cria, arrastar move entre as vizinhas, Shift ou botão direito apaga, as pontas ficam; cada mudança é um passo de desfazer), os knobs, o botão que roda `slicert.analyze` (`Bind::Action`) e abrir amostra. Fora do painel: o seeker (mini mapa de zoom), o destaque da fatia tocando e copiar o padrão como MIDI. Amp & IR não tinha arte no legado (botões soltos); pela regra I-22 ganhou o estilo da unidade de rack do Guitarix, com abrir `.nam` e IR, nome do arquivo, tirar cada um e os ganhos.
 - **Xpressive: quadro de display (I-9.5).** O plugin publica 5 bandeiras de erro (W1, W2, W3, O1, O2) e a curva de cada saída tocando sozinha (nota A4, meio segundo, 256 colunas, o maior valor de cada trecho), feita no build (o `Synth` ganhou `display`). A lâmpada de validade e os gráficos O1/O2 do painel leem esse quadro.
 - **ZynAddSubFX (F-INS-023).** Vale a decisão P-05: fora do processo, como plugin de terceiros (tem threads próprias e a janela FLTK), e não é portado: um porte completo do ZynAddSubFX para Rust não cabe na 1.0 e o resultado seria pior do que o original hospedado. Fica como linha "decidido, hospedado".
+
+## Paridade 1.0 (27/11): gravação
+
+- **Ajuste manual de latência por dispositivo.** Problema: `audio.latencyFrames` era um número só da máquina e valia para
+  qualquer placa. Decisão: `audio.manualOffsets`, uma lista `{devices: "<entrada>|<saída>", frames}` como as calibrações;
+  a sessão soma o do par aberto (limitado a ±48 000 quadros) e a tela mostra dois passos (8 quadros e 1 ms). A chave
+  antiga saiu (pré-1.0, sem migração). Porquê: o par de dispositivos é a unidade que já guarda a calibração.
+- **Pré-roll na telemetria.** `counting_in` continua valendo para contagem e pré-roll juntos; `pre_roll` diz que é só o
+  pré-roll (sem contagem), para o transporte escrever PRÉ-ROLL. PAUSADO é "parado com `stopBehavior = stay` e o cursor
+  fora de 0": não há estado de pausa no motor, parar e pausar são o mesmo comando.
+- **Gravar no clipe do editor.** O botão "gravar com a música" do piano roll, além de gravar o teclado do computador,
+  aponta `recordInto` (notes.record_into) para o clipe enquanto estiver ligado: a gravação do transporte escreve ali as
+  notas de dispositivos MIDI. Soltar ao desligar ou parar.
+- **Lacunas de xrun no item.** Campo opcional `gaps` na camada (`item.lane.gap {frame, frames}`, em quadros da fonte,
+  como `sourceOffset`), sem subir a versão do esquema (campo opcional, como `timing`). A sessão grava só as que caem na
+  parte que a camada toca; a GUI as pinta em vermelho no item (pelo comp) e na camada.
+- **Ouvir uma camada.** Sem ação nova: o botão "Ouvir" no cabeçalho da camada escreve o `comp` do item como um trecho
+  único (0 até o fim) apontando para ela; é uma edição comum, desfaz com um desfazer.

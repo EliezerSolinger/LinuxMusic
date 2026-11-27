@@ -72,8 +72,9 @@ pub struct LaneView {
     pub id: NodeId,
     pub name: Arc<str>,
     pub source: Option<Resource>,
-    #[expect(dead_code, reason = "read by the screens B, C and D port onto lm-gui next")]
     pub offset: i64,
+    /// The silences a capture xrun left (source frame, frames), marked red on the take (F-REC-084)
+    pub gaps: Vec<(i64, i64)>,
 }
 
 #[derive(Clone, Debug)]
@@ -163,6 +164,7 @@ fn item_view(v: &Value) -> Option<ItemView> {
                 name: text(l, "name"),
                 source: l.get("source").and_then(Value::as_resource).cloned(),
                 offset: int(l, "sourceOffset", 0),
+                gaps: list(l, "gaps").map(|g| (int(g, "frame", 0), int(g, "frames", 1))).collect(),
             })
         })
         .collect();

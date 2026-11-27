@@ -194,6 +194,7 @@ enum TrackCmd {
     EnterFolder,
     LeaveFolder,
     ExportAudio,
+    Resample,
     Rename,
     Color,
     ColorDefault,
@@ -1637,6 +1638,7 @@ impl CompositionPage {
                 cx.set_global(crate::screens::export::ExportTrack(Some((track, None, name.unwrap_or_default()))));
                 let _ = self.workspace.update(cx, |ws, cx| ws.open(Screen::Export, None, window, cx));
             }
+            TrackCmd::Resample => self.action("track.resample", Value::object([("track", Value::text(track.to_string()))]), cx),
             TrackCmd::Rename => self.start_rename(track, window, cx),
             TrackCmd::Color => self.ed.palette = Some((ColorTarget::Track(track), window.mouse_position())),
             TrackCmd::ColorDefault => self.set_colors(&[track], 0, cx),
@@ -1820,6 +1822,7 @@ impl CompositionPage {
             Some((tr_str("Rename").into(), Some(TrackCmd::Rename), true)),
             None,
             Some((tr_str("Export the track as audio").into(), Some(TrackCmd::ExportAudio), !t.folder)),
+            Some((tr_str("Record the track's output").into(), Some(TrackCmd::Resample), !t.folder)),
             Some((tr_str("Export the track as MIDI").into(), Some(TrackCmd::ExportMidi), t.instrument.is_some())),
             None,
             Some((tr_str("Enter the folder above").into(), Some(TrackCmd::EnterFolder), can_enter)),

@@ -28,7 +28,7 @@ use crate::core::Core;
 use crate::model::{self, ItemView, TrackView};
 use crate::screens::Screen;
 use crate::tiles::{TileCache, level_for, paint_wave, tile_range};
-use crate::ui::{THEME, button, c, knob_face, loading_component, meter, midi, tr, tr_str, track_color, trf};
+use crate::ui::{THEME, button, c, tbutton, knob_face, loading_component, meter, midi, tr, tr_str, track_color, trf};
 use crate::view::{self, TimelineView};
 
 mod edit;
@@ -859,7 +859,7 @@ impl CompositionPage {
                 let top = top0 + r.top - self.view.scroll_y as f32;
                 let el: AnyElement = match r.kind {
                     RowKind::Track(i) => self.track_header(&tracks[i], r, core, &inputs, cx),
-                    RowKind::Take(i, k, l) => self.take_header(&tracks[i].items[k], l, r),
+                    RowKind::Take(i, k, l) => self.take_header(&tracks[i].items[k], l, r, cx),
                     RowKind::Automation(i, a) => self.lane_header(&tracks[i].automation[a], r, core, cx),
                 };
                 div().absolute().top(px(top)).left(px(0.)).w(px(view::HEADER_W)).h(px(r.h)).child(el)
@@ -1402,9 +1402,12 @@ impl CompositionPage {
             .into_any_element()
     }
 
-    fn take_header(&self, it: &ItemView, l: usize, r: &Row) -> AnyElement {
+    fn take_header(&self, it: &ItemView, l: usize, r: &Row, cx: &Context<Self>) -> AnyElement {
         let lane = &it.lanes[l];
         let uses = it.comp.iter().filter(|s| s.lane == Some(lane.id)).count();
+        // Listening to a layer alone: the comp becomes this one lane over the whole item (F-REC-043)
+        let solo = it.comp.len() == 1 && it.comp[0].from == 0 && it.comp[0].to >= it.length && uses == 1;
+        let (item, lane_id, length) = (it.id, lane.id, it.length);
         div()
             .size_full()
             .flex()
@@ -1424,6 +1427,19 @@ impl CompositionPage {
                     .text_size(px(10.))
                     .text_color(c(if uses > 0 { THEME.green } else { THEME.text3 }))
                     .child(trf("used in {0} parts", &[&uses])),
+            )
+            .child(
+                tbutton(SharedString::from(format!("take-listen-{item}-{l}")), tr("Listen"), solo, THEME.green).on_click(
+                    cx.listener(move |p, _, _, cx| {
+                        let seg = Value::object([
+                            ("from", Value::int(0)),
+                            ("to", Value::int(length)),
+                            ("lane", Value::text(lane_id.to_string())),
+                            ("fade", Value::int(0)),
+                        ]);
+                        p.apply("Listen to the layer", vec![EditOp::set(item, &["comp"], Value::list([seg]))], cx);
+                    }),
+                ),
             )
             .into_any_element()
     }
@@ -1506,7 +1522,22 @@ enum Paint {
     },
     Boundary { y: f32, h: f32, x: f32, fade_px: f32 },
     Overlap { y: f32, h: f32, x: f32, w: f32 },
+    /// A capture xrun's silence in a take, between x0 and x1 (F-REC-084)
+    Gap { y: f32, h: f32, x: f32, w: f32 },
     Curve { y: f32, h: f32, pts: Vec<(f32, f32)> },
+}
+
+/// A lane's xrun gaps as (x, width) between `a` and `z`; the waveform is drawn from the item's start, so a gap's x
+/// counts from the lane's source offset
+fn gap_marks(lane: &model::LaneView, ox: f32, spp: f64, a: f32, z: f32) -> Vec<(f32, f32)> {
+    lane.gaps
+        .iter()
+        .filter_map(|(frame, frames)| {
+            let x0 = ox + ((frame - lane.offset) as f64 / spp.max(1e-9)) as f32;
+            let x1 = x0 + (*frames as f64 / spp.max(1e-9)) as f32;
+            (x1 > a && x0 < z).then(|| (x0.max(a), (x1.min(z) - x0.max(a)).max(1.0)))
+        })
+        .collect()
 }
 
 enum Body {
@@ -1557,6 +1588,7 @@ impl CompositionPage {
                             continue;
                         }
                         let spp = spp_at(&map, it.start);
+                        let mut gaps: Vec<(f32, f32)> = Vec::new();
                         let body = if it.audio {
                             // the comp: each segment plays its lane, with a crossfade at each boundary (U2)
                             let mut parts = Vec::new();
@@ -1566,6 +1598,9 @@ impl CompositionPage {
                                 if let Some(src) = seg.lane.and_then(|l| it.lane(l)).and_then(|l| l.source.clone()) {
                                     wants.push((src.clone(), x, spp, a, b));
                                     parts.push((src, x, spp, a, b));
+                                    for (gx, gw) in seg.lane.and_then(|l| it.lane(l)).map_or(Vec::new(), |l| gap_marks(l, x, spp, a, b)) {
+                                        gaps.push((gx, gw));
+                                    }
                                 }
                                 if k > 0 {
                                     let fade = (seg.fade as f64 / v.ticks_per_px) as f32;
@@ -1596,6 +1631,9 @@ impl CompositionPage {
                             color: if it.mute { THEME.text3 } else { it.color.unwrap_or(color) },
                             body,
                         });
+                        for (gx, gw) in gaps {
+                            paint.push(Paint::Gap { y, h: r.h, x: gx, w: gw });
+                        }
                         let fi = (it.fade_in as f64 / v.ticks_per_px) as f32;
                         let fo = (it.fade_out as f64 / v.ticks_per_px) as f32;
                         paint.push(Paint::Edges {
@@ -1712,6 +1750,9 @@ impl CompositionPage {
                             color: tracks[i].color.unwrap_or_else(|| track_color(i)),
                             body: Body::Dim(src, x, spp, used),
                         });
+                        for (gx, gw) in gap_marks(lane, x, spp, x, x + w) {
+                            paint.push(Paint::Gap { y, h: r.h, x: gx, w: gw });
+                        }
                     }
                 }
                 RowKind::Automation(i, a) => {
@@ -2002,6 +2043,11 @@ fn paint_one(window: &mut Window, cache: &mut TileCache, p: &Paint, o: gpui::Poi
             if let Ok(path) = pb.build() {
                 window.paint_path(path, c(THEME.yellow));
             }
+        }
+        Paint::Gap { y, h, x, w: gw } => {
+            let mut red = c(THEME.red);
+            red.a = 0.55;
+            window.paint_quad(fill(Bounds::new(at(*x, y + 3.0), size(px(gw.max(2.0)), px(h - 6.0))), red));
         }
         Paint::Overlap { y, h, x, w: ow } => {
             let mut pb = PathBuilder::stroke(px(1.5));

@@ -271,7 +271,7 @@ a ação contam como parcial.
 | F-REC-007 | Monitoramento por faixa | feito |  | lm-compile/src/core.rs,lm-gui/src/pages/composition.rs |
 | F-REC-008 | Gravar seco | feito |  | lm-io/src/record.rs,lm-session/src/session.rs |
 | F-REC-009 | Medidor de entrada no cabeçalho | feito |  | lm-gui/src/pages/composition.rs,lm-port/src/lib.rs |
-| F-REC-010 | Desligar plugins com latência na faixa armada | parcial | aberto: P-10 respondido; núcleo e preferência lowLatencyMonitoring existem (compile), mas não há chave na GUI de configurações | lm-compile/src/core.rs,lm-session/src/prefs.rs |
+| F-REC-010 | Desligar plugins com latência na faixa armada | feito | chave "Monitoramento de baixa latência" nas configurações de áudio (preferência lowLatencyMonitoring) | lm-compile/src/core.rs,lm-gui/src/screens/settings.rs |
 | F-REC-011 | Efeitos de entrada gravados, gravar a saída, entrada com mai | parcial | aberto: P-10 respondido; só entradas com N canais existem; faltam "gravar com os efeitos" por faixa e gravar a saída de uma faixa (reamostrar) | lm-session/src/session.rs |
 | F-REC-020 | Gravar parado | feito |  | lm-session/src/session.rs,lm-render/src/renderer.rs |
 | F-REC-021 | Punch-in e punch-out manuais | feito |  | lm-session/src/session.rs,lm-gui/src/pages/transport.rs |
@@ -279,14 +279,14 @@ a ação contam como parcial.
 | F-REC-023 | Pré-roll | feito |  | lm-doc/src/schemas.rs,lm-gui/src/pages/transport.rs |
 | F-REC-024 | Contagem | feito |  | lm-render/src/renderer.rs,lm-compile/src/core.rs |
 | F-REC-025 | Metrônomo | feito |  | lm-compile/src/core.rs,lm-session/src/session.rs |
-| F-REC-026 | Estado do transporte em palavra e cor | parcial | palavra Contagem e cor feitas; falta PAUSADO e "PRÉ-ROLL n" | lm-gui/src/pages/transport.rs,lm-session/src/session.rs |
+| F-REC-026 | Estado do transporte em palavra e cor | feito | palavras Contagem, Pré-roll (telemetria pre_roll) e Pausado (parado com o ponto de parada mantido), com cor | lm-gui/src/pages/transport.rs,lm-render/src/renderer.rs |
 | F-REC-027 | Um desfazer tira a gravação inteira | feito |  | lm-session/src/session.rs |
 | F-REC-028 | Trocar de dispositivo durante a gravação é recusado | feito |  | lm-session/src/core_actions.rs,lm-gui/src/screens/settings.rs |
-| F-REC-029 | Gravar MIDI no clipe aberto no editor de notas com a música  | parcial | núcleo tem notes.record_into/recordInto, mas nenhuma opção na GUI (menu do Gravar ou editor de notas) | lm-session/src/midi/step.rs,lm-gui/src/screens/piano_roll.rs |
+| F-REC-029 | Gravar MIDI no clipe aberto no editor de notas com a música  | feito | o botão "gravar com a música" do editor de notas aponta a próxima gravação para o clipe (notes.record_into) e solta ao desligar ou parar | lm-session/src/midi/step.rs,lm-gui/src/screens/piano_roll.rs |
 | F-REC-040 | Gravar em loop | feito |  | lm-io/src/take.rs,lm-session/src/session.rs |
 | F-REC-041 | "Takes em camadas" (padrão) | feito |  | lm-doc/src/schemas.rs,lm-gui/src/pages/composition.rs |
 | F-REC-042 | Modo "gravador simples" | feito |  | lm-gui/src/screens/settings.rs |
-| F-REC-043 | Ouvir uma camada | parcial | o item de loop tem uma camada por passada e a última toca; falta o comando "Ouvir esta camada" na GUI | lm-compile/src/items.rs,lm-gui/src/pages/composition.rs |
+| F-REC-043 | Ouvir uma camada | feito | botão "Ouvir" no cabeçalho de cada camada: o comp passa a ser só aquela camada no clipe inteiro | lm-gui/src/pages/composition.rs |
 | F-REC-046 | Takes presos ao andamento | feito |  | lm-doc/src/schemas.rs,lm-compile/src/stretch.rs |
 | F-REC-062 | Copiar os arquivos usados ao salvar | feito |  | lm-session/src/core_actions.rs,lm-gui/src/screens/files.rs |
 | F-REC-063 | Lixo dos arquivos gerados | feito | aberto: P-13 respondido; project.clean_unused existe com botão na tela do projeto | lm-session/src/core_actions.rs,lm-gui/src/screens/project.rs |
@@ -298,9 +298,9 @@ a ação contam como parcial.
 | F-REC-070 | Mudar o andamento no meio da gravação | feito |  | lm-io/src/record.rs,lm-session/src/session.rs |
 | F-REC-080 | Alinhar o take | feito |  | lm-session/src/session.rs |
 | F-REC-081 | Calibração por loopback | feito |  | lm-io/src/calibrate.rs,lm-gui/src/screens/settings.rs |
-| F-REC-082 | Ajuste manual | parcial | o ajuste manual é global (audio.latencyFrames), não por dispositivo, e só em quadros | lm-gui/src/screens/settings.rs,lm-session/src/session.rs |
+| F-REC-082 | Ajuste manual | feito | ajuste manual por par de dispositivos (audio.manualOffsets), em quadros e em passos de 1 ms | lm-gui/src/screens/settings.rs,lm-session/src/session.rs |
 | F-REC-083 | Latência real mostrada | feito |  | lm-gui/src/screens/settings.rs |
-| F-REC-084 | Xruns marcados no take | parcial | aviso ao fim com a contagem das lacunas; faltam as lacunas em vermelho no take | lm-io/src/take.rs,lm-gui/src/pages/composition.rs |
+| F-REC-084 | Xruns marcados no take | feito | as lacunas do xrun vão para a camada (lane.gaps, em quadros da fonte) e aparecem em vermelho no item e na camada | lm-io/src/take.rs,lm-doc/src/schemas.rs,lm-gui/src/pages/composition.rs |
 | F-REC-086 | Contador global de xruns fora da gravação | feito | aberto: P-14 respondido; contador no transporte | lm-gui/src/pages/transport.rs |
 | F-REC-100 | Gravar notas na linha do tempo | feito |  | lm-session/src/midi/record.rs |
 | F-REC-101 | Modos de gravação MIDI | feito |  | lm-session/src/midi/record.rs,lm-doc/src/schemas.rs |

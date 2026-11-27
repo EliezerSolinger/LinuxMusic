@@ -689,6 +689,7 @@ impl PianoRoll {
             });
         }
         if self.rec == Rec::Accompany {
+            self.record_into(false, cx);
             self.scx.core.update(cx, |core, _| {
                 core.report(|pt| pt.run_action("transport.stop".into(), Value::NULL));
             });
@@ -1721,9 +1722,22 @@ impl PianoRoll {
         self.pressed.clear();
     }
 
+    /// Points the core's next recording at this clip (MIDI devices write into it while the song records) or frees it
+    fn record_into(&mut self, on: bool, cx: &mut Context<Self>) {
+        let Some(item) = self.clip else { return };
+        let params = if on { Value::object([("item", Value::text(item.to_string()))]) } else { Value::empty_object() };
+        self.scx.core.update(cx, |core, _| {
+            core.report(|pt| pt.run_action("notes.record_into".into(), params));
+        });
+    }
+
     fn set_rec(&mut self, r: Rec, cx: &mut Context<Self>) {
         let was_step = self.rec == Rec::Step;
+        let was_accompany = self.rec == Rec::Accompany;
         self.rec = if self.rec == r { Rec::Off } else { r };
+        if was_accompany != (self.rec == Rec::Accompany) {
+            self.record_into(self.rec == Rec::Accompany, cx);
+        }
         if was_step && self.rec != Rec::Step {
             self.step_chord.clear();
             self.scx.core.update(cx, |core, _| {
