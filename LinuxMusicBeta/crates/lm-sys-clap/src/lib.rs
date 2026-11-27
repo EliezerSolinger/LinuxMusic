@@ -1356,7 +1356,12 @@ unsafe extern "C" fn stream_write(stream: *const ffi::clap_ostream, buffer: *con
         }
         // SAFETY: `ctx` is the `Vec<u8>` of `save_state`, alive and not otherwise borrowed during the call
         let out = unsafe { &mut *((*stream).ctx as *mut Vec<u8>) };
-        let n = size.min(1 << 30) as usize;
+        // The plugin decides the sizes: the whole state is bounded, so it cannot grow the host without end
+        const MAX_STATE: usize = 64 << 20;
+        if out.len() >= MAX_STATE && size > 0 {
+            return -1;
+        }
+        let n = (size.min(1 << 30) as usize).min(MAX_STATE - out.len());
         // SAFETY: the plugin gives `size` readable bytes
         let bytes = unsafe { std::slice::from_raw_parts(buffer.cast::<u8>(), n) };
         out.extend_from_slice(bytes);
@@ -1470,4 +1475,27 @@ pub fn build_test_plugin(dir: &Path) -> Result<PathBuf> {
         return Err(err("clap.test.build").arg("status", status.to_string()));
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod stream_tests {
+    use super::*;
+
+    #[test]
+    fn a_plugin_cannot_grow_the_saved_state_without_end() {
+        let mut out: Vec<u8> = Vec::new();
+        let stream = ffi::clap_ostream { ctx: (&raw mut out).cast(), write: Some(stream_write) };
+        let chunk = vec![0u8; 1 << 20];
+        let mut total = 0i64;
+        for _ in 0..80 {
+            // SAFETY: a live stream over `out`, a readable buffer of the size given
+            let n = unsafe { stream_write(&stream, chunk.as_ptr().cast(), chunk.len() as u64) };
+            if n < 0 {
+                break;
+            }
+            total += n;
+        }
+        assert_eq!(total, 64 << 20);
+        assert_eq!(out.len(), 64 << 20);
+    }
 }

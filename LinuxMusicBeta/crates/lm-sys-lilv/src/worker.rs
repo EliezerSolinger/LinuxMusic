@@ -299,6 +299,10 @@ impl WorkerThread {
     pub fn wait_idle(&self) {
         let mut guard = self.shared.lock.lock().unwrap_or_else(PoisonError::into_inner);
         while self.shared.done.load(Ordering::Acquire) < self.shared.scheduled.load(Ordering::Acquire) {
+            // A worker thread that has died will never catch up: waiting for it would hang the restore
+            if self.join.as_ref().is_none_or(|j| j.is_finished()) {
+                return;
+            }
             if let Some(join) = &self.join {
                 join.thread().unpark();
             }

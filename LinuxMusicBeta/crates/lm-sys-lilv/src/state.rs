@@ -38,6 +38,9 @@ pub(crate) struct SaveContext<'a> {
     pub refused: Option<Error>,
 }
 
+const MAX_PROPERTY: usize = 64 << 20;
+const MAX_STATE: usize = 64 << 20;
+
 /// `LV2_State_Store_Function`. Never unwinds into C
 pub(crate) unsafe extern "C" fn store(
     handle: *mut c_void,
@@ -62,6 +65,12 @@ pub(crate) unsafe extern "C" fn store(
                 Error::new("lilv.state_not_pod").arg("key", key_uri.clone()).arg("type", type_uri.clone())
             });
             return ffi::LV2_STATE_ERR_BAD_FLAGS;
+        }
+        // The plugin decides the size: bounded per property and in total, so a save cannot grow the host without end
+        let total: usize = ctx.properties.values().map(|p| p.value.len()).sum();
+        if size > MAX_PROPERTY || total.saturating_add(size) > MAX_STATE {
+            ctx.refused.get_or_insert_with(|| Error::new("lilv.state_too_large").arg("key", key_uri.clone()));
+            return ffi::LV2_STATE_ERR_UNKNOWN;
         }
         let bytes = if size == 0 {
             Vec::new()
