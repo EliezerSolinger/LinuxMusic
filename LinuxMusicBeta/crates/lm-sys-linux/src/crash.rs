@@ -154,6 +154,12 @@ fn install_handlers() -> Result<()> {
         unsafe { libc::sigemptyset(&mut action.sa_mask) };
         // SAFETY: valid signal number, a fully initialised action and a place for the previous one
         if unsafe { libc::sigaction(sig, &action, &mut previous[i]) } != 0 {
+            // Undo the ones already swapped: leaving ours installed with no `PREVIOUS` would make a retry record our
+            // own handler as the previous one, and `chain` would then call it forever
+            for (done, old) in SIGNALS.iter().zip(previous.iter()).take(i) {
+                // SAFETY: restores what sigaction returned for that signal
+                unsafe { libc::sigaction(*done, old, std::ptr::null_mut()) };
+            }
             return Err(Error::new("linux.crash.install_failed").arg("signal", i64::from(sig)));
         }
     }
@@ -240,6 +246,10 @@ fn write_all(fd: c_int, mut bytes: &[u8]) -> bool {
             }
             return false;
         }
+        if n == 0 {
+            // A write that takes nothing would spin here forever, inside a signal handler
+            return false;
+        }
         bytes = &bytes[n as usize..];
     }
     true
@@ -283,7 +293,12 @@ extern "C" fn on_signal(sig: c_int, info: *mut libc::siginfo_t, context: *mut c_
 fn chain(sig: c_int, info: *mut libc::siginfo_t, context: *mut c_void) {
     let previous = PREVIOUS.get().and_then(|p| SIGNALS.iter().position(|&s| s == sig).map(|i| p[i]));
     match previous {
-        Some(p) if p.sa_sigaction != libc::SIG_DFL && p.sa_sigaction != libc::SIG_IGN => {
+        // (never ourselves: that would recurse without end)
+        Some(p)
+            if p.sa_sigaction != libc::SIG_DFL
+                && p.sa_sigaction != libc::SIG_IGN
+                && p.sa_sigaction != on_signal as extern "C" fn(c_int, *mut libc::siginfo_t, *mut c_void) as usize =>
+        {
             if p.sa_flags & libc::SA_SIGINFO != 0 {
                 // SAFETY: the previous handler was installed with SA_SIGINFO, so it has this signature
                 let f: extern "C" fn(c_int, *mut libc::siginfo_t, *mut c_void) =
