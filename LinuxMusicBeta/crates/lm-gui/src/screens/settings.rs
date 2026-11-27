@@ -630,7 +630,7 @@ impl Settings {
             Apply::Now,
             segmented("audio-system", names, cx, move |s, i, _, cx| {
                 if let Some(b) = backends.get(i) {
-                    s.set(cx, &["audio", "system"], Value::text(b));
+                    s.set(cx, &["audio", "system"], Value::text(b.as_str()));
                     s.reopen_soon(cx);
                 }
             }),
@@ -1206,7 +1206,7 @@ impl Settings {
                         port_action(
                             &s.scx,
                             "plugin.unblock",
-                            obj(vec![("format", Value::text(&f)), ("uri", Value::text(&u))]),
+                            obj(vec![("format", Value::text(f.as_str())), ("uri", Value::text(u.as_str()))]),
                             cx,
                         );
                     })))

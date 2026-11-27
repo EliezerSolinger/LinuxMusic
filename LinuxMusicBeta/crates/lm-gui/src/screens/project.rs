@@ -9,11 +9,14 @@
 //!   commands that have no other place without a menu bar: export as a single file (.zip), save as a template, clean
 //!   the unused files (H4, P-13, after a warning).
 //!
+//! - the project's notes (F-PRJ-018): a text field in the same dialog, kept in the project (`notes`, one undo step
+//!   when the window closes).
+//!
 //! Everything goes through the port: `status()` (lm_port::trees) and the session's actions.
 
-use gpui::{AnyElement, Context, Entity, FontWeight, Render, Subscription, Window, div, prelude::*, px};
-use gpui_component::input::{Input, InputEvent, InputState};
-use lm_port::{Target, Value};
+use gpui::{AnyElement, App, Context, Entity, FontWeight, Render, Subscription, Window, div, prelude::*, px};
+use gpui_component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
+use lm_port::{EditOp, Label, ROOT, Target, Value};
 
 use super::ScreenCx;
 use super::palette::take_screen_arg;
@@ -29,6 +32,8 @@ enum Part {
     Import,
     /// Export MIDI to a path (the same)
     ExportMidi,
+    /// The project's notes
+    Notes,
 }
 
 pub struct ProjectDialog {
@@ -38,6 +43,9 @@ pub struct ProjectDialog {
     path: Entity<InputState>,
     folder: Entity<InputState>,
     confirm_clean: bool,
+    notes: Entity<TextareaState>,
+    /// The notes as the project had them when the window opened (to write only a change)
+    notes_before: String,
     _subs: Vec<Subscription>,
 }
 
@@ -63,13 +71,21 @@ impl ProjectDialog {
             Some("save_as") => Part::SaveAs,
             Some("import") => Part::Import,
             Some("export_midi") => Part::ExportMidi,
+            Some("notes") => Part::Notes,
             _ => Part::State,
         };
         let status = scx.core.read(cx).port().status().clone();
         let folder_v = status.get("project").map(|p| text(p, "folder")).unwrap_or_default();
         let path = cx.new(|cx| InputState::new(window, cx).placeholder(tr("/path/to/a/project or a .zip")));
         let folder = cx.new(|cx| InputState::new(window, cx).default_value(folder_v));
+        let notes_before = {
+            let root = scx.core.read(cx).port().root().clone();
+            root.get("notes").and_then(Value::as_text).unwrap_or("").to_string()
+        };
+        let notes = cx.new(|cx| TextareaState::new(window, cx).default_value(notes_before.clone()));
         let subs = vec![
+            // the notes are written when the window goes away, whichever way it closes
+            cx.on_release(|d: &mut ProjectDialog, cx| d.flush_notes(cx)),
             cx.subscribe(&path, |d: &mut ProjectDialog, st, ev: &InputEvent, cx| {
                 if matches!(ev, InputEvent::PressEnter { .. }) {
                     let v = st.read(cx).value().to_string();
@@ -82,7 +98,36 @@ impl ProjectDialog {
                 }
             }),
         ];
-        ProjectDialog { scx, part, chosen: 0, path, folder, confirm_clean: false, _subs: subs }
+        ProjectDialog { scx, part, chosen: 0, path, folder, confirm_clean: false, notes, notes_before, _subs: subs }
+    }
+
+    /// Writes the notes into the project when they changed: one undo step, the text cut at the core's limit
+    fn flush_notes(&mut self, cx: &mut App) {
+        let mut text = self.notes.read(cx).value().to_string();
+        if text == self.notes_before {
+            return;
+        }
+        if text.len() > lm_port::NOTES_MAX {
+            let mut cut = lm_port::NOTES_MAX;
+            while !text.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            text.truncate(cut);
+        }
+        let op = EditOp::set(ROOT, &["notes"], Value::text(text.as_str()));
+        self.scx.core.update(cx, |core, cx| {
+            core.report(|pt| pt.apply(Label::new("Project notes"), vec![op]));
+            cx.notify();
+        });
+        self.notes_before = text;
+    }
+
+    fn part_notes(&mut self) -> AnyElement {
+        div()
+            .h(px(300.))
+            .debug_selector(|| "project-notes".into())
+            .child(Textarea::new(&self.notes).h(px(300.)))
+            .into_any_element()
     }
 
     fn status(&self, cx: &Context<Self>) -> Value {
@@ -470,6 +515,7 @@ impl Render for ProjectDialog {
             Part::State => (tr("Project"), self.part_state(cx)),
             Part::Import => (tr("Import (MIDI, audio)"), self.part_path(true, cx)),
             Part::ExportMidi => (tr("Export MIDI"), self.part_path(false, cx)),
+            Part::Notes => (tr("Project notes"), self.part_notes()),
         };
         div()
             .id("project-dialog")

@@ -55,3 +55,14 @@ fn a_version_1_project_opens_upgraded_and_keeps_its_meaning() {
     assert!(opened.upgraded);
     assert!(opened.document.root().get("markers").is_none(), "absent = none");
 }
+
+/// The project's notes (F-PRJ-018): an optional text of the root, set and undone like any field
+#[test]
+fn the_project_notes_are_set_and_undone() {
+    let mut doc = new_doc();
+    assert!(doc.root().get("notes").is_none(), "absent until written");
+    doc.transact(label("notes"), |e| e.set(ROOT, &[lm_state::PathStep::key("notes")], text("take 3 is the one"))).unwrap();
+    assert_eq!(doc.root().get("notes").and_then(Value::as_text), Some("take 3 is the one"));
+    doc.undo().unwrap();
+    assert!(doc.root().get("notes").is_none());
+}

@@ -487,7 +487,7 @@ a ação contam como parcial.
 | F-PRJ-015 | Recentes | feito |  | lm-session/src/prefs.rs,lm-gui/src/screens/project.rs |
 | F-PRJ-016 | Reabrir o último projeto na partida | parcial | a GUI tem o interruptor general.reopenLast, mas nada o lê na partida (gui-app e sessão) | lm-gui/src/screens/settings.rs,lm-gui-app/src/main.rs |
 | F-PRJ-017 | Autosave e recuperação | feito |  | lm-session/src/journal.rs,lm-gui/src/screens/project.rs |
-| F-PRJ-018 | Notas do projeto | falta | não há campo de notas no esquema do projeto, nem ação, nem janela (só o ícone project_notes) |  |
+| F-PRJ-018 | Notas do projeto | feito | campo `notes` na raiz (esquema 5, opcional, até 64 KiB), editado na janela do projeto (Notas do projeto, ação `file.notes`, sem tecla padrão), um passo de desfazer ao fechar | crates/lm-doc/src/schemas.rs,crates/lm-gui/src/screens/project.rs |
 | F-PRJ-019 | Importar MIDI | feito | importa notas, andamento/compasso, CC7 (volume), CC10 (pan), pitch bend, pressão e os outros CC (faixas de controle do item), banco (CC0/CC32) e program (o primeiro escolhe o preset, os seguintes são faixas `programChange`), canal 10 = banco 128; o instrumento é um Sampler no SoundFont padrão (sem ele, o sintetizador provisório) | lm-session/src/midifile.rs,lm-gui/src/screens/files.rs |
 | F-PRJ-020 | Importar arquivos de áudio | feito |  | lm-gui/src/screens/files.rs,lm-session/src/core_actions.rs |
 | F-PRJ-021 | Exportar MIDI | feito | exporta SMF tipo 1 com mapa de andamentos, notas e faixas de controle; um Sampler em SF2/GIG grava banco (CC0/CC32) e program no início, e o banco 128 vai ao canal 10 | lm-session/src/midifile.rs,lm-gui/src/screens/palette.rs |

@@ -15,7 +15,8 @@ use lm_port::Value;
 
 use super::{Screen, ScreenCx};
 use crate::actions::{
-    ActionDef, ExportMidi, ImportFiles, OpenAbout, OpenExport, OpenNewProject, OpenNotices, OpenProject, REGISTRY,
+    ActionDef, ExportMidi, ImportFiles, OpenAbout, OpenExport, OpenNewProject, OpenNotes, OpenNotices, OpenProject,
+    REGISTRY,
     SaveAs, keys_of,
 };
 use crate::ui::{THEME, c, caption, tr};
@@ -54,6 +55,7 @@ pub fn screen_actions(d: Div, cx: &mut Context<Workspace>) -> Div {
         .on_action(cx.listener(|ws, _: &OpenProject, window, cx| open(ws, Screen::Project, Some("open"), window, cx)))
         .on_action(cx.listener(|ws, _: &SaveAs, window, cx| open(ws, Screen::Project, Some("save_as"), window, cx)))
         .on_action(cx.listener(|ws, _: &OpenNewProject, window, cx| open(ws, Screen::NewProject, None, window, cx)))
+        .on_action(cx.listener(|ws, _: &OpenNotes, window, cx| open(ws, Screen::Project, Some("notes"), window, cx)))
         .on_action(cx.listener(|ws, _: &OpenAbout, window, cx| open(ws, Screen::About, None, window, cx)))
         .on_action(cx.listener(|ws, _: &OpenNotices, window, cx| open(ws, Screen::Notices, None, window, cx)))
         // Import (F-PRJ-019, F-PRJ-020): the system's dialog when the files are local, at the cursor

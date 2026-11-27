@@ -23,6 +23,8 @@ pub const MASTER: NodeId = NodeId { kind: b'm', number: 0 };
 
 /// The type of the project's root
 pub const PROJECT: &str = "project";
+/// The longest project notes the core accepts, in bytes (a document is not a place for a book)
+pub const NOTES_MAX: usize = 64 * 1024;
 
 pub const KIND_TRACK: u8 = b't';
 pub const KIND_OUTPUT: u8 = b'o';
@@ -238,7 +240,7 @@ fn ints(key: &'static str, min: i64, max: i64, default: &[i64]) -> FieldSpec {
 pub fn project_schemas() -> Vec<NodeSchema> {
     use types as ty;
     vec![
-        NodeSchema::new(PROJECT, 4)
+        NodeSchema::new(PROJECT, 5)
             .field(object("meta", ty::META))
             .field(object("project", ty::SETTINGS))
             .field(object("transport", ty::TRANSPORT))
@@ -255,10 +257,13 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             // The ruler's named markers and regions (F-REG-011, F-REG-012); absent = none. Version 2 only added them
             .field(list_of("markers", ty::MARKER).optional())
             .field(list_of("regions", ty::REGION).optional())
+            // The project's notes (F-PRJ-018), free text up to `NOTES_MAX` bytes; absent = none. Version 5 added them
+            .field(FieldSpec::new("notes", FieldKind::Text).optional())
             // Version 4 dropped the project's ten scale and ten keymap slots (tuning is by file, per track)
             .upgrade(1, unchanged)
             .upgrade(2, unchanged)
-            .upgrade(3, project_v3),
+            .upgrade(3, project_v3)
+            .upgrade(4, unchanged),
         // A modulator (decisoes-autonomas, 26/11, item 1): lives with the owner of the parameters it moves. Its `params`
         // are automatable and MIDI-mappable like a plugin's (those `modulator_keys(kind)` names have slots). `input` is
         // what a peak follower measures (a track's or a channel's output); an envelope starts with the notes of its

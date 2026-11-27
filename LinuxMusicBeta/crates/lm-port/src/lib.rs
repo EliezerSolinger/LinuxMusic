@@ -35,6 +35,7 @@ use std::time::Duration;
 pub use lm_base::{Arg, Error, HostTime, Label, OperationId, ParamRange, RangeScale, Result, intern};
 pub use lm_doc::{Diff, Feed, GestureId, Topic};
 pub use lm_render::{METER_CHANNELS, Meter};
+pub use lm_doc::schemas::NOTES_MAX;
 pub use lm_state::{FieldKind, FieldSpec, NodeId, NodeSchema, ParamSpec, PathStep, ROOT, Resource, Scale, Value};
 
 pub use lm_time::TempoMap;

@@ -54,6 +54,7 @@
     "file.export_midi": [
       "secondary-m"
     ],
+    "file.notes": [],
     "view.notices": [],
     "help.about": [
       "f1"
