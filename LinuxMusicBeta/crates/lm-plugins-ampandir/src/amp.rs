@@ -17,6 +17,22 @@ const CONVERTER: Quality = Quality::Medium;
 /// dB, as NAM's plugin
 const TARGET_LOUDNESS: f64 = -18.0;
 const CUSHION: usize = 256;
+/// Larger than any real `.nam` file (they are well under a few MiB): a bigger one is refused before it is parsed
+const MAX_FILE_BYTES: usize = 64 << 20;
+/// The rates a model may ask to run at (its header is untrusted: the buffers below are sized by the ratio)
+const MIN_MODEL_RATE: f64 = 8_000.0;
+const MAX_MODEL_RATE: f64 = 768_000.0;
+
+/// The rate a model asks for, if it is a sane one
+fn checked_model_rate(rate: f64, engine: f64) -> Result<f64> {
+    if rate.is_finite() && (MIN_MODEL_RATE..=MAX_MODEL_RATE).contains(&rate) && engine.is_finite() && engine > 0.0 {
+        let ratio = rate / engine;
+        if (1.0 / 64.0..=64.0).contains(&ratio) {
+            return Ok(rate);
+        }
+    }
+    Err(lm_base::Error::new("nam.bad_rate").arg("rate", rate))
+}
 
 /// Runs `input` through `state` at its ratio: all of it is consumed; the output frames written are returned (the
 /// legacy `convert`)
@@ -87,10 +103,13 @@ impl std::fmt::Debug for Amp {
 impl Amp {
     /// The model of `bytes` (a `.nam` file) for the engine's `rate`
     pub fn new(bytes: &[u8], rate: f64) -> Result<Self> {
+        if bytes.len() > MAX_FILE_BYTES {
+            return Err(lm_base::Error::new("nam.too_large").arg("bytes", bytes.len() as i64));
+        }
         let mut model = Model::load(bytes)?;
         let model_rate = match model.expected_rate() {
-            Some(trained) if !model.supports_arbitrary_rate() => trained,
-            _ => rate,
+            Some(trained) if !model.supports_arbitrary_rate() => checked_model_rate(trained, rate)?,
+            _ => checked_model_rate(rate, rate)?,
         };
         let resampled = (model_rate - rate).abs() > 0.5;
         let gain = model.loudness().map_or(1.0, |l| 10f64.powf((TARGET_LOUDNESS - l) / 20.0) as f32);
@@ -175,5 +194,25 @@ impl Amp {
             r.read = 0;
             r.fill = CUSHION;
         }
+    }
+}
+
+#[cfg(test)]
+mod header_tests {
+    use super::*;
+
+    #[test]
+    fn a_hostile_rate_is_refused() {
+        assert!(checked_model_rate(f64::INFINITY, 48000.0).is_err());
+        assert!(checked_model_rate(f64::NAN, 48000.0).is_err());
+        assert!(checked_model_rate(1.0e12, 48000.0).is_err());
+        assert!(checked_model_rate(1.0, 48000.0).is_err());
+        assert_eq!(checked_model_rate(48000.0, 44100.0).unwrap(), 48000.0);
+    }
+
+    #[test]
+    fn an_oversized_file_is_refused_unparsed() {
+        let big = vec![0u8; MAX_FILE_BYTES + 1];
+        assert!(Amp::new(&big, 48000.0).is_err());
     }
 }
