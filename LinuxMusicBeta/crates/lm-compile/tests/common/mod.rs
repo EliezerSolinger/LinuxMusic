@@ -279,8 +279,25 @@ pub static PROBE_PLUGIN: Descriptor = Descriptor {
     tests: TestHints::new(),
 };
 
+fn nfx_schemas() -> Vec<NodeSchema> {
+    vec![NodeSchema::new("plugin:nfx", 1).field(FieldSpec::int("mode", 0, 100, 0))]
+}
+
+/// `nfx`: a note effect that passes everything (its `mode` only makes a state to change)
+pub static NFX: Descriptor = Descriptor {
+    id: "nfx",
+    name: "test.nfx",
+    kind: PluginKind::NoteEffect,
+    schemas: nfx_schemas,
+    ports: effect_ports,
+    velocity: Velocity::Ignored,
+    display: None,
+    build: pass_build,
+    tests: TestHints::new(),
+};
+
 pub fn plugins() -> Arc<Registry> {
-    Registry::new(&[&DC, &KIT, &DELAY, &DUCK, &PROBE_PLUGIN]).expect("registry")
+    Registry::new(&[&DC, &KIT, &DELAY, &DUCK, &PROBE_PLUGIN, &NFX]).expect("registry")
 }
 
 pub fn schemas(plugins: &Registry) -> Arc<SchemaRegistry> {

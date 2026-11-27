@@ -907,14 +907,12 @@ impl CompilerCore {
                 let installed = InstalledProcessor { node: pp.key, build: r.build, shape: r.shape, latency: r.latency };
                 match proc.installed.replace(installed) {
                     Some(old) => {
-                        // The old one may go on in a tail (U32)
-                        let serial = plan
+                        // The old one may go on in a tail (U32); a note effect has none planned (no sound to leave)
+                        let tail = plan
                             .new_tails
                             .iter()
                             .find(|t| t.1 == pp.key)
-                            .map(|t| t.0)
-                            .expect("a tail is planned for every replacement");
-                        let tail = tail_index.get(&serial).copied();
+                            .and_then(|t| tail_index.get(&t.0).copied());
                         install.replace(idx, r.core, tail);
                         let _ = old;
                     }

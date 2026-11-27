@@ -436,6 +436,26 @@ fn a_kit_routes_each_port_and_keeps_playing_while_it_changes() {
 }
 
 #[test]
+fn replacing_a_note_effect_installs_it_without_a_tail() {
+    let plugins = plugins();
+    let mut doc = new_doc(&plugins);
+    let t = add_track(&mut doc, Some(plugin("probe", Value::empty_object())));
+    let mut fx = None;
+    edit(&mut doc, |e| {
+        fx = Some(e.insert(t, "noteEffects", 0, plugin("nfx", Value::object([("mode", Value::int(0))])))?);
+        Ok(())
+    });
+    let fx = fx.unwrap();
+    let mut h = Harness::new(&plugins);
+    h.settle(doc.root());
+    // Another state: a new build replaces the installed one; a note effect leaves no sound, so no tail was planned
+    edit(&mut doc, |e| e.set(fx, &[k("state"), k("mode")], Value::int(1)));
+    let c = h.settle(doc.root());
+    assert!(c.complete());
+    assert!(c.table.tails.is_empty());
+}
+
+#[test]
 fn a_stale_build_is_refused() {
     let plugins = plugins();
     let mut doc = new_doc(&plugins);
