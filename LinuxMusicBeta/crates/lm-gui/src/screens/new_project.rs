@@ -72,7 +72,7 @@ impl NewProject {
             ("rate", Value::int(self.rate)),
             ("template", template),
         ]);
-        port_action(&self.scx, "project.new", params, cx);
+        self.scx.core.update(cx, |core, _| core.run_guarded("project.new", params));
         self.scx.close(cx);
     }
 }

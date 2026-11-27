@@ -43,6 +43,8 @@ pub struct Core {
     previews: HashMap<RequestId, lm_port::Result<lm_port::Preview>>,
     /// The errors of the calls to the port, for the workspace to show as notices (`take_errors`)
     errors: Vec<Error>,
+    /// An action that loses the project's changes, waiting for the user's answer (the workspace asks)
+    pub ask_first: Option<(String, lm_port::Value)>,
     /// The peaks that were asked and have arrived (the tiles ask again), or failed
     peaks_arrived: Vec<RequestId>,
     peaks_failed: Vec<(RequestId, Error)>,
@@ -83,6 +85,7 @@ impl Core {
             entries: HashMap::new(),
             previews: HashMap::new(),
             errors: Vec::new(),
+            ask_first: None,
             peaks_arrived: Vec::new(),
             peaks_failed: Vec::new(),
             last_meters: Instant::now(),
@@ -264,6 +267,17 @@ impl Core {
     /// is shown when it comes). Gives the value when the answer was ready and good
     pub fn report<T>(&mut self, call: impl FnOnce(&mut dyn CorePort) -> Pending<T>) -> Option<T> {
         PortHost::report(self, call)
+    }
+
+    /// An action that replaces the project (open, new): runs at once when nothing would be lost, else the workspace
+    /// asks first (Save, Don't save, Cancel) and runs it after the answer
+    pub fn run_guarded(&mut self, id: &str, params: lm_port::Value) {
+        let ask = self.port.preferences().get("askBeforeClosing").and_then(lm_port::Value::as_bool).unwrap_or(true);
+        if ask && self.port.modified() {
+            self.ask_first = Some((id.to_owned(), params));
+        } else {
+            self.report(|pt| pt.run_action(id.into(), params));
+        }
     }
 
     /// The result of a call already made, settled here (see `report`), and given back for the caller to read

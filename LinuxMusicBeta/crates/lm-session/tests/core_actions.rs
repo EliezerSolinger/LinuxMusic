@@ -144,13 +144,13 @@ fn allowing_a_folder_keeps_it_in_the_preferences() {
     s.run_action("folder.allow", &params(vec![("folder", text(dir.0.to_str().unwrap()))])).unwrap();
     let allowed: Vec<String> = s
         .preferences()
-        .get(&["allowedFolders"])
+        .get(&["folders", "allowed"])
         .map(|l| l.items().filter_map(Value::as_text).map(str::to_owned).collect())
         .unwrap_or_default();
     assert_eq!(allowed, vec![dir.0.display().to_string()]);
     // Twice is once
     s.run_action("folder.allow", &params(vec![("folder", text(dir.0.to_str().unwrap()))])).unwrap();
-    assert_eq!(s.preferences().get(&["allowedFolders"]).map(Value::len), Some(1));
+    assert_eq!(s.preferences().get(&["folders", "allowed"]).map(Value::len), Some(1));
 }
 
 #[test]

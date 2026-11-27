@@ -9,7 +9,7 @@
 //! from `status()`, the devices from `devices()`. Pages: General, Audio (U7, H19, F-REC-081/082, H1), MIDI (I-21.1:
 //! ports by client and port name, alias, role, input/output, latencies, connected or not; controller profiles
 //! I-21.3), Recording and metronome, Plugins, Folders (C9), Appearance (themes as data, language), Keyboard (the
-//! action registry), Autosave, Advanced.
+//! action registry), Autosave.
 //!
 //! The form pieces (`segmented`, `stepper`, `switch`, `badge`, `note`, `form_row`, `target_loading`, `modal_size`)
 //! are shared by agent D's other screens.
@@ -218,11 +218,10 @@ pub enum Page {
     Appearance,
     Keys,
     Autosave,
-    Advanced,
 }
 
 impl Page {
-    pub const ALL: [Page; 10] = [
+    pub const ALL: [Page; 9] = [
         Page::General,
         Page::Audio,
         Page::Midi,
@@ -232,7 +231,6 @@ impl Page {
         Page::Appearance,
         Page::Keys,
         Page::Autosave,
-        Page::Advanced,
     ];
     fn title(self) -> &'static str {
         match self {
@@ -245,7 +243,6 @@ impl Page {
             Page::Appearance => "Appearance",
             Page::Keys => "Shortcuts",
             Page::Autosave => "Autosave and backup",
-            Page::Advanced => "Advanced",
         }
     }
     fn from_arg(a: &str) -> Option<Page> {
@@ -506,19 +503,28 @@ impl Settings {
         let _ = crate::actions::bind_keys(cx, &prefs);
     }
 
-    /// Restart now (F-GER-013): saves, and starts the program again in the new language and theme
+    /// Restart now (F-GER-013): saves, and starts the program again on the same project (a client connects again,
+    /// with the arguments it had); the language and the theme are read from the preferences
     fn restart(&mut self, cx: &mut Context<Self>) {
-        let (lang, theme) = (self.get_text(cx, &["language"], "pt-BR"), self.get_text(cx, &["theme"], "dark"));
+        let lang = self.get_text(cx, &["language"], "pt-BR");
+        let folder = self
+            .status(cx)
+            .get("project")
+            .and_then(|p| p.get("folder"))
+            .and_then(Value::as_text)
+            .filter(|f| !f.is_empty())
+            .map(str::to_owned);
         let read_only = self.status(cx).get("project").and_then(|p| p.get("readOnly")).and_then(Value::as_bool);
         if read_only != Some(true) {
             port_action(&self.scx, "project.save", Value::NULL, cx);
         }
         if let Ok(exe) = std::env::current_exe() {
-            let spawned = std::process::Command::new(exe)
-                .env("LM_OPEN", "Settings")
-                .env("LM_LANG", lang)
-                .env("LM_THEME_NAME", theme)
-                .spawn();
+            let mut args: Vec<String> = std::env::args().skip(1).collect();
+            if args.is_empty() {
+                args.extend(folder);
+            }
+            let spawned =
+                std::process::Command::new(exe).args(args).env("LM_OPEN", "Settings").env("LM_LANG", lang).spawn();
             if spawned.is_ok() {
                 cx.quit();
             }
@@ -541,7 +547,6 @@ impl Settings {
             Page::Appearance => self.appearance(cx),
             Page::Keys => self.keys(cx),
             Page::Autosave => self.autosave(cx),
-            Page::Advanced => self.advanced(cx),
         }
     }
 
@@ -558,23 +563,12 @@ impl Settings {
     }
 
     fn general(&mut self, cx: &mut Context<Self>) -> Vec<Row> {
-        let long = self.get_int(cx, &["general", "longAudioSeconds"], 30);
         let rate = self.get_int(cx, &["general", "newProjectRate"], 48_000);
         let project_rate = crate::model::sample_rate(self.scx.core.read(cx).port().root()) as i64;
         vec![
             self.toggle("Reopen the last project on startup", "reopen-last", &["general", "reopenLast"], false, cx),
             self.toggle("Ask before closing with changes not saved", "ask-closing", &["askBeforeClosing"], true, cx),
-            self.toggle("Ask before deleting a track", "ask-track", &["general", "askDeleteTrack"], true, cx),
-            row(
-                "Long audio files become audio tracks",
-                Apply::Now,
-                stepper("long-audio", trf("{0} s", &[&long]), cx, move |s, d, cx| {
-                    s.set(cx, &["general", "longAudioSeconds"], Value::int((long + d * 5).clamp(1, 3600)))
-                }),
-            )
-            .hint(tr("Longer than this, a dropped audio file is an audio track; shorter, a sample")),
-            self.toggle("Previews play to the end", "previews-end", &["general", "previewsToEnd"], false, cx),
-            self.toggle("New projects use the analog desk", "analog", &["general", "analogDesk"], true, cx),
+            self.toggle("Ask before deleting a track", "ask-track", &["interface", "confirmTrackRemoval"], true, cx),
             row(
                 "Sample rate of new projects",
                 Apply::Now,
@@ -611,25 +605,36 @@ impl Settings {
         let name_of = |id: &str| devices.iter().find(|d| &*d.id == id).map_or(id.to_string(), |d| d.name.to_string());
         let mut rows = Vec::new();
 
-        rows.push(
-            row(
-                "Audio system",
-                Apply::Now,
-                segmented(
-                    "audio-system",
-                    vec![
-                        ("ALSA".into(), system == "alsa", true),
-                        (tr("JACK (phase 2)").into(), system == "jack", false),
-                    ],
-                    cx,
-                    |s, i, _, cx| {
-                        s.set(cx, &["audio", "system"], Value::text(["alsa", "jack"][i]));
-                        s.reopen_soon(cx);
-                    },
-                ),
-            )
-            .hint(tr("ALSA directly, the card alone (hw)")),
-        );
+        // the audio systems this build can open (the core says which); with none listed, the current one
+        let mut backends: Vec<String> = status
+            .get("backends")
+            .map(|l| l.items().filter_map(|x| x.as_text().map(str::to_owned)).collect())
+            .unwrap_or_default();
+        if backends.is_empty() {
+            backends.push(system.clone());
+        }
+        let names: Vec<(SharedString, bool, bool)> = backends
+            .iter()
+            .map(|b| {
+                let label = match b.as_str() {
+                    "alsa" => "ALSA",
+                    "coreaudio" => "CoreAudio",
+                    "jack" => "JACK",
+                    other => crate::ui::tr_str(other),
+                };
+                (label.into(), *b == system, true)
+            })
+            .collect();
+        rows.push(row(
+            "Audio system",
+            Apply::Now,
+            segmented("audio-system", names, cx, move |s, i, _, cx| {
+                if let Some(b) = backends.get(i) {
+                    s.set(cx, &["audio", "system"], Value::text(b));
+                    s.reopen_soon(cx);
+                }
+            }),
+        ));
         // the device's state (I-10)
         let state: AnyElement = if let Some(l) = device_loading {
             div().h(px(28.)).child(l).into_any_element()
@@ -1058,7 +1063,6 @@ impl Settings {
         let profiles: Vec<Value> =
             self.get(cx, &["controllers"]).map(|l| l.items().cloned().collect()).unwrap_or_default();
         let aliases: Vec<String> = ports.iter().map(|p| text_of(p, "alias")).filter(|a| !a.is_empty()).collect();
-        let quantize = self.get_bool(cx, &["recording", "quantizeMidi"], false);
         let osc_on = self.get_bool(cx, &["osc", "on"], false);
         let osc_port = self.get_int(cx, &["osc", "port"], 9000);
         let osc_lan = self.get_bool(cx, &["osc", "lan"], false);
@@ -1119,9 +1123,6 @@ impl Settings {
             )),
             wide("Controllers", Some(Apply::Now), div().flex().flex_col().gap(px(3.)).children(profile_lines))
                 .hint(tr("A profile maps a controller's faders, knobs and buttons, with the return to its lights and motorized faders; banks of 8")),
-            row("Quantize notes recorded in the Piano Roll", Apply::Now, switch("quantize", quantize, cx, |s, v, cx| {
-                s.set(cx, &["recording", "quantizeMidi"], b(v))
-            })),
             row("OSC", Apply::Now, switch("osc-on", osc_on, cx, |s, v, cx| s.set(cx, &["osc", "on"], b(v)))),
             row(
                 "OSC port",
@@ -1178,34 +1179,57 @@ impl Settings {
     }
 
     fn plugins(&mut self, cx: &mut Context<Self>) -> Vec<Row> {
-        let not_loaded = self.list_at(cx, &["plugins", "notLoaded"]);
-        let lines = not_loaded.iter().enumerate().map(|(i, n)| {
-            let n2 = n.clone();
-            div().flex().items_center().gap(px(10.)).child(div().text_size(px(12.)).child(n.clone())).child(
-                button(("load-again", i), tr("Load again"), false, 0).on_click(cx.listener(move |s, _, _, cx| {
-                    let rest: Vec<Value> = s
-                        .list_at(cx, &["plugins", "notLoaded"])
-                        .into_iter()
-                        .filter(|x| *x != n2)
-                        .map(Value::text)
-                        .collect();
-                    s.set(cx, &["plugins", "notLoaded"], Value::list(rest));
-                })),
-            )
-        });
-        let lines: Vec<_> = lines.collect();
+        // plugins that brought a scan or a probe down: (format, uri); `plugin.unblock` lifts one, the next scan tries it again
+        let blocked: Vec<(String, String)> = self
+            .get(cx, &["plugins", "blocked"])
+            .map(|l| {
+                l.items()
+                    .map(|b| {
+                        let t = |k: &str| b.get(k).and_then(Value::as_text).unwrap_or("").to_string();
+                        (t("format"), t("uri"))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let lines: Vec<_> = blocked
+            .iter()
+            .enumerate()
+            .map(|(i, (format, uri))| {
+                let (f, u) = (format.clone(), uri.clone());
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .child(div().w(px(60.)).text_size(px(11.)).text_color(c(THEME.text2)).child(format.to_uppercase()))
+                    .child(div().w(px(300.)).text_size(px(12.)).child(uri.clone()))
+                    .child(button(("unblock", i), tr("Unblock"), false, 0).on_click(cx.listener(move |s, _, _, cx| {
+                        port_action(
+                            &s.scx,
+                            "plugin.unblock",
+                            obj(vec![("format", Value::text(&f)), ("uri", Value::text(&u))]),
+                            cx,
+                        );
+                    })))
+            })
+            .collect();
         vec![
             self.toggle("Plugin windows on top", "plugin-top", &["plugins", "windowsOnTop"], false, cx),
-            self.toggle("One instrument window at a time", "one-inst", &["plugins", "oneInstrumentWindow"], false, cx),
             wide(
-                "Not loaded since a crash",
+                "Blocked plugins",
                 Some(Apply::Now),
                 div()
                     .flex()
                     .flex_col()
                     .gap(px(3.))
-                    .when(not_loaded.is_empty(), |d| d.child(caption(tr("None"))))
-                    .children(lines),
+                    .when(blocked.is_empty(), |d| d.child(caption(tr("None"))))
+                    .children(lines)
+                    .when(!blocked.is_empty(), |d| {
+                        d.child(button("unblock-all", tr("Unblock all"), false, 0).on_click(cx.listener(
+                            |s, _, _, cx| {
+                                port_action(&s.scx, "plugin.unblock", obj(vec![]), cx);
+                            },
+                        )))
+                    }),
             ),
         ]
     }
@@ -1280,7 +1304,6 @@ impl Settings {
             ),
             self.toggle("Follow the cursor while playing", "follow", &["interface", "followCursor"], false, cx),
             self.toggle("Tooltips", "tooltips", &["interface", "tooltips"], true, cx),
-            self.toggle("Compact track headers", "compact", &["interface", "compactHeaders"], false, cx),
             self.toggle("Note names in the Piano Roll", "note-names", &["interface", "noteNames"], true, cx),
         ]
     }
@@ -1305,13 +1328,6 @@ impl Settings {
                 }),
             ),
             self.toggle("Keep a backup when saving", "backup-save", &["backup", "onSave"], true, cx),
-        ]
-    }
-
-    fn advanced(&mut self, cx: &mut Context<Self>) -> Vec<Row> {
-        vec![
-            self.toggle("Clean corrupted audio", "sanitize", &["advanced", "sanitize"], true, cx)
-                .hint(tr("NaN and infinite values from a plugin become silence, and the plugin is marked")),
         ]
     }
 }

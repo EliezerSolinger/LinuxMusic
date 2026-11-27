@@ -96,9 +96,10 @@ pub fn import_paths(core: &Entity<Core>, paths: &[PathBuf], tick: i64, cx: &mut 
                 cx,
             ),
             Kind::Audio => import_audio(core, path.clone(), tick, cx),
-            Kind::Project => {
-                run(core, "project.open", Value::object([("folder", Value::text(path.display().to_string()))]), cx)
-            }
+            Kind::Project => core.update(cx, |c, cx| {
+                c.run_guarded("project.open", Value::object([("folder", Value::text(path.display().to_string()))]));
+                cx.notify();
+            }),
             Kind::Other => {}
         }
     }
@@ -111,7 +112,7 @@ pub fn import_audio(core: &Entity<Core>, path: PathBuf, tick: i64, cx: &mut App)
     let core = core.clone();
     match answer {
         Pending::Ready(Ok(res)) => wait_length(core, res, name, tick, cx),
-        Pending::Ready(Err(_)) => {} // the core's notice says why
+        Pending::Ready(Err(_)) => {} // `Core::import` already reported it
         Pending::Waiting(id) => {
             cx.spawn(async move |cx| {
                 // the import is an operation: its answer comes in a later pump (at most a minute for a big file)
@@ -119,8 +120,9 @@ pub fn import_audio(core: &Entity<Core>, path: PathBuf, tick: i64, cx: &mut App)
                     cx.background_executor().timer(Duration::from_millis(50)).await;
                     let done = cx.update(|cx| core.update(cx, |c, _| c.take_imported(id)));
                     if let Some(r) = done {
-                        if let Ok(res) = r {
-                            cx.update(|cx| wait_length(core.clone(), res, name.clone(), tick, cx));
+                        match r {
+                            Ok(res) => cx.update(|cx| wait_length(core.clone(), res, name.clone(), tick, cx)),
+                            Err(e) => cx.update(|cx| core.update(cx, |c, _| c.fail(e))),
                         }
                         return;
                     }
@@ -133,15 +135,31 @@ pub fn import_audio(core: &Entity<Core>, path: PathBuf, tick: i64, cx: &mut App)
     }
 }
 
+/// One look at a resource's length (it comes with its peaks): `Some(Some(n))` known, `Some(None)` failed (the error
+/// is shown), `None` not there yet
+pub(super) fn length_now(c: &mut Core, res: &Resource) -> Option<Option<u64>> {
+    match c.port_mut().peaks(res, 12, 0, 1) {
+        Pending::Ready(Ok(b)) => Some(Some(b.length)),
+        Pending::Ready(Err(e)) => {
+            c.fail(e);
+            Some(None)
+        }
+        Pending::Waiting(_) => None,
+    }
+}
+
 /// The resource's length comes with its peaks; then the track is made
 fn wait_length(core: Entity<Core>, res: Resource, name: String, tick: i64, cx: &mut App) {
     cx.spawn(async move |cx| {
         for _ in 0..1200 {
-            let length =
-                cx.update(|cx| core.update(cx, |c, _| c.port_mut().peaks(&res, 12, 0, 1).ok().map(|b| b.length)));
-            if let Some(samples) = length {
-                cx.update(|cx| add_audio_track(&core, &res, &name, tick, samples as i64, cx));
-                return;
+            match cx.update(|cx| core.update(cx, |c, _| length_now(c, &res))) {
+                Some(Some(samples)) => {
+                    cx.update(|cx| add_audio_track(&core, &res, &name, tick, samples as i64, cx));
+                    return;
+                }
+                // failed: the error is shown, nothing more to wait for
+                Some(None) => return,
+                None => {}
             }
             cx.background_executor().timer(Duration::from_millis(50)).await;
         }
@@ -166,10 +184,12 @@ pub fn add_audio_track(core: &Entity<Core>, res: &Resource, name: &str, tick: i6
     ]);
     let track = Value::object([("name", Value::text(name)), ("items", Value::list([item]))]);
     core.update(cx, |c, cx| {
-        c.report(|pt| pt.apply(
-            Label::new("Import audio"),
-            vec![EditOp::Insert { temp: 1, parent: Ref::Id(ROOT), list: "tracks".into(), index, node: track }],
-        ));
+        c.report(|pt| {
+            pt.apply(
+                Label::new("Import audio"),
+                vec![EditOp::Insert { temp: 1, parent: Ref::Id(ROOT), list: "tracks".into(), index, node: track }],
+            )
+        });
         cx.notify();
     });
 }

@@ -980,23 +980,47 @@ impl Session {
     pub(crate) fn device_reopen(&mut self) -> Result<()> {
         let audio = |k: &str| self.preferences.text(&["audio", k]).unwrap_or("").to_owned();
         let name = if audio("output").is_empty() { audio("input") } else { audio("output") };
-        let setup = match &self.device_setup {
-            DeviceSetup::Dummy(o) => DeviceSetup::Dummy(*o),
-            DeviceSetup::Alsa { .. } if name.is_empty() => self.device_setup.clone(),
-            DeviceSetup::Alsa { .. } => DeviceSetup::Alsa { device: name },
-            DeviceSetup::CoreAudio { .. } => DeviceSetup::CoreAudio {
-                output: if audio("output").is_empty() { "default".to_owned() } else { audio("output") },
-                input: Some(audio("input")).filter(|i| !i.is_empty()),
-            },
-            // The ports and the MIDI state stay; the server may change (`jack:<server>` in the preferences)
+        // The audio system of the preferences wins when this build can open it (the screen's choice of backend)
+        let system = self.preferences.text(&["audio", "system"]).unwrap_or("").to_owned();
+        let real = !matches!(self.device_setup, DeviceSetup::Dummy(_));
+        let from_system = match system.as_str() {
+            _ if !real => None,
+            "alsa" if cfg!(target_os = "linux") && !matches!(self.device_setup, DeviceSetup::Alsa { .. }) => {
+                Some(DeviceSetup::Alsa { device: if name.is_empty() { "default".to_owned() } else { name.clone() } })
+            }
+            "coreaudio" if cfg!(target_os = "macos") && !matches!(self.device_setup, DeviceSetup::CoreAudio { .. }) => {
+                Some(DeviceSetup::CoreAudio {
+                    output: if audio("output").is_empty() { "default".to_owned() } else { audio("output") },
+                    input: Some(audio("input")).filter(|i| !i.is_empty()),
+                })
+            }
             #[cfg(feature = "jack")]
-            DeviceSetup::Jack { device, client, inputs, outputs, midi } => DeviceSetup::Jack {
-                device: if name.starts_with("jack") { name } else { device.clone() },
-                client: client.clone(),
-                inputs: *inputs,
-                outputs: *outputs,
-                midi: midi.clone(),
-            },
+            "jack" if !matches!(self.device_setup, DeviceSetup::Jack { .. }) => {
+                Some(DeviceSetup::jack(if name.starts_with("jack") { &name } else { "jack" }))
+            }
+            _ => None,
+        };
+        let setup = if let Some(s) = from_system {
+            s
+        } else {
+            match &self.device_setup {
+                DeviceSetup::Dummy(o) => DeviceSetup::Dummy(*o),
+                DeviceSetup::Alsa { .. } if name.is_empty() => self.device_setup.clone(),
+                DeviceSetup::Alsa { .. } => DeviceSetup::Alsa { device: name },
+                DeviceSetup::CoreAudio { .. } => DeviceSetup::CoreAudio {
+                    output: if audio("output").is_empty() { "default".to_owned() } else { audio("output") },
+                    input: Some(audio("input")).filter(|i| !i.is_empty()),
+                },
+                // The ports and the MIDI state stay; the server may change (`jack:<server>` in the preferences)
+                #[cfg(feature = "jack")]
+                DeviceSetup::Jack { device, client, inputs, outputs, midi } => DeviceSetup::Jack {
+                    device: if name.starts_with("jack") { name } else { device.clone() },
+                    client: client.clone(),
+                    inputs: *inputs,
+                    outputs: *outputs,
+                    midi: midi.clone(),
+                },
+            }
         };
         self.device_setup = setup.clone();
         let (spec, source) = (self.spec, self.dummy_source);
@@ -1221,10 +1245,10 @@ impl Session {
         }
         let text = folder.display().to_string();
         let mut list: Vec<Value> =
-            self.preferences.get(&["allowedFolders"]).map(|l| l.items().cloned().collect()).unwrap_or_default();
+            self.preferences.get(&["folders", "allowed"]).map(|l| l.items().cloned().collect()).unwrap_or_default();
         if !list.iter().any(|v| v.as_text() == Some(text.as_str())) {
             list.push(Value::text(text));
-            self.set_preference(&[PathStep::key("allowedFolders")], Value::list(list))?;
+            self.set_preference(&[PathStep::key("folders"), PathStep::key("allowed")], Value::list(list))?;
         }
         self.resources.set_allowed(crate::session::allowed_folders(&self.preferences));
         self.reload_resources();

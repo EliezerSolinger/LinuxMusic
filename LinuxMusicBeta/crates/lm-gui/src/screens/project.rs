@@ -93,7 +93,8 @@ impl ProjectDialog {
         if folder.trim().is_empty() {
             return;
         }
-        port_action(&self.scx, "project.open", obj(vec![("folder", Value::text(folder.trim()))]), cx);
+        let params = obj(vec![("folder", Value::text(folder.trim()))]);
+        self.scx.core.update(cx, |core, _| core.run_guarded("project.open", params));
         self.part = Part::State;
         cx.notify();
     }

@@ -1828,7 +1828,7 @@ impl GridPaint {
                 window.paint_path(p, c(color));
             }
         }
-        if nw > 24.0 && self.key_h >= 10.0 {
+        if nw > 24.0 && self.key_h >= 10.0 && crate::ui::note_names() {
             let fs = (self.key_h - 3.0).clamp(7.0, 10.0);
             let y = o.y + px(ny + (self.key_h - fs) / 2.0 - 1.0);
             paint_text(window, cx, key_name(x.key).into(), o.x + px(nx + 3.0), y, fs, c(THEME.on_accent));
@@ -3167,7 +3167,7 @@ pub mod kit {
     use gpui::{
         AnyView, App, AppContext, Context, Div, ElementId, Entity, FontWeight, Hsla, IntoElement, MouseButton,
         MouseMoveEvent, MouseUpEvent, Pixels, Point, Rgba, SharedString, Stateful, Subscription, TextAlign, TextRun,
-        WeakEntity, Window, anchored, canvas, deferred, div, prelude::*, px,
+        Render, WeakEntity, Window, anchored, canvas, deferred, div, prelude::*, px,
     };
     use gpui_component::input::{Input, InputEvent, InputState};
     use gpui_component::tooltip::Tooltip;
@@ -3251,7 +3251,17 @@ pub mod kit {
     }
 
     pub fn tip(text: &'static str) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
-        move |window, cx| Tooltip::new(tr(text)).build(window, cx)
+        move |window, cx| {
+            if crate::ui::tooltips() { Tooltip::new(tr(text)).build(window, cx) } else { cx.new(|_| NoTip).into() }
+        }
+    }
+
+    /// What a tooltip is while the preference `interface.tooltips` is off: nothing drawn
+    struct NoTip;
+    impl Render for NoTip {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+        }
     }
 
     #[derive(Clone)]

@@ -28,10 +28,12 @@ const BOTTOM_DOCK_H: f32 = 300.0;
 const SIDE_DOCK_W: f32 = 380.0;
 
 /// What waits for the user's answer before losing changes
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Pending {
     Quit,
     Close,
+    /// An action that replaces the project (`project.open`, `project.new`), run after the answer
+    Run(String, Value),
 }
 
 pub struct Workspace {
@@ -74,6 +76,11 @@ pub struct Workspace {
     _activation: gpui::Subscription,
     /// The in-window menu bar's open menu (Linux)
     pub menu_open: Option<usize>,
+    /// The time of the last autosave seen (`status.autosave.at`), and until when the Save button shows it (F-JAN-008)
+    autosave_seen: String,
+    save_flash: Option<Instant>,
+    /// The window's title as last set (it is set again only when it changes)
+    window_title: String,
     /// The pages and screens in a window of their own (F-JAN-006), with the window
     detached: Vec<(Detachable, gpui::AnyWindowHandle)>,
 }
@@ -91,10 +98,7 @@ impl Render for Hosted {
         if self.activation.is_none() {
             self.activation = Some(lm_gui_plugins::guard_activation(self.core.clone(), window, cx));
         }
-        div()
-            .size_full()
-            .child(self.view.clone())
-            .child(lm_gui_plugins::release_guard(self.core.downgrade()))
+        div().size_full().child(self.view.clone()).child(lm_gui_plugins::release_guard(self.core.downgrade()))
     }
 }
 
@@ -107,6 +111,8 @@ pub struct Toast {
     pub color: u32,
 }
 
+/// How long the Save button stays lit after an autosave
+const SAVE_FLASH: Duration = Duration::from_millis(1200);
 /// How long a floating notice stays
 const TOAST_LIFE: Duration = Duration::from_secs(4);
 /// How many show at once
@@ -235,6 +241,9 @@ impl Workspace {
             seen_notices: HashMap::new(),
             toast_seq: 0,
             menu_open: None,
+            autosave_seen: String::new(),
+            save_flash: None,
+            window_title: String::new(),
             detached: Vec::new(),
             _activation: activation,
         };
@@ -359,12 +368,27 @@ impl Workspace {
         }
         let Some(view) = self.view_of(d) else { return };
         let me = cx.weak_entity();
+        let on_top = self
+            .core
+            .read(cx)
+            .port()
+            .preferences()
+            .get("plugins")
+            .and_then(|p| p.get("windowsOnTop"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         let options = gpui::WindowOptions {
             titlebar: Some(gpui::TitlebarOptions { title: Some(tr(d.title()).into()), ..Default::default() }),
             window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds::new(
                 gpui::point(px(80.), px(80.)),
                 gpui::size(px(crate::view::WINDOW_W * 0.7), px(crate::view::WINDOW_H * 0.7)),
             ))),
+            // `plugins.windowsOnTop`: the windows of instruments and effects float over the others
+            kind: if on_top && matches!(d, Detachable::Screen(Screen::Instrument | Screen::Effect)) {
+                gpui::WindowKind::Floating
+            } else {
+                gpui::WindowKind::Normal
+            },
             ..Default::default()
         };
         let core = self.core.clone();
@@ -637,11 +661,12 @@ impl Workspace {
         match what {
             Pending::Quit => cx.quit(),
             Pending::Close => window.remove_window(),
+            Pending::Run(id, params) => self.run(&id, params, cx),
         }
     }
 
     fn answer(&mut self, save: Option<bool>, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(what) = self.confirm else { return };
+        let Some(what) = self.confirm.clone() else { return };
         match save {
             None => {
                 self.confirm = None;
@@ -677,6 +702,14 @@ impl Render for Workspace {
                 self.composition.update(cx, |c, cx| c.to_start(cx));
             }
         }
+        self.sync_title(window, cx);
+        self.watch_autosave(cx);
+        {
+            let interface = self.core.read(cx).port().preferences().get("interface");
+            let flag = |k: &str| interface.and_then(|i| i.get(k)).and_then(Value::as_bool).unwrap_or(true);
+            crate::ui::set_tooltips(flag("tooltips"));
+            crate::ui::set_note_names(flag("noteNames"));
+        }
         let started = Instant::now();
         let (quit, probe, animate, position) = self.core.update(cx, |core, _| {
             let quit = core.bench.frame();
@@ -690,7 +723,7 @@ impl Render for Workspace {
         }
         self.run_midi_actions(window, cx);
         self.collect_toasts(cx);
-        if animate || !self.toasts.is_empty() {
+        if animate || !self.toasts.is_empty() || self.save_flash.is_some() {
             window.request_animation_frame();
         }
         let page_view: AnyView = if self.is_detached(Detachable::Page(self.page)) {
@@ -707,7 +740,10 @@ impl Render for Workspace {
         };
         let prefs = self.core.read(cx).port().preferences().clone();
         let modal = self.docked(Placement::Modal);
-        let confirm = self.confirm;
+        if let Some((id, params)) = self.core.update(cx, |core, _| core.ask_first.take()) {
+            self.confirm = Some(Pending::Run(id, params));
+        }
+        let confirm = self.confirm.clone();
         div()
             .size_full()
             .relative()
@@ -882,19 +918,79 @@ fn scrim(id: &'static str) -> gpui::Stateful<gpui::Div> {
         .bg(gpui::rgba(THEME.scrim))
 }
 
+/// The folder name of the session's own project before the first save
+const UNTITLED_FOLDER: &str = "untitled";
+
+/// The project's name as shown: the session's unsaved project is "Untitled"
+pub fn shown_name(name: &str) -> String {
+    if name.is_empty() || name == UNTITLED_FOLDER { tr("Untitled").to_string() } else { name.to_string() }
+}
+
+/// The title of the window (F-JAN-007): the project, a bullet when it has changes not saved, read-only noted
+pub fn window_title(name: &str, modified: bool, read_only: bool) -> String {
+    let mut t = shown_name(name);
+    if modified {
+        t.push_str(" •");
+    }
+    if read_only {
+        t.push_str(&format!(" ({})", tr("read only")));
+    }
+    format!("{t} - LinuxMusicBeta")
+}
+
 impl Workspace {
-    fn render_tabs(&self, cx: &Context<Self>) -> impl IntoElement {
-        let modified = self.core.read(cx).port().modified();
-        let name = self
+    /// The Save button lights for a moment when the autosave wrote (the first one seen is not news)
+    fn watch_autosave(&mut self, cx: &mut Context<Self>) {
+        let at = self
             .core
             .read(cx)
             .port()
             .status()
-            .get("project")
-            .and_then(|p| p.get("name"))
+            .get("autosave")
+            .and_then(|a| a.get("at"))
             .and_then(Value::as_text)
             .unwrap_or("")
             .to_string();
+        if at != self.autosave_seen {
+            let news = !self.autosave_seen.is_empty();
+            self.autosave_seen = at;
+            if news {
+                self.save_flash = Some(Instant::now() + SAVE_FLASH);
+            }
+        }
+        if self.save_flash.is_some_and(|t| Instant::now() >= t) {
+            self.save_flash = None;
+        }
+    }
+
+    /// The system window's title follows the project (name, changes not saved, read-only)
+    fn sync_title(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let (name, modified, read_only) = {
+            let port = self.core.read(cx).port();
+            let project = port.status().get("project");
+            let name = project.and_then(|p| p.get("name")).and_then(Value::as_text).unwrap_or("").to_string();
+            let read_only = project.and_then(|p| p.get("readOnly")).and_then(Value::as_bool).unwrap_or(false);
+            (name, port.modified(), read_only)
+        };
+        let title = window_title(&name, modified, read_only);
+        if title != self.window_title {
+            window.set_window_title(&title);
+            self.window_title = title;
+        }
+    }
+
+    fn render_tabs(&self, cx: &Context<Self>) -> impl IntoElement {
+        let modified = self.core.read(cx).port().modified();
+        let name = shown_name(
+            self.core
+                .read(cx)
+                .port()
+                .status()
+                .get("project")
+                .and_then(|p| p.get("name"))
+                .and_then(Value::as_text)
+                .unwrap_or(""),
+        );
         div()
             .h(px(TABS_H))
             .flex()
@@ -916,6 +1012,13 @@ impl Workspace {
             } else {
                 name
             }))
+            .child(
+                div().pb(px(6.)).pl(px(8.)).child(
+                    button("save-project", tr("Save"), self.save_flash.is_some(), THEME.green)
+                        .debug_selector(|| "save-project".into())
+                        .on_click(cx.listener(|ws, _, _, cx| ws.run("project.save", Value::NULL, cx))),
+                ),
+            )
             .child(div().flex_1())
             // the launcher for every other screen (the real program reaches them from menus, the palette and
             // context actions too)
@@ -926,7 +1029,12 @@ impl Workspace {
     }
 
     fn render_confirm(&self, what: Pending, cx: &Context<Self>) -> impl IntoElement {
-        let title = if what == Pending::Quit { tr("Quit") } else { tr("Close") };
+        let title = match what {
+            Pending::Quit => tr("Quit"),
+            Pending::Close => tr("Close"),
+            Pending::Run(ref id, _) if id == "project.new" => tr("New project"),
+            Pending::Run(..) => tr("Open project"),
+        };
         scrim("confirm-scrim").child(
             div()
                 .id("confirm")

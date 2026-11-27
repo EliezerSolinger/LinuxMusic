@@ -48,13 +48,37 @@ pub fn defaults() -> Value {
                 ("followCursor", Value::bool(false)),
                 ("scale", real(1.0)),
                 ("confirmTrackRemoval", Value::bool(true)),
+                ("tooltips", Value::bool(true)),
+                ("noteNames", Value::bool(true)),
                 ("loopEditMode", Value::text("buttons")),
                 ("scrollMode", Value::text("page")),
                 ("stopBehavior", Value::text("origin")),
             ]),
         ),
         ("metronome", o(vec![("when", Value::text("recording")), ("countInBars", Value::int(1))])),
-        ("recording", o(vec![("format", Value::text("rf64-24")), ("folder", Value::text(""))])),
+        (
+            "recording",
+            o(vec![
+                ("format", Value::text("rf64-24")),
+                ("folder", Value::text("")),
+                ("lanes", Value::bool(true)),
+            ]),
+        ),
+        // The General page (F-CFG-010)
+        (
+            "general",
+            o(vec![
+                ("reopenLast", Value::bool(false)),
+                ("newProjectRate", Value::int(48_000)),
+            ]),
+        ),
+        // Folders: the default SoundFont, and the folders outside a project it may read (C9)
+        ("folders", o(vec![("soundfont", Value::text("")), ("allowed", Value::empty_list())])),
+        // Autosave (minutes, 0 off) and the copies kept of a project
+        (
+            "backup",
+            o(vec![("autosaveMinutes", Value::int(1)), ("kept", Value::int(10)), ("onSave", Value::bool(true))]),
+        ),
         // Keymaps (user, 26/11): per context `{preset, keys: {action: keys}, mouse: {action: gesture}}`, the choice of
         // preset and the user's own changes on top of it
         ("keymaps", Value::empty_object()),
@@ -71,18 +95,22 @@ pub fn defaults() -> Value {
         ),
         // Not shown on the settings screen
         ("recent", Value::empty_list()),
-        ("allowedFolders", Value::empty_list()),
         ("sampleFolders", Value::empty_list()),
         ("favorites", Value::empty_list()),
         // The user's tags of browser files: path -> list of tags
         ("tags", Value::empty_object()),
-        ("autosaveSeconds", Value::int(60)),
         ("lowLatencyMonitoring", Value::bool(false)),
         // Third-party plugins (I-9.6): search folders added by the user, the last scans, the plugins blocked (they
         // crashed or hung their probe)
         (
             "plugins",
-            o(vec![("paths", Value::empty_list()), ("scanned", Value::empty_list()), ("blocked", Value::empty_list())]),
+            o(vec![
+                ("paths", Value::empty_list()),
+                ("scanned", Value::empty_list()),
+                ("blocked", Value::empty_list()),
+                ("grouped", Value::empty_list()),
+                ("windowsOnTop", Value::bool(false)),
+            ]),
         ),
     ])
 }
@@ -151,6 +179,24 @@ fn merge(defaults: &Value, read: &Value) -> Value {
     out
 }
 
+/// Keys that moved: a file written before keeps its value under the new key
+fn migrate(tree: Value, read: &Value) -> Value {
+    let mut tree = tree;
+    if let Some(old) = read.get("allowedFolders").filter(|l| l.items().next().is_some())
+        && tree.get("folders").and_then(|f| f.get("allowed")).is_some_and(|l| l.items().next().is_none())
+        && let Some(folders) = tree.get("folders").cloned()
+    {
+        tree = tree.with("folders", folders.with("allowed", old.clone()));
+    }
+    if let Some(seconds) = read.get("autosaveSeconds").and_then(Value::as_int)
+        && read.get("backup").and_then(|b| b.get("autosaveMinutes")).is_none()
+        && let Some(backup) = tree.get("backup").cloned()
+    {
+        tree = tree.with("backup", backup.with("autosaveMinutes", Value::int((seconds / 60).clamp(0, 30))));
+    }
+    tree
+}
+
 impl Preferences {
     /// The defaults, kept nowhere (tests, the headless renderer)
     pub fn in_memory() -> Self {
@@ -162,7 +208,7 @@ impl Preferences {
         let base = defaults();
         let (tree, error) = match std::fs::read_to_string(&file) {
             Ok(text) => match from_json(&text) {
-                Ok(v) => (merge(&base, &v), None),
+                Ok(v) => (migrate(merge(&base, &v), &v), None),
                 Err(e) => (base, Some(e.arg("path", file.display().to_string()))),
             },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => (base, None),

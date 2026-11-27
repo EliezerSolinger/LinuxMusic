@@ -62,14 +62,13 @@
 //!            "secondary-s", gestures as "shift-drag"); only what the user chose or changed is there
 //! monitor:   { level: real (dB, -60..+12), dim: bool, cut: bool, mono: bool, side: bool }
 //!            the master section's monitoring (the legacy MONITOR): what is heard, never mixed, exported or undone
-//! general:   { reopenLast: bool, askDeleteTrack: bool, longAudioSeconds: int, previewsToEnd: bool,
-//!              analogDesk: bool, newProjectRate: int }                          (F-CFG-010)
-//! interface: also { tooltips: bool, compactHeaders: bool, noteNames: bool }   (F-CFG-016)
-//! recording: also { lanes: bool (off: the simple recorder, P-11), quantizeMidi: bool }
-//! plugins:   { windowsOnTop: bool, oneInstrumentWindow: bool, notLoaded: [text] }   (F-CFG-014)
+//! general:   { reopenLast: bool, newProjectRate: int }                          (F-CFG-010)
+//! interface: also { tooltips: bool, noteNames: bool }                          (F-CFG-016)
+//! recording: also { lanes: bool (off: the simple recorder, P-11) }
+//! plugins:   { paths, scanned, grouped, blocked: [{format, uri, reason}] (`plugin.unblock` lifts them),
+//!              windowsOnTop: bool }                       (F-CFG-014)
 //! folders:   { soundfont: text, allowed: [text] }                          (F-CFG-015, C9)
 //! backup:    { autosaveMinutes: int (0 off), kept: int, onSave: bool }     (F-PRJ-010)
-//! advanced:  { sanitize: bool }                                            (F-CFG-018, U20)
 //! ```
 //!
 //! The parameters of the session's actions the settings, export and project screens run (agent D's):
@@ -97,6 +96,8 @@ pub mod status {
     pub const LAST_EXPORT: &str = "lastExport";
     pub const AUTOSAVE: &str = "autosave";
     pub const DEVICE: &str = "device";
+    /// The audio systems the build can open: a list of "alsa", "coreaudio", "jack"
+    pub const BACKENDS: &str = "backends";
     pub const REALTIME: &str = "realtime";
     pub const MIDI_PORTS: &str = "midiPorts";
 }

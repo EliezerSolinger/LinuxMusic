@@ -88,14 +88,15 @@ fn audio_on_track(core: &Entity<Core>, path: PathBuf, track: NodeId, tick: i64, 
     let core = core.clone();
     match answer {
         Pending::Ready(Ok(res)) => wait_length(core, res, name, track, tick, cx),
-        Pending::Ready(Err(_)) => {}
+        Pending::Ready(Err(_)) => {} // `Core::import` already reported it
         Pending::Waiting(id) => {
             cx.spawn(async move |cx| {
                 for _ in 0..1200 {
                     cx.background_executor().timer(Duration::from_millis(50)).await;
                     if let Some(r) = cx.update(|cx| core.update(cx, |c, _| c.take_imported(id))) {
-                        if let Ok(res) = r {
-                            cx.update(|cx| wait_length(core.clone(), res, name.clone(), track, tick, cx));
+                        match r {
+                            Ok(res) => cx.update(|cx| wait_length(core.clone(), res, name.clone(), track, tick, cx)),
+                            Err(e) => cx.update(|cx| core.update(cx, |c, _| c.fail(e))),
                         }
                         return;
                     }
@@ -110,11 +111,13 @@ fn audio_on_track(core: &Entity<Core>, path: PathBuf, track: NodeId, tick: i64, 
 fn wait_length(core: Entity<Core>, res: Resource, name: String, track: NodeId, tick: i64, cx: &mut App) {
     cx.spawn(async move |cx| {
         for _ in 0..1200 {
-            let length =
-                cx.update(|cx| core.update(cx, |c, _| c.port_mut().peaks(&res, 12, 0, 1).ok().map(|b| b.length)));
-            if let Some(samples) = length {
-                cx.update(|cx| add_item(&core, &res, &name, track, tick, samples as i64, cx));
-                return;
+            match cx.update(|cx| core.update(cx, |c, _| files::length_now(c, &res))) {
+                Some(Some(samples)) => {
+                    cx.update(|cx| add_item(&core, &res, &name, track, tick, samples as i64, cx));
+                    return;
+                }
+                Some(None) => return,
+                None => {}
             }
             cx.background_executor().timer(Duration::from_millis(50)).await;
         }
@@ -137,10 +140,12 @@ fn add_item(core: &Entity<Core>, res: &Resource, name: &str, track: NodeId, tick
         ("lanes", Value::list([lane])),
     ]);
     core.update(cx, |c, cx| {
-        c.report(|pt| pt.apply(
-            Label::new("Add audio"),
-            vec![EditOp::Insert { temp: 1, parent: Ref::Id(track), list: "items".into(), index, node: item }],
-        ));
+        c.report(|pt| {
+            pt.apply(
+                Label::new("Add audio"),
+                vec![EditOp::Insert { temp: 1, parent: Ref::Id(track), list: "items".into(), index, node: item }],
+            )
+        });
         cx.notify();
     });
 }

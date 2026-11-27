@@ -77,6 +77,21 @@ pub enum DeviceSetup {
     Jack { device: String, client: String, inputs: u32, outputs: u32, midi: lm_io::JackMidiShared },
 }
 
+/// The audio systems this build can open (`audio.system` is one of them): the screen offers only these
+pub fn available_backends() -> Vec<&'static str> {
+    let mut v = Vec::new();
+    if cfg!(target_os = "linux") {
+        v.push("alsa");
+    }
+    if cfg!(target_os = "macos") {
+        v.push("coreaudio");
+    }
+    if cfg!(feature = "jack") {
+        v.push("jack");
+    }
+    v
+}
+
 impl DeviceSetup {
     /// The JACK server `device` names (`jack` or `jack:<server>`), with the default client name and ports
     #[cfg(feature = "jack")]
@@ -1938,8 +1953,10 @@ impl Session {
                 self.write_journal(&patch);
             }
         }
-        let every = self.preferences.int(&["autosaveSeconds"]).unwrap_or(60).max(5) as u64;
-        if (self.modified() && now.since(self.last_autosave) >= every * 1_000_000_000) || self.journal.is_incomplete() {
+        // `backup.autosaveMinutes` (0: off; an incomplete journal is still written)
+        let minutes = self.preferences.int(&["backup", "autosaveMinutes"]).unwrap_or(1).clamp(0, 30) as u64;
+        let due_by_time = minutes > 0 && self.modified() && now.since(self.last_autosave) >= minutes * 60_000_000_000;
+        if due_by_time || self.journal.is_incomplete() {
             self.autosave_now();
         }
     }
@@ -2403,6 +2420,7 @@ impl Session {
             .with("recent", self.preferences.get(&["recent"]).cloned().unwrap_or_else(Value::empty_list))
             .with("templates", templates)
             .with("device", device)
+            .with("backends", Value::list(available_backends().into_iter().map(Value::text)))
             .with("interruptedTakes", Value::list(interrupted))
             .with("safeMode", Value::bool(self.safe_mode_on));
         if !self.safe_mode_on {
@@ -3100,10 +3118,10 @@ mod calibration_tests {
     }
 }
 
-/// The folders of the `allowedFolders` preference (C9)
+/// The folders of the `folders.allowed` preference (C9)
 pub(crate) fn allowed_folders(preferences: &Preferences) -> Vec<std::path::PathBuf> {
     preferences
-        .get(&["allowedFolders"])
+        .get(&["folders", "allowed"])
         .map(|l| l.items().filter_map(Value::as_text).map(std::path::PathBuf::from).collect())
         .unwrap_or_default()
 }
