@@ -43,7 +43,7 @@ impl MidiMessage {
     }
 
     pub fn as_slice(&self) -> &[u8] {
-        &self.bytes[..usize::from(self.len)]
+        &self.bytes[..usize::from(self.len).min(3)]
     }
 
     /// The message from raw bytes: a status byte and the right number of data bytes. `None` for sysex, running
@@ -157,7 +157,7 @@ pub(crate) fn seq_to_midi(f: SeqFields) -> Messages {
         ev::PGMCHANGE => out.push(MidiMessage::new2(0xc0 | ch, clamp7(f.value))),
         ev::CHANPRESS => out.push(MidiMessage::new2(0xd0 | ch, clamp7(f.value))),
         ev::PITCHBEND => {
-            let v = (f.value + 8192).clamp(0, 16383);
+            let v = f.value.saturating_add(8192).clamp(0, 16383);
             out.push(MidiMessage::new3(0xe0 | ch, (v & 0x7f) as u8, (v >> 7) as u8));
         }
         ev::CONTROL14 => {
@@ -236,6 +236,14 @@ mod tests {
 
     fn all(m: Messages) -> Vec<Vec<u8>> {
         m.iter().map(|m| m.as_slice().to_vec()).collect()
+    }
+
+    #[test]
+    fn a_wild_pitch_bend_value_or_length_does_not_panic() {
+        let f = SeqFields { kind: ev::PITCHBEND, channel: 0, note: 0, velocity: 0, param: 0, value: i32::MAX };
+        assert_eq!(all(seq_to_midi(f)), vec![vec![0xe0, 0x7f, 0x7f]]);
+        let m = MidiMessage { bytes: [1, 2, 3], len: 9 };
+        assert_eq!(m.as_slice(), &[1, 2, 3]);
     }
 
     #[test]

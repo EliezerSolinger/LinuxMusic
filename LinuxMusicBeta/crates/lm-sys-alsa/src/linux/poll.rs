@@ -116,6 +116,9 @@ impl PcmPoll {
             // SAFETY: room for `count` descriptors at `first`
             let got = unsafe { ffi::snd_pcm_poll_descriptors(pcm.raw(), fds.as_mut_ptr().add(first), count as c_uint) };
             let got = super::check(got, "snd_pcm_poll_descriptors", pcm.name(), crate::error::Phase::Running)? as usize;
+            if got > count {
+                return Err(Error::new("alsa.invalid_argument").arg("argument", "poll_descriptors").arg("count", got as i64));
+            }
             fds.truncate(first + got);
             spans.push((first, got, pcm.stream()));
         }

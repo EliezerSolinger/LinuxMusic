@@ -1003,7 +1003,7 @@ fn make_queue(seq: &mut Seq) -> Option<Queue> {
         unsafe { ffi::snd_seq_free_queue(raw, q) };
         return None;
     }
-    Some(Queue { id: q, status, clock: QueueClock { offset: 0, measured: Instant::now() - REMEASURE * 2 } })
+    Some(Queue { id: q, status, clock: QueueClock { offset: 0, measured: Instant::now().checked_sub(REMEASURE * 2).unwrap_or_else(Instant::now) } })
 }
 
 /// The input-only reader of the first F1 version: a [`MidiClient`] with one input port, delivering short messages

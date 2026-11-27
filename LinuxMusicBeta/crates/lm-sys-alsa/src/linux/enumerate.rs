@@ -306,6 +306,9 @@ pub fn pcm_hints() -> Result<Vec<PcmHint>> {
     // SAFETY: valid out pointer and interface name
     let r = unsafe { ffi::snd_device_name_hint(-1, c"pcm".as_ptr(), &mut raw) };
     check(r, "snd_device_name_hint", "", Phase::Open)?;
+    if raw.is_null() {
+        return Ok(Vec::new());
+    }
     let hints = Hints(raw);
     let mut out = Vec::new();
     let mut i = 0;
