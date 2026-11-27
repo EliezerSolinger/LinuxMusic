@@ -5003,29 +5003,29 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 | CarlaBase | instrumento (hospedeiro) | terceiros fora do processo; obsoleto (P-02) | `Carla.cpp` | obsoleto |
 | CarlaPatchbay | instrumento (hospedeiro) | terceiros fora do processo; obsoleto (P-02) | `CarlaPatchbay.cpp` | obsoleto |
 | CarlaRack | instrumento (hospedeiro) | terceiros fora do processo; obsoleto (P-02) | `CarlaRack.cpp` | obsoleto |
-| Compressor | efeito | visual próprio | `CompressorControlDialog.cpp`, `controlsBox.png` e botões | **painel feito** (`panels/compressor.rs`, teste `compressor`; falta o histórico rolante de entrada/saída/redução, a roda do alcance em dB e o duplo clique que esconde os controles) |
+| Compressor | efeito | visual próprio | `CompressorControlDialog.cpp`, `controlsBox.png` e botões | **painel feito** (`panels/compressor.rs`, teste `compressor`; o histórico rolante vem dos quadros ao vivo que o painel guarda, a roda muda o alcance em dB de 3 a 96; falta o duplo clique que esconde os controles) |
 | CrossoverEQ | efeito | visual próprio (`artwork.svg`) | `CrossoverEQControlDialog.cpp`, `artwork.svg` | **painel feito** (`panels/crossovereq.rs`, teste `crossovereq`; posições do layout do Qt calculadas, não medidas) |
 | Delay | efeito | visual próprio | `DelayControlsDialog.cpp`, `artwork.png` | **painel feito** (`panels/delay.rs`, teste `delay`; sem sincronia de andamento nos knobs de tempo) |
 | Dispersion | efeito | genérico / botões soltos | `DispersionControlDialog.cpp` | plugin existe (lm-plugins-effects); genérico (sem painel) |
 | DrumMachines | instrumento | visual próprio (fotos ou painel desenhado e pads) | `DrumMachines.cpp`, `photos/*.jpg` | falta o plugin |
 | DualFilter | efeito | visual próprio (`artwork.svg`) | `DualFilterControlDialog.cpp`, `artwork.svg` | **painel feito** (`panels/effects.rs`, teste `dualfilter`) |
 | DynamicsProcessor | efeito | visual próprio | `DynamicsProcessorControlDialog.cpp`, `artwork.png`, `wavegraph.png` | **painel feito** (`panels/shapers.rs`, teste `dynamicsprocessor`) |
-| Eq | efeito | visual próprio | `EqControlsDialog.cpp`, `EqCurve.cpp`, `EqSpectrumView.cpp`, `EqParameterWidget.cpp`, `artwork.png` | **painel feito** (`panels/eq.rs`, teste `eq`; faltam os analisadores de espectro, a caixa de informação no handle e o ligar sozinho ao mexer em knob ou fader) |
+| Eq | efeito | visual próprio | `EqControlsDialog.cpp`, `EqCurve.cpp`, `EqSpectrumView.cpp`, `EqParameterWidget.cpp`, `artwork.png` | **painel feito** (`panels/eq.rs`, teste `eq`; os analisadores, a caixa de informação na alça sob o mouse e o ligar sozinho da banda ao mexer em knob, fader ou alça) |
 | Flanger | efeito | visual próprio (`artwork.svg`) | `FlangerControlsDialog.cpp`, `artwork.svg` | **painel feito** (`panels/effects.rs`, teste `flanger`) |
 | FreeBoy | instrumento | visual próprio | `FreeBoy.cpp`, `artwork.png` | **painel feito** (`panels/freeboy.rs`, teste `freeboy`) |
 | FrequencyShifter | efeito | visual próprio | `FrequencyShifterControlDialog.cpp`, `artwork.png` | **painel feito** (`panels/frequencyshifter.rs`, teste `frequencyshifter`; os botões de reset são momentâneos, `Bind::Momentary`; o botão de ajuda não existe no painel) |
 | GigPlayer | instrumento | visual próprio | `GigPlayer.cpp`, `artwork.png` | falta o plugin |
 | GranularPitchShifter | efeito | visual próprio | `GranularPitchShifterControlDialog.cpp`, `artwork.png` | **painel feito** (`panels/granularpitchshifter.rs`, teste `granularpitchshifter`; o botão de ajuda não existe no painel) |
-| Guitarix | efeito | visual próprio (97 unidades em rack) | `GuitarixControlDialog.cpp`, `GuitarixLayout.cpp`, `GuitarixWidgets.cpp`, `GuitarixUnits.cpp`, `gx/rcstyles/*.png` | falta o plugin |
+| Guitarix | efeito | visual próprio (97 unidades em rack) | `GuitarixControlDialog.cpp`, `GuitarixLayout.cpp`, `GuitarixWidgets.cpp`, `GuitarixUnits.cpp`, `gx/rcstyles/*.png` | **painéis feitos** (`panels/guitarix.rs` e a tabela gerada `guitarix_units.rs` por `tools/gen_guitarix_panels.py`; teste `guitarix`; knobs com anel de LED, chaves, seletores, sliders, medidores no quadro ao vivo, pele do rack vetorial; o cabeçote mostra o knob grande só sem amp; ordem e liga/desliga das unidades são da lista de inserts; os medidores de unidades sem saídas no quadro ficam sem dado) |
 | Kicker | instrumento | visual próprio | `Kicker.cpp`, `artwork.png` | **painel feito** (`panels/kicker.rs`, teste `kicker`; o knob de duração sem a sincronia de andamento, que o plugin novo não tem) |
-| LOMM | efeito | visual próprio | `LOMMControlDialog.cpp`, `artwork.png` | **painel feito** (`panels/lomm.rs`, teste `lomm`; faltam os medidores vivos e as zonas de threshold arrastáveis, e a ocultação condicional de Feedback e Suppress) |
+| LOMM | efeito | visual próprio | `LOMMControlDialog.cpp`, `artwork.png` | **painel feito** (`panels/lomm.rs`, teste `lomm`; medidores vivos, zonas de threshold arrastáveis, Feedback e Suppress ocultos como no legado) |
 | LadspaEffect | efeito (hospedeiro) | terceiros fora do processo (P-03) | `LadspaControlDialog.cpp` | fora (terceiros) |
 | Lb302 | instrumento | visual próprio | `Lb302.cpp`, `artwork.png` | **painel feito** (`panels/lb302.rs`, teste `lb302`) |
 | Lv2Effect | efeito (hospedeiro) | terceiros fora do processo | `Lv2FxControlDialog.cpp` | fora (terceiros) |
 | Lv2Instrument | instrumento (hospedeiro) | terceiros fora do processo | `Lv2Instrument.cpp` | fora (terceiros) |
 | MidiExport | ferramenta (filtro de exportação) | sem janela (filtro de arquivo) | `MidiExport.cpp` | genérico (sem painel) |
 | MidiImport | ferramenta (filtro de importação) | sem janela (filtro de arquivo) | `MidiImport.cpp` | genérico (sem painel) |
-| Monstro | instrumento | visual próprio (vistas operador e matriz) | `Monstro.cpp`, `artwork_op.png`, `artwork_mat.png` | **painel feito** (`panels/monstro.rs`, teste `monstro`; sem o menu de sincronia de andamento dos tempos) |
+| Monstro | instrumento | visual próprio (vistas operador e matriz) | `Monstro.cpp`, `artwork_op.png`, `artwork_mat.png` | **painel feito** (`panels/monstro.rs`, teste `monstro`; menu de sincronia de andamento nos tempos de LFO e envelope) |
 | MultitapEcho | efeito | visual próprio | `MultitapEchoControlDialog.cpp`, `artwork.png`, `graph_bg.png` | **painel feito** (`panels/multitapecho.rs`, teste `multitapecho`) |
 | Nes | instrumento | visual próprio | `Nes.cpp`, `artwork.png` | **painel feito** (`panels/nes.rs`, teste `nes`) |
 | OpulenZ | instrumento | visual próprio | `OpulenZ.cpp`, `artwork.png` | **painel feito** (`panels/opulenz.rs`, teste `opulenz`) |
@@ -5050,7 +5050,7 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 | Vibed | instrumento | visual próprio | `Vibed.cpp`, `NineButtonSelector.cpp`, `artwork.png` | **painel feito** (`panels/vibed.rs`, teste `vibed`; ação `vibed.load_wave` ainda a escrever no núcleo) |
 | VstBase | biblioteca do hospedeiro | terceiros fora do processo (P-01), sem janela | `VstPlugin.cpp`, `RemoteVstPlugin.cpp` | fora (terceiros) |
 | VstEffect | efeito (hospedeiro) | terceiros fora do processo (P-01) | `VstEffectControlDialog.cpp` | fora (terceiros) |
-| Watsyn | instrumento | visual próprio | `Watsyn.cpp`, `artwork.png`, `wavegraph.png` | **painel feito** (`panels/watsyn.rs`, teste `watsyn`; ação `watsyn.load_wave` ainda a escrever no núcleo; sem o menu de sincronia dos tempos do envelope) |
+| Watsyn | instrumento | visual próprio | `Watsyn.cpp`, `artwork.png`, `wavegraph.png` | **painel feito** (`panels/watsyn.rs`, teste `watsyn`; menu de sincronia nos tempos do envelope) |
 | WaveShaper | efeito | visual próprio | `WaveShaperControlDialog.cpp`, `artwork.png`, `wavegraph.png` | **painel feito** (`panels/shapers.rs`, teste `waveshaper`) |
-| Xpressive | instrumento | visual próprio | `Xpressive.cpp`, `artwork.png`, `wavegraph.png` | falta o plugin |
+| Xpressive | instrumento | visual próprio | `Xpressive.cpp`, `artwork.png`, `wavegraph.png` | **painel feito** (`panels/xpressive.rs`, teste `xpressive`; editor de texto por vista, atalhos de onda, vista de ajuda; a lâmpada de validade lê o quadro ao vivo, que o plugin ainda não publica: o núcleo deve expor `status` como um sinalizador por expressão W1 W2 W3 O1 O2, e o gráfico de O1/O2 como quadro) |
 | ZynAddSubFx | instrumento (hospedeiro) | terceiros fora do processo (P-05) | `ZynAddSubFx.cpp`, `RemoteZynAddSubFx.cpp` | fora (terceiros) |
