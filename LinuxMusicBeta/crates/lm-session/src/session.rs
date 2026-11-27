@@ -195,7 +195,8 @@ struct Ticker {
 }
 
 impl Ticker {
-    fn start(waker: Arc<dyn Fn() + Send + Sync>) -> Ticker {
+    /// Without the clock the pump never runs and the interface would freeze, so a failed spawn fails the session (M4)
+    fn start(waker: Arc<dyn Fn() + Send + Sync>) -> Result<Ticker> {
         let stop = Arc::new(AtomicBool::new(false));
         let s = stop.clone();
         let thread = std::thread::Builder::new()
@@ -206,8 +207,8 @@ impl Ticker {
                     waker();
                 }
             })
-            .ok();
-        Ticker { stop, thread }
+            .map_err(|e| Error::new("session.thread.failed").arg("name", "lm-clock").arg("cause", e.to_string()))?;
+        Ok(Ticker { stop, thread: Some(thread) })
     }
 }
 
@@ -620,7 +621,7 @@ impl Session {
             schemas: schemas.clone(),
             plugins: plugins.clone(),
         });
-        let journal = Journal::start(&folder, config.faults.clone(), String::new(), 0, false);
+        let journal = Journal::start(&folder, config.faults.clone(), String::new(), 0, false)?;
         let mut resources = ResourceStore::new(folder.root().to_path_buf(), config.clock.clone());
         resources.set_allowed(allowed_folders(&config.preferences));
         let disk = match DiskWriter::start_with(config.record_faults.clone()) {
@@ -634,14 +635,23 @@ impl Session {
         let feed = document.feed(Topic::All);
         let now = config.clock.now();
         let saved_root = document.root().clone();
+        let watchdog = crate::watchdog::Watchdog::start(Arc::new(crate::watchdog::Shared {
+            table: Mutex::new(Arc::new(InstalledTable::default())),
+            folder: Mutex::new(folder.root().to_path_buf()),
+            running: AtomicBool::new(true),
+            watch: Mutex::new(engine.watch()),
+        }));
+        // The watchdog is a safety net, not a need: without it the session runs degraded, and says so (M4)
+        if !watchdog.is_alive() {
+            notices.error(
+                &Error::new("session.thread.failed").arg("name", "lm-watchdog").arg("cause", "spawn failed"),
+                None,
+                None,
+            );
+        }
         let mut s = Session {
-            watchdog: crate::watchdog::Watchdog::start(Arc::new(crate::watchdog::Shared {
-                table: Mutex::new(Arc::new(InstalledTable::default())),
-                folder: Mutex::new(folder.root().to_path_buf()),
-                running: AtomicBool::new(true),
-                watch: Mutex::new(engine.watch()),
-            })),
-            _ticker: config.waker.clone().map(Ticker::start),
+            watchdog,
+            _ticker: config.waker.clone().map(Ticker::start).transpose()?,
             crash: crate::crashnote::CrashNote::default(),
             arrange_clipboard: Vec::new(),
             device: Some(device),
@@ -2037,7 +2047,7 @@ impl Session {
 
     /// The project moves to its new folder: its journal, its resources, its lock; then it is saved there
     fn finish_save_as(&mut self, to: ProjectFolder, lock: ProjectLock) -> Result<()> {
-        self.journal = Journal::start(&to, self.faults.clone(), String::new(), self.journal.seq(), false);
+        self.journal = Journal::start(&to, self.faults.clone(), String::new(), self.journal.seq(), false)?;
         self.resources = ResourceStore::new(to.root().to_path_buf(), self.clock.clone());
         self.resources.set_allowed(allowed_folders(&self.preferences));
         // The untitled folder is no longer ours to remove (its audio was copied; it goes now if it holds none)
@@ -2098,7 +2108,7 @@ impl Session {
         if let Some(patch) = self.document.take_journal() {
             self.write_journal(&patch);
         }
-        self.journal = Journal::start(&folder, self.faults.clone(), String::new(), 0, false);
+        self.journal = Journal::start(&folder, self.faults.clone(), String::new(), 0, false)?;
         self.resources = ResourceStore::new(folder.root().to_path_buf(), self.clock.clone());
         self.resources.set_allowed(allowed_folders(&self.preferences));
         let options = project_options(&self.plugins, &self.schemas, self.limits);
@@ -2271,9 +2281,9 @@ impl Session {
         // The project is in: the old one's journal ends (its lines are all written), the new one's starts
         let _ = self.journal.sync(Duration::from_secs(2));
         self.journal = if read_only {
-            Journal::disabled(&folder)
+            Journal::disabled(&folder)?
         } else {
-            Journal::start(&folder, self.faults.clone(), bytes_hash, seq, !replayed)
+            Journal::start(&folder, self.faults.clone(), bytes_hash, seq, !replayed)?
         };
         self.resources = ResourceStore::new(folder.root().to_path_buf(), self.clock.clone());
         self.resources.set_allowed(allowed_folders(&self.preferences));

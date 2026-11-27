@@ -81,6 +81,11 @@ fn owner_of(table: &InstalledTable, slot: u32) -> Option<NodeId> {
 }
 
 impl Watchdog {
+    /// False when the thread did not start: stalls go undetected
+    pub fn is_alive(&self) -> bool {
+        self.thread.is_some()
+    }
+
     pub fn start(shared: Arc<Shared>) -> Watchdog {
         let stop = Arc::new(AtomicBool::new(false));
         let s = stop.clone();

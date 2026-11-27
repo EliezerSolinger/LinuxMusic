@@ -210,7 +210,13 @@ impl DiskSide {
 impl Journal {
     /// The journal of a saved project whose `projeto.json` hashes to `base`, numbering from `seq`; `reset` starts
     /// the file over with that base. Starts the disk thread
-    pub fn start(folder: &ProjectFolder, faults: Arc<DiskFaults>, base: String, seq: u64, reset: bool) -> Journal {
+    pub fn start(
+        folder: &ProjectFolder,
+        faults: Arc<DiskFaults>,
+        base: String,
+        seq: u64,
+        reset: bool,
+    ) -> Result<Journal> {
         let (jobs, mut rx) = ring::<Job>(JOURNAL_RING);
         let (events_tx, events) = ring::<JournalEvent>(EVENTS_RING);
         let stop = Arc::new(AtomicBool::new(false));
@@ -236,7 +242,9 @@ impl Journal {
                     }
                 }
             })
-            .ok();
+            // Without the disk thread nothing is written or saved: the project does not open (M4)
+            .map_err(|e| Error::new("session.thread.failed").arg("name", "lm-disk").arg("cause", e.to_string()))?;
+        let thread = Some(thread);
         let mut journal = Journal {
             jobs,
             events,
@@ -251,14 +259,14 @@ impl Journal {
         if reset {
             journal.send(Job::Reset { base });
         }
-        journal
+        Ok(journal)
     }
 
     /// A journal that writes nothing (a read-only project, H10, H11)
-    pub fn disabled(folder: &ProjectFolder) -> Journal {
-        let mut j = Journal::start(folder, DiskFaults::new(), String::new(), 0, false);
+    pub fn disabled(folder: &ProjectFolder) -> Result<Journal> {
+        let mut j = Journal::start(folder, DiskFaults::new(), String::new(), 0, false)?;
         j.enabled = false;
-        j
+        Ok(j)
     }
 
     pub fn is_enabled(&self) -> bool {
