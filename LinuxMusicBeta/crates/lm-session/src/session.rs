@@ -1675,6 +1675,11 @@ impl Session {
                     self.notices.error(&e, Some(target), None);
                 }
             }
+            ("clip.reverse", Ok(made)) => {
+                if let Err(e) = self.reverse_finished(&made) {
+                    self.notices.error(&e, Some(target), None);
+                }
+            }
             ("paste", Ok(list)) => {
                 for r in list.items().filter_map(Value::as_resource).cloned().collect::<Vec<_>>() {
                     self.request(&r);

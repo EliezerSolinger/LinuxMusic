@@ -22,6 +22,7 @@ pub mod peaks;
 mod reader;
 mod record;
 mod resources;
+pub mod reverse;
 mod rt;
 pub mod stretch;
 mod system;

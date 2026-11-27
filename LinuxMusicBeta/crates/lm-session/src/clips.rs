@@ -10,6 +10,10 @@
 //! clip.fit         { items: [text] }                 the MIDI items end on the whole bar after their last note (F-CLP-025)
 //! clip.relocate    { items: [text], delta: int, tracks?: [text], copy?: bool }  items by `delta` ticks, each to its
 //!                  track of `tracks` (same index; absent: where it is), or copies (F-CLP-004, F-CLP-005)
+//! clip.normalize  { items: [text], peak?: real }   audio items: the gain that brings the loudest sample they play to
+//!                  `peak` dB (default 0; at most 0), 4 at most (F-CLP-065)
+//! clip.reverse    { items: [text] }                audio items play backwards: each lane is written reversed as a new
+//!                  resource in an operation, and the item (comp, fades) is mirrored when it is done (F-CLP-042)
 //! track.move       { track: text, to: int, parent?: text|null, copy?: bool }  the track (with the tracks inside it)
 //!                  before the `to`th track of the list, in the folder `parent` (F-TRK-029)
 //! track.clone      { track: text }                  a copy of the track right below it (F-TRK-031)
@@ -100,6 +104,21 @@ pub static ACTIONS: &[ActionSpec] = &[
         enabled: writable,
     },
     ActionSpec {
+        id: "clip.normalize",
+        label: "action.clip.normalize",
+        run: |s, p| {
+            let db = p.get("peak").and_then(Value::as_real).unwrap_or(0.0);
+            s.normalize_items(&nodes(p, "items")?, db)
+        },
+        enabled: writable,
+    },
+    ActionSpec {
+        id: "clip.reverse",
+        label: "action.clip.reverse",
+        run: |s, p| s.reverse_items(&nodes(p, "items")?),
+        enabled: writable,
+    },
+    ActionSpec {
         id: "track.move",
         label: "action.track.move",
         run: |s, p| {
@@ -126,6 +145,59 @@ pub static ACTIONS: &[ActionSpec] = &[
         enabled: writable,
     },
 ];
+
+/// A lane an audio item plays: the lane, its resource, the source frame at the item's start, and the stretch of
+/// the item (in samples from its start) that plays it
+struct LaneUse {
+    lane: NodeId,
+    resource: lm_state::Resource,
+    offset: i64,
+    from: i64,
+    to: i64,
+}
+
+/// The lanes an audio item plays and its length in samples: the comp's segments (their stretches joined per lane), or
+/// the last lane over the whole item
+fn lane_uses(item: &Value, map: &lm_time::TempoMap) -> (Vec<LaneUse>, i64) {
+    let (start, length) = (int(item, "start", 0), int(item, "length", 1));
+    let audio_time = item.get("timebase").and_then(Value::as_text) == Some("audio");
+    // An item's own unit (ticks, or samples on an audio timebase) from its start, in samples
+    let rel = |x: i64| if audio_time { x } else { map.sample_at(start.saturating_add(x)) - map.sample_at(start) };
+    let len = rel(length).max(1);
+    let lanes: Vec<&Value> = item.get("lanes").map(|l| l.items().collect()).unwrap_or_default();
+    let id_of = |l: &Value| l.get("id").and_then(Value::as_text).and_then(|t| NodeId::parse(t).ok());
+    let make = |l: &Value, from: i64, to: i64| -> Option<LaneUse> {
+        Some(LaneUse {
+            lane: id_of(l)?,
+            resource: l.get("source")?.as_resource()?.clone(),
+            offset: int(l, "sourceOffset", 0),
+            from,
+            to,
+        })
+    };
+    let comp: Vec<&Value> = item.get("comp").map(|c| c.items().collect()).unwrap_or_default();
+    let mut out: Vec<LaneUse> = Vec::new();
+    if comp.is_empty() {
+        out.extend(lanes.last().and_then(|l| make(l, 0, len)));
+    } else {
+        for seg in comp {
+            let Some(wanted) = seg.get("lane").and_then(Value::as_text) else { continue };
+            let Some(l) = lanes.iter().find(|l| l.get("id").and_then(Value::as_text) == Some(wanted)) else { continue };
+            let (from, to) = (rel(int(seg, "from", 0).clamp(0, length)), rel(int(seg, "to", 0).clamp(0, length)));
+            if to <= from {
+                continue;
+            }
+            match out.iter_mut().find(|u| Some(u.lane) == id_of(l)) {
+                Some(u) => {
+                    u.from = u.from.min(from);
+                    u.to = u.to.max(to);
+                }
+                None => out.extend(make(l, from, to)),
+            }
+        }
+    }
+    (out, len)
+}
 
 fn notes_of(item: &Value) -> Vec<(u64, Value)> {
     item.get("notes")
@@ -563,3 +635,181 @@ impl Session {
             .map(|_| ())
     }
 }
+
+impl Session {
+    /// "Normalize" (F-CLP-065): each audio item gets the gain that brings the loudest sample it plays to `peak_db`
+    /// (0 at the most), from the source's peaks (a block of the pyramid counts whole, so the result is never above
+    /// the target); a silent item keeps its gain, and the gain stops at the field's maximum. One undo step. Error:
+    /// `clip.normalize.loading` while a source's peaks are not there yet
+    pub fn normalize_items(&mut self, items: &[NodeId], peak_db: f64) -> Result<()> {
+        if !peak_db.is_finite() {
+            return Err(params());
+        }
+        let target = 10f64.powf(peak_db.min(0.0) / 20.0);
+        let map = tempo_map(self.document().root())?;
+        let mut plan = Vec::new();
+        for id in items {
+            let v = self.document().find(*id).ok_or_else(|| Error::new("action.no_such_node"))?;
+            if v.get("kind").and_then(Value::as_text) != Some("audio") {
+                continue;
+            }
+            let (uses, _) = lane_uses(&v, &map);
+            let mut peak = 0.0f64;
+            for u in &uses {
+                let peaks = self
+                    .resources()
+                    .peaks(u.resource.key())
+                    .ok_or_else(|| Error::new("clip.normalize.loading").arg("resource", u.resource.key()))?;
+                let block = lm_io::Peaks::frames_per_pair(0);
+                let (a, b) = ((u.offset + u.from).max(0) as u64, (u.offset + u.to).max(0) as u64);
+                if b <= a {
+                    continue;
+                }
+                let (first, last) = ((a / block) as usize, b.div_ceil(block) as usize);
+                for ch in 0..peaks.channels() {
+                    for pair in peaks.range(0, ch, first, last).chunks(2) {
+                        let m = pair.iter().map(|v| f64::from(*v).abs()).fold(0.0, f64::max) / 32767.0;
+                        peak = peak.max(m);
+                    }
+                }
+            }
+            if peak > 1e-6 {
+                plan.push((*id, (target / peak).clamp(0.0, 4.0)));
+            }
+        }
+        self.document_mut()
+            .transact(Label::new("action.clip.normalize"), |e| {
+                for (id, gain) in &plan {
+                    e.set(*id, &[PathStep::key("gain")], Value::real(*gain)?)?;
+                }
+                Ok(())
+            })
+            .map(|_| ())
+    }
+
+    /// "Reverse" (F-CLP-042, P-31): each lane an audio item plays is written backwards over the item's length as a
+    /// new audio resource (an operation on the item, cancellable); when it is done the item's lanes point to those,
+    /// the comp's segments and the fades are mirrored, and the resources load. The item shows loading meanwhile
+    pub fn reverse_items(&mut self, items: &[NodeId]) -> Result<()> {
+        let map = tempo_map(self.document().root())?;
+        let project = self.project().folder.root().to_path_buf();
+        let rate = self.spec().sample_rate;
+        let mut jobs = Vec::new();
+        for id in items {
+            let v = self.document().find(*id).ok_or_else(|| Error::new("action.no_such_node"))?;
+            if v.get("kind").and_then(Value::as_text) != Some("audio") {
+                continue;
+            }
+            let (uses, len) = lane_uses(&v, &map);
+            for u in uses {
+                let path = lm_io::resource_path(&project, u.resource.key())?
+                    .ok_or_else(|| Error::new("clip.reverse.missing").arg("resource", u.resource.key()))?;
+                jobs.push((*id, u, path, len));
+            }
+        }
+        let Some(first) = jobs.first().map(|j| j.0) else { return Ok(()) };
+        self.start(
+            Label::new("session.reversing"),
+            lm_port::Target::Node(first),
+            true,
+            "clip.reverse",
+            move |cancel, progress| {
+                let mut made = Vec::new();
+                for (item, u, path, len) in &jobs {
+                    cancel.check()?;
+                    let done = lm_io::reverse::reverse_range(
+                        path,
+                        &project,
+                        u.offset.max(0) as u64,
+                        *len as u64,
+                        rate,
+                        cancel,
+                        progress,
+                    )?;
+                    made.push(Value::object([
+                        ("item", Value::text(item.to_string())),
+                        ("lane", Value::text(u.lane.to_string())),
+                        ("old", Value::resource(u.resource.clone())),
+                        ("offset", Value::int(u.offset)),
+                        ("key", Value::text(done.key)),
+                    ]));
+                }
+                Ok(Value::list(made))
+            },
+        );
+        Ok(())
+    }
+
+    /// The reversal is written: the lanes that still play what was reversed point to the new resources, from frame 0;
+    /// each item whose lanes changed is mirrored, once: the comp's segments (and the crossfade at each boundary), the
+    /// fades and their tensions. A lane or item edited meanwhile is left alone
+    pub(crate) fn reverse_finished(&mut self, result: &Value) -> Result<()> {
+        let mut lanes: Vec<(NodeId, NodeId, lm_state::Resource)> = Vec::new();
+        let mut items: Vec<NodeId> = Vec::new();
+        let mut keep = Vec::new();
+        for r in result.items() {
+            let text = |k: &str| r.get(k).and_then(Value::as_text).and_then(|t| NodeId::parse(t).ok());
+            let (Some(item), Some(lane)) = (text("item"), text("lane")) else { continue };
+            let Some(key) = r.get("key").and_then(Value::as_text) else { continue };
+            let new = lm_state::Resource::new("audio", key)?;
+            let Some(l) = self.document().find(lane) else { continue };
+            // Still the lane that was reversed: the same source at the same frame
+            if l.get("source").and_then(Value::as_resource) != r.get("old").and_then(Value::as_resource)
+                || int(&l, "sourceOffset", 0) != int(r, "offset", 0)
+            {
+                continue;
+            }
+            keep.push(new.clone());
+            lanes.push((item, lane, new));
+            if !items.contains(&item) {
+                items.push(item);
+            }
+        }
+        let k = PathStep::key;
+        self.document_mut().transact(Label::new("action.clip.reverse"), |e| {
+            for (_, lane, new) in &lanes {
+                e.set(*lane, &[k("source")], Value::resource(new.clone()))?;
+                e.set(*lane, &[k("sourceOffset")], Value::int(0))?;
+            }
+            for item in &items {
+                let v = match e.find(*item) {
+                    Some(v) => v.clone(),
+                    None => continue,
+                };
+                let length = int(&v, "length", 1);
+                let (fi, fo) = (int(&v, "fadeIn", 0), int(&v, "fadeOut", 0));
+                e.set(*item, &[k("fadeIn")], Value::int(fo))?;
+                e.set(*item, &[k("fadeOut")], Value::int(fi))?;
+                let (ci, co) = (real(&v, "fadeInCurve"), real(&v, "fadeOutCurve"));
+                e.set(*item, &[k("fadeInCurve")], Value::real(co)?)?;
+                e.set(*item, &[k("fadeOutCurve")], Value::real(ci)?)?;
+                if let Some(comp) = v.get("comp").filter(|c| !c.is_empty()) {
+                    let mut segs: Vec<&Value> = comp.items().collect();
+                    segs.sort_by_key(|s| int(s, "from", 0));
+                    let n = segs.len();
+                    // Mirrored in time; the crossfade into a segment is the one the boundary had on its other side
+                    let mirrored: Vec<Value> = (0..n)
+                        .map(|j| {
+                            let s = segs[n - 1 - j];
+                            let b = &segs[if j == 0 { 0 } else { n - j }];
+                            s.with("from", Value::int((length - int(s, "to", 0)).max(0)))
+                                .with("to", Value::int((length - int(s, "from", 0)).max(0)))
+                                .with("fade", Value::int(int(b, "fade", 240)))
+                        })
+                        .collect();
+                    e.set(*item, &[k("comp")], Value::list(mirrored))?;
+                }
+            }
+            Ok(())
+        })?;
+        for r in keep {
+            self.request(&r);
+        }
+        Ok(())
+    }
+}
+
+fn real(v: &Value, key: &str) -> f64 {
+    v.get(key).and_then(Value::as_real).unwrap_or(0.0)
+}
+

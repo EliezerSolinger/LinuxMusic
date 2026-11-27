@@ -279,3 +279,104 @@ fn split_and_duplicate_a_selection_in_one_undo_step() {
     s.run_action("arrange.duplicate", &ids_param(&[y])).expect("dup y");
     assert_eq!(field(&s, item_ids(&s, b)[1], "start"), 4800);
 }
+
+/// An imported constant sine of `amp` (a second, stereo) on a new audio track as one item; (item, lane, key)
+fn audio_item(s: &mut Session, dir: &TempDir, amp: f32) -> (NodeId, NodeId, String) {
+    let wav = dir.join("tone.wav");
+    let spec = lm_sys_sndfile::WriteSpec {
+        format: lm_sys_sndfile::WriteFormat::Wav(lm_sys_sndfile::Sample::Float32),
+        rate: 48_000,
+        channels: 2,
+    };
+    let mut w = lm_sys_sndfile::Writer::create(&wav, spec, lm_sys_sndfile::Existing::Fail).expect("wav");
+    let data: Vec<f32> = (0..48_000)
+        .flat_map(|i| {
+            let x = (i as f32 * 220.0 * std::f32::consts::TAU / 48_000.0).sin() * amp;
+            [x, -x]
+        })
+        .collect();
+    w.write_f32(&data).expect("write");
+    w.close().expect("close");
+    let imported =
+        lm_io::import_file(&wav, s.project().folder.root(), 48_000, &Cancel::new(), &Progress::new()).expect("import");
+    let mut made = None;
+    s.document_mut()
+        .transact(Label::new("test"), |e| {
+            let t = e.insert(ROOT, "tracks", 0, Value::object([("name", Value::text("Audio"))]))?;
+            let lane = Value::object([("source", Value::resource(Resource::new("audio", &imported.key)?))]);
+            let it = e.insert(
+                t,
+                "items",
+                0,
+                Value::object([
+                    ("kind", Value::text("audio")),
+                    ("start", Value::int(0)),
+                    ("length", Value::int(1920)),
+                    ("fadeIn", Value::int(100)),
+                    ("lanes", Value::list([lane])),
+                ]),
+            )?;
+            made = Some(it);
+            Ok(())
+        })
+        .expect("item");
+    let it = made.expect("item");
+    let lane = s
+        .document()
+        .find(it)
+        .and_then(|v| v.get("lanes").and_then(|l| l.items().next().cloned()))
+        .and_then(|l| NodeId::parse(l.get("id")?.as_text()?).ok())
+        .expect("lane");
+    (it, lane, imported.key)
+}
+
+#[test]
+fn normalize_sets_the_gain_that_brings_the_loudest_sample_to_the_target() {
+    let dir = TempDir::new("normalize");
+    let mut s = session(&dir);
+    s.create(dir.join("song")).expect("create");
+    let (it, _, _) = audio_item(&mut s, &dir, 0.5);
+    settle(&mut s);
+    let p = ids_param(&[it]);
+    s.run_action("clip.normalize", &p).expect("normalize");
+    let gain = s.document().find(it).and_then(|v| v.get("gain").and_then(Value::as_real)).expect("gain");
+    assert!((gain - 2.0).abs() < 0.01, "0.5 to full scale is a gain of 2, got {gain}");
+    // -6 dB: half of that
+    let p = Value::object([
+        ("items", Value::list([Value::text(it.to_string())])),
+        ("peak", Value::real(-6.0206).expect("real")),
+    ]);
+    s.run_action("clip.normalize", &p).expect("normalize");
+    let gain = s.document().find(it).and_then(|v| v.get("gain").and_then(Value::as_real)).expect("gain");
+    assert!((gain - 1.0).abs() < 0.01, "got {gain}");
+    s.document_mut().undo().expect("undo");
+    s.document_mut().undo().expect("undo");
+    let back = s.document().find(it).and_then(|v| v.get("gain").and_then(Value::as_real)).expect("gain");
+    assert!((back - 1.0).abs() < 1e-9, "one undo step each");
+}
+
+#[test]
+fn reverse_writes_a_new_resource_and_mirrors_the_item() {
+    let dir = TempDir::new("reverse");
+    let mut s = session(&dir);
+    s.create(dir.join("song")).expect("create");
+    let (it, lane, key) = audio_item(&mut s, &dir, 0.5);
+    settle(&mut s);
+    let before = render(&s, &dir, "before.wav");
+    let p = ids_param(&[it]);
+    s.run_action("clip.reverse", &p).expect("reverse");
+    settle(&mut s);
+    let lane_v = s.document().find(lane).expect("lane");
+    let new = lane_v.get("source").and_then(Value::as_resource).expect("source").key().to_owned();
+    assert_ne!(new, key, "a new resource");
+    assert_eq!(lane_v.get("sourceOffset").and_then(Value::as_int), Some(0));
+    assert_eq!(field(&s, it, "fadeIn"), 0, "the fade in became the fade out");
+    assert_eq!(field(&s, it, "fadeOut"), 100);
+    // Same energy, other order: reversing twice plays what the first one played
+    s.run_action("clip.reverse", &p).expect("reverse");
+    settle(&mut s);
+    let twice = render(&s, &dir, "twice.wav");
+    assert_eq!(before.len(), twice.len());
+    let worst = before.iter().zip(&twice).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+    assert!(worst < 1e-5, "reversed twice is the original, off by {worst}");
+}
