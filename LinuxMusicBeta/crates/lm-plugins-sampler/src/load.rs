@@ -16,7 +16,10 @@ const CHUNK_FRAMES: usize = 1 << 16;
 
 /// A file's frames as a [`Pcm`] by libsndfile (FLAC, Ogg, AIFF, MP3, WAVE of any depth)
 pub fn decode_file(path: &Path) -> Result<Pcm> {
-    let mut reader = Reader::open(path)?;
+    decode_reader(Reader::open(path)?)
+}
+
+fn decode_reader(mut reader: Reader) -> Result<Pcm> {
     let info = *reader.info();
     let channels = info.channels.max(1);
     // The frame count is the header's claim: the buffer grows with what is really read, up to a ceiling
@@ -57,23 +60,48 @@ impl SampleLoader for FileLoader {
     }
 }
 
-/// The decoder of the compressed samples of an `.sf3`: each Ogg stream goes through a temporary file, as
-/// libsndfile opens files
+/// The decoder of the compressed samples of an `.sf3`: each Ogg stream goes through an anonymous temporary file, as
+/// libsndfile reads files, not memory
 #[derive(Debug, Default)]
 pub struct OggDecoder;
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
+/// A file made for this stream alone and already unlinked: created exclusively (`O_EXCL`, which also refuses a symlink
+/// planted at the name) with owner-only permissions and a name nobody can guess (the OS-seeded hasher over the pid, a
+/// counter and the clock), then removed from the folder at once, so it vanishes with the descriptor whatever happens
+/// next, a crash included. Holds `ogg` and is rewound
+fn anonymous_file(ogg: &[u8]) -> std::io::Result<std::fs::File> {
+    use std::hash::{BuildHasher, Hasher};
+    use std::io::{Seek, Write};
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let random = std::collections::hash_map::RandomState::new();
+    for _ in 0..16 {
+        let mut h = random.build_hasher();
+        h.write_u32(std::process::id());
+        h.write_u32(COUNTER.fetch_add(1, Ordering::Relaxed));
+        h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+        let path = std::env::temp_dir().join(format!("lm-sampler-{:016x}.ogg", h.finish()));
+        match std::fs::OpenOptions::new().read(true).write(true).create_new(true).mode(0o600).open(&path) {
+            Ok(mut file) => {
+                let _ = std::fs::remove_file(&path);
+                file.write_all(ogg)?;
+                file.rewind()?;
+                return Ok(file);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "no free temporary name"))
+}
+
 impl Sf3Decoder for OggDecoder {
-    fn decode(&mut self, ogg: &[u8], rate: u32) -> Result<Vec<f32>> {
-        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!("lm-sampler-{}-{n}.ogg", std::process::id()));
-        std::fs::write(&path, ogg).map_err(|e| Error::new("sampler.sf3.temp").arg("error", e.to_string()))?;
-        let decoded = decode_file(&path);
-        // (a file left behind in the temp folder is harmless)
-        let _ = std::fs::remove_file(&path);
-        let pcm = decoded?;
-        let _ = rate;
+    /// `rate` is the sample header's; the stream's own rate rules the decoded data (as before, it is not resampled)
+    fn decode(&mut self, ogg: &[u8], _rate: u32) -> Result<Vec<f32>> {
+        let file = anonymous_file(ogg).map_err(|e| Error::new("sampler.sf3.temp").arg("error", e.to_string()))?;
+        let pcm = decode_reader(Reader::from_file(file, Path::new("sf3 sample"))?)?;
         Ok(pcm.left().to_vec())
     }
 }
@@ -104,6 +132,17 @@ mod tests {
         let path = std::env::temp_dir().join(format!("lm-load-test-{}-{name}.wav", std::process::id()));
         std::fs::write(&path, bytes).expect("writes");
         path
+    }
+
+    #[test]
+    fn the_temporary_file_comes_back_rewound_and_each_call_makes_its_own() {
+        use std::io::Read;
+        let mut a = anonymous_file(b"abc").expect("made");
+        let mut b = anonymous_file(b"xyz").expect("made");
+        let (mut ta, mut tb) = (String::new(), String::new());
+        a.read_to_string(&mut ta).expect("rewound");
+        b.read_to_string(&mut tb).expect("rewound");
+        assert_eq!((ta.as_str(), tb.as_str()), ("abc", "xyz"));
     }
 
     #[test]

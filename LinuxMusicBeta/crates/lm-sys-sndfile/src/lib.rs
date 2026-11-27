@@ -366,6 +366,13 @@ impl Reader {
     /// `sndfile.malformed`, `sndfile.unsupported_encoding`; each with the path
     pub fn open(path: &Path) -> Result<Self> {
         let file = File::open(path).map_err(|e| io_error("sndfile.open_failed", path, &e))?;
+        Self::from_file(file, path)
+    }
+
+    /// Reads an already open file (rewound by the caller), which the reader
+    /// then owns; `label` only names it in errors. For a file that has no path to open, as an unlinked temporary
+    pub fn from_file(file: File, label: &Path) -> Result<Self> {
+        let path = label;
         let mut raw = ffi::SfInfo::default();
         let handle = open_fd(&file, ffi::SFM_READ, &mut raw, path)?;
         let info = match Info::from_raw(&raw) {
