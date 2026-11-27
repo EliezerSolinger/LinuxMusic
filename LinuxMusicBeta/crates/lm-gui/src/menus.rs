@@ -17,7 +17,41 @@ pub const BAR_H: f32 = 24.0;
 pub enum Entry {
     /// An action of the registry, by id
     Action(&'static str),
+    /// A submenu of what the project has: the recent projects, the templates (the in-window bar)
+    Submenu(Dynamic),
     Separator,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Dynamic {
+    Recent,
+    Templates,
+}
+
+impl Dynamic {
+    fn title(self) -> &'static str {
+        match self {
+            Dynamic::Recent => "Recent projects",
+            Dynamic::Templates => "New from template",
+        }
+    }
+
+    /// The items: (shown name, folder) from the core's status
+    fn items(self, status: &Value) -> Vec<(String, String)> {
+        let key = if self == Dynamic::Recent { "recent" } else { "templates" };
+        status
+            .get(key)
+            .map(|l| {
+                l.items()
+                    .map(|e| {
+                        let t = |k: &str| e.get(k).and_then(Value::as_text).unwrap_or("").to_string();
+                        (t("name"), t("folder"))
+                    })
+                    .filter(|(_, f)| !f.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 }
 
 pub struct MenuDef {
@@ -26,14 +60,16 @@ pub struct MenuDef {
     pub entries: &'static [Entry],
 }
 
-use Entry::{Action, Separator};
+use Entry::{Action, Separator, Submenu};
 
 pub const MENUS: &[MenuDef] = &[
     MenuDef {
         title: "File",
         entries: &[
             Action("file.new"),
+            Submenu(Dynamic::Templates),
             Action("file.open"),
+            Submenu(Dynamic::Recent),
             Separator,
             Action("project.save"),
             Action("file.save_as"),
@@ -88,6 +124,8 @@ pub fn install_native(cx: &mut App) {
                 .iter()
                 .filter_map(|e| match e {
                     Separator => Some(MenuItem::Separator),
+                    // the system's bar is static: the recent projects and the templates are in the Open and New dialogs
+                    Submenu(_) => None,
                     Action(id) => {
                         let def = actions::find(id)?;
                         let action = cx.build_action(def.gpui, None).ok()?;
@@ -179,6 +217,7 @@ impl Workspace {
                             .occlude()
                             .children(m.entries.iter().enumerate().map(|(k, e)| match e {
                                 Separator => div().h(px(1.)).my(px(4.)).bg(c(THEME.line)).into_any_element(),
+                                Submenu(kind) => self.render_submenu(*kind, i * 100 + k, cx),
                                 Action(id) => {
                                     let Some(def) = actions::find(id) else { return div().into_any_element() };
                                     let keys = actions::keys_of(def, prefs)
@@ -198,6 +237,11 @@ impl Workspace {
                                         .text_size(px(12.))
                                         .cursor_pointer()
                                         .hover(|s| s.bg(c(THEME.bg3)))
+                                        .on_hover(cx.listener(|ws, hovered: &bool, _, cx| {
+                                            if *hovered && ws.menu_sub.take().is_some() {
+                                                cx.notify();
+                                            }
+                                        }))
                                         .child(label(def))
                                         .child(div().text_color(c(THEME.text3)).child(keys))
                                         .on_click(cx.listener(move |ws, _, window, cx| {
@@ -210,6 +254,93 @@ impl Workspace {
                     ))
                 })
             }))
+    }
+
+    /// A submenu row of the bar: its title with an arrow, and beside it, while the pointer is on it, the items
+    fn render_submenu(&self, kind: Dynamic, id: usize, cx: &Context<Self>) -> gpui::AnyElement {
+        let items = kind.items(self.core.read(cx).port().status());
+        let open = self.menu_sub == Some(kind);
+        div()
+            .id(("menu-sub", id))
+            .debug_selector(move || format!("submenu-{kind:?}"))
+            .relative()
+            .px(px(12.))
+            .py(px(4.))
+            .flex()
+            .flex_row()
+            .justify_between()
+            .text_size(px(12.))
+            .cursor_pointer()
+            .hover(|s| s.bg(c(THEME.bg3)))
+            .child(tr(kind.title()))
+            .child(div().text_color(c(THEME.text3)).child("›"))
+            .on_hover(cx.listener(move |ws, hovered: &bool, _, cx| {
+                if *hovered && ws.menu_sub != Some(kind) {
+                    ws.menu_sub = Some(kind);
+                    cx.notify();
+                }
+            }))
+            .when(open, |d| {
+                d.child(deferred(
+                    div()
+                        .id(("menu-sub-list", id))
+                        .absolute()
+                        .top(px(0.))
+                        .left(gpui::relative(1.0))
+                        .min_w(px(220.))
+                        .max_h(px(360.))
+                        .overflow_y_scroll()
+                        .py(px(4.))
+                        .flex()
+                        .flex_col()
+                        .rounded(px(6.))
+                        .bg(c(THEME.bg2))
+                        .border_1()
+                        .border_color(c(THEME.line2))
+                        .shadow_lg()
+                        .occlude()
+                        .when(items.is_empty(), |d| {
+                            d.child(
+                                div()
+                                    .px(px(12.))
+                                    .py(px(4.))
+                                    .text_size(px(12.))
+                                    .text_color(c(THEME.text3))
+                                    .child(tr("None")),
+                            )
+                        })
+                        .children(items.into_iter().enumerate().map(move |(n, (name, folder))| {
+                            div()
+                                .id(("menu-sub-item", id * 1000 + n))
+                                .px(px(12.))
+                                .py(px(4.))
+                                .text_size(px(12.))
+                                .cursor_pointer()
+                                .hover(|s| s.bg(c(THEME.bg3)))
+                                .child(name)
+                                .on_click(cx.listener(move |ws, _, window, cx| {
+                                    ws.menu_open = None;
+                                    ws.menu_sub = None;
+                                    match kind {
+                                        Dynamic::Recent => ws.core.update(cx, |core, _| {
+                                            core.run_guarded(
+                                                "project.open",
+                                                Value::object([("folder", Value::text(folder.as_str()))]),
+                                            )
+                                        }),
+                                        Dynamic::Templates => {
+                                            cx.set_global(crate::screens::new_project::TemplateArg(Some(
+                                                folder.clone(),
+                                            )));
+                                            ws.open(crate::screens::Screen::NewProject, None, window, cx);
+                                        }
+                                    }
+                                    cx.notify();
+                                }))
+                        })),
+                ))
+            })
+            .into_any_element()
     }
 
     /// Runs an action of the registry as if its keys were pressed

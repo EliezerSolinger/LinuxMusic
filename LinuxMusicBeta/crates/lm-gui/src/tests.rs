@@ -254,12 +254,12 @@ fn quitting_with_changes_asks(cx: &mut TestAppContext) {
     drag(cx, "tknob-1", 0.0, -30.0);
     settle(cx);
     keys(cx, "secondary-q");
-    assert_eq!(ws.read_with(cx, |ws, _| ws.confirm), Some(Pending::Quit));
+    assert_eq!(ws.read_with(cx, |ws, _| ws.confirm.clone()), Some(Pending::Quit));
     keys(cx, "escape");
-    assert_eq!(ws.read_with(cx, |ws, _| ws.confirm), None);
+    assert_eq!(ws.read_with(cx, |ws, _| ws.confirm.clone()), None);
     // the window's close button asks the same way
     ws.update_in(cx, |ws, window, cx| ws.request(Pending::Close, window, cx));
-    assert_eq!(ws.read_with(cx, |ws, _| ws.confirm), Some(Pending::Close));
+    assert_eq!(ws.read_with(cx, |ws, _| ws.confirm.clone()), Some(Pending::Close));
 }
 
 // --- the core's pump --------------------------------------------------------------------------------------------

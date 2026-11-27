@@ -5,7 +5,8 @@
 //! workspace's, over both pages. Everything through the port: the song's fields as `EditOp`s on the root, the
 //! transport as actions.
 
-use gpui::{Context, FontWeight, IntoElement, MouseButton, MouseDownEvent, ScrollEvent, div, prelude::*, px};
+use gpui::{Context, FontWeight, IntoElement, MouseButton, MouseDownEvent, ScrollEvent, Window, div, prelude::*, px};
+use gpui_component::input::{Input, InputEvent, InputState};
 use lm_gui_plugins::Gesture;
 use lm_port::{EditOp, HostTime, Label, Position, ROOT, Value};
 
@@ -156,12 +157,47 @@ fn level_bar(id: &'static str, label: &'static str, fraction: f32) -> impl IntoE
         ))
 }
 
-pub fn begin_tempo(ws: &mut Workspace, ev: &MouseDownEvent, cx: &mut Context<Workspace>) {
+/// The tempo, as a number written by the user or a step: one undo step
+pub fn set_bpm(ws: &mut Workspace, bpm: f64, cx: &mut Context<Workspace>) {
+    let bpm = (bpm.clamp(20.0, 400.0) * 100.0).round() / 100.0;
+    ws.core.update(cx, |core, _| {
+        core.report(|pt| pt.apply(Label::new("Tempo"), vec![tempo_op(bpm)]));
+    });
+    cx.notify();
+}
+
+/// The tempo as the user types it: a number, with a comma or a point for the decimals
+pub fn parse_bpm(text: &str) -> Option<f64> {
+    text.trim().replace(',', ".").parse::<f64>().ok().filter(|b| b.is_finite())
+}
+
+/// Double click on the tempo: a text field in its place, Enter applies, losing the focus cancels
+pub fn type_tempo(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
+    let bpm = first_bpm(ws.core.read(cx).port().root());
+    let input = cx.new(|cx| InputState::new(window, cx).default_value(format!("{bpm}")));
+    input.update(cx, |i, cx| i.focus(window, cx));
+    let sub = cx.subscribe(&input, |ws, st, ev: &InputEvent, cx| match ev {
+        InputEvent::PressEnter { .. } => {
+            let text = st.read(cx).value().to_string();
+            if let Some(b) = parse_bpm(&text) {
+                set_bpm(ws, b, cx);
+            }
+            ws.tempo_input = None;
+            cx.notify();
+        }
+        InputEvent::Blur => {
+            ws.tempo_input = None;
+            cx.notify();
+        }
+        _ => {}
+    });
+    ws.tempo_input = Some((input, sub));
+    cx.notify();
+}
+
+pub fn begin_tempo(ws: &mut Workspace, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Workspace>) {
     if ev.click_count == 2 {
-        ws.core.update(cx, |core, _| {
-            core.report(|pt| pt.apply(Label::new("Tempo"), vec![tempo_op(120.0)]));
-        });
-        cx.notify();
+        type_tempo(ws, window, cx);
         return;
     }
     let start_bpm = first_bpm(ws.core.read(cx).port().root());
@@ -172,9 +208,7 @@ pub fn begin_tempo(ws: &mut Workspace, ev: &MouseDownEvent, cx: &mut Context<Wor
 pub fn drag_tempo(ws: &mut Workspace, y: f32, fine: bool, cx: &mut Context<Workspace>) {
     let Some(d) = &ws.tempo_drag else { return };
     let bpm = ((d.start_bpm - (y - d.start_y) as f64 * if fine { 0.05 } else { 0.5 }) * 100.0).round() / 100.0;
-    ws.core.update(cx, |core, _| {
-        core.gesture_apply(ws.tempo_drag.as_ref().unwrap().gesture, vec![tempo_op(bpm)])
-    });
+    ws.core.update(cx, |core, _| core.gesture_apply(ws.tempo_drag.as_ref().unwrap().gesture, vec![tempo_op(bpm)]));
     cx.notify();
 }
 
@@ -297,20 +331,48 @@ pub fn render(ws: &Workspace, position: Position, cx: &Context<Workspace>) -> im
                 .child(format(other)),
         )
         .child(div().w(px(110.)).text_size(px(11.)).font_weight(FontWeight::BOLD).text_color(c(word_color)).child(word))
-        .child(
-            tbutton("tempo", format!("♩ {bpm:.2}"), ws.tempo_drag.is_some(), THEME.blue)
+        .child(match &ws.tempo_input {
+            Some((input, _)) => div()
+                .w(px(84.))
+                .debug_selector(|| "tempo-input".into())
+                .child(crate::ui::text_entry(Input::new(input)))
+                .into_any_element(),
+            None => tbutton("tempo", format!("♩ {bpm:.2}"), ws.tempo_drag.is_some(), THEME.blue)
                 .debug_selector(|| "tempo".into())
                 .cursor_ns_resize()
-                .on_mouse_down(MouseButton::Left, cx.listener(|ws, ev: &MouseDownEvent, _, cx| begin_tempo(ws, ev, cx)))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|ws, ev: &MouseDownEvent, window, cx| begin_tempo(ws, ev, window, cx)),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|ws, _: &MouseDownEvent, _, cx| {
+                        ws.tempo_menu = !ws.tempo_menu;
+                        cx.notify();
+                    }),
+                )
                 .on_scroll(cx.listener(|ws, ev: &ScrollEvent, _, cx| {
                     let d = ev.delta.pixel_delta(px(16.0)).y.as_f32();
-                    let bpm = first_bpm(ws.core.read(cx).port().root()) + d.signum() as f64;
-                    ws.core.update(cx, |core, _| {
-                        core.report(|pt| pt.apply(Label::new("Tempo"), vec![tempo_op(bpm)]));
-                    });
-                    cx.notify();
-                })),
-        )
+                    let step = if ev.modifiers.shift { 10.0 } else { 1.0 };
+                    let bpm = first_bpm(ws.core.read(cx).port().root()) + d.signum() as f64 * step;
+                    set_bpm(ws, bpm, cx);
+                }))
+                .into_any_element(),
+        })
+        .when(ws.tempo_menu, |d| {
+            d.child(tbutton("tempo-type", tr("Type the tempo"), false, 0).on_click(cx.listener(|ws, _, window, cx| {
+                ws.tempo_menu = false;
+                type_tempo(ws, window, cx);
+            })))
+            .child(tbutton("tempo-120", "120", false, 0).on_click(cx.listener(|ws, _, _, cx| {
+                ws.tempo_menu = false;
+                set_bpm(ws, 120.0, cx);
+            })))
+            .child(tbutton("tempo-tap", tr("Tap"), false, 0).on_click(cx.listener(|ws, _, _, cx| {
+                ws.tempo_menu = false;
+                tap_tempo(ws, cx);
+            })))
+        })
         .child(
             tbutton("sig", format!("{sig_n}/{sig_d}"), sig_open, THEME.blue).debug_selector(|| "sig".into()).on_click(
                 cx.listener(|ws, _, _, cx| {

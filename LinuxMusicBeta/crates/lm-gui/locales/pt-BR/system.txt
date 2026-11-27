@@ -550,3 +550,6 @@ read only = somente leitura
 # Export on one screen
 Region = Região
 Range mode = Trecho
+session.crash_report = O programa fechou de forma inesperada da última vez; o relatório está em {path}
+Type the tempo = Digitar o andamento
+New from template = Novo a partir de modelo

@@ -590,6 +590,14 @@ impl Session {
         let plugins = config.registry.clone();
         let schemas = Arc::new(plugins.project_schemas()?);
         let mut notices = Notices::default();
+        // a session with real preferences (the program, the headless server) keeps its errors in the data folder
+        if config.preferences.file().is_some() {
+            let logs = crate::prefs::data_dir().join("logs");
+            notices.set_log(logs.join("errors.log"));
+            if let Some(report) = crate::crashreport::take_previous(&logs) {
+                notices.warn("session.crash_report", vec![("path", Value::text(report.display().to_string()))]);
+            }
+        }
         let options = project_options(&plugins, &schemas, config.limits);
         let document = Document::new_desk_project(schemas.clone(), options)?;
         let ui_document = interface_document(None)?;

@@ -13,6 +13,11 @@ use crate::ui::{THEME, button, c, tbutton, tr};
 
 const RATES: [i64; 5] = [44_100, 48_000, 88_200, 96_000, 192_000];
 
+/// The template the File > New from template submenu chose (a folder of `status().templates`), taken by the dialog
+/// as it opens
+pub struct TemplateArg(pub Option<String>);
+impl gpui::Global for TemplateArg {}
+
 pub struct NewProject {
     scx: ScreenCx,
     name: Entity<InputState>,
@@ -43,7 +48,18 @@ impl NewProject {
                 }
             }),
         ];
-        NewProject { scx, name, place, rate, template: 0, _subs: subs }
+        // the template asked for by the menu (an index of `status().templates`, shifted by the Empty choice)
+        let wanted = cx.try_global::<TemplateArg>().and_then(|t| t.0.clone());
+        if wanted.is_some() {
+            cx.set_global(TemplateArg(None));
+        }
+        let template = wanted
+            .and_then(|w| {
+                let list = scx.core.read(cx).port().status().get("templates")?.items().cloned().collect::<Vec<_>>();
+                list.iter().position(|t| t.get("folder").and_then(Value::as_text) == Some(w.as_str())).map(|i| i + 1)
+            })
+            .unwrap_or(0);
+        NewProject { scx, name, place, rate, template, _subs: subs }
     }
 
     fn folder(&self, cx: &Context<Self>) -> String {

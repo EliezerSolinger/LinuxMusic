@@ -3,7 +3,8 @@
 //!
 //! Where: `$LINUXMUSIC_CONFIG/preferences.json` when set; beside the executable when a file `portable` is there
 //! (P-35); otherwise `$XDG_CONFIG_HOME/linuxmusic` (or `~/.config/linuxmusic`) on Linux and
-//! `~/Library/Application Support/LinuxMusic` on macOS.
+//! `~/Library/Application Support/LinuxMusic` on macOS. The data folder (untitled projects, peaks, logs) is
+//! `$LINUXMUSIC_DATA`, or `data` beside the executable in portable mode, or the system's own (see [`data_dir`]).
 
 use std::path::PathBuf;
 
@@ -60,20 +61,10 @@ pub fn defaults() -> Value {
         ("metronome", o(vec![("when", Value::text("recording")), ("countInBars", Value::int(1))])),
         (
             "recording",
-            o(vec![
-                ("format", Value::text("rf64-24")),
-                ("folder", Value::text("")),
-                ("lanes", Value::bool(true)),
-            ]),
+            o(vec![("format", Value::text("rf64-24")), ("folder", Value::text("")), ("lanes", Value::bool(true))]),
         ),
         // The General page (F-CFG-010)
-        (
-            "general",
-            o(vec![
-                ("reopenLast", Value::bool(false)),
-                ("newProjectRate", Value::int(48_000)),
-            ]),
-        ),
+        ("general", o(vec![("reopenLast", Value::bool(false)), ("newProjectRate", Value::int(48_000))])),
         // Folders: the default SoundFont, and the folders outside a project it may read (C9)
         ("folders", o(vec![("soundfont", Value::text("")), ("allowed", Value::empty_list())])),
         // Autosave (minutes, 0 off) and the copies kept of a project
@@ -125,15 +116,53 @@ fn default_projects_folder() -> String {
     home().join("LinuxMusic").display().to_string()
 }
 
+/// The folder of the program's executable when a file `portable` is there: everything of the program lives in it
+fn portable_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    dir.join("portable").exists().then(|| dir.to_path_buf())
+}
+
+/// An environment variable that names a folder (empty or relative values are ignored)
+fn env_dir(name: &str) -> Option<PathBuf> {
+    std::env::var_os(name).map(PathBuf::from).filter(|p| p.is_absolute())
+}
+
+/// The machine's data folder: where an untitled project lives until it is saved, the peaks cache and the logs.
+/// `$LINUXMUSIC_DATA`, else `data` beside a portable executable, else `~/Library/Application Support/LinuxMusicBeta`
+/// (macOS) or `$XDG_DATA_HOME/LinuxMusicBeta` (`~/.local/share`)
+pub fn data_dir() -> PathBuf {
+    if let Some(d) = env_dir("LINUXMUSIC_DATA") {
+        return d;
+    }
+    if let Some(d) = portable_dir() {
+        return d.join("data");
+    }
+    if cfg!(target_os = "macos") {
+        home().join("Library/Application Support/LinuxMusicBeta")
+    } else {
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home().join(".local/share"))
+            .join("LinuxMusicBeta")
+    }
+}
+
+/// The folders a first run creates: the working folder (projects) with its presets, and the data folder
+pub fn create_default_folders(prefs: &Preferences) -> std::io::Result<()> {
+    let projects = PathBuf::from(prefs.text(&["projectsFolder"]).unwrap_or(""));
+    if !projects.as_os_str().is_empty() {
+        std::fs::create_dir_all(projects.join("Presets"))?;
+    }
+    std::fs::create_dir_all(data_dir())
+}
+
 /// The file the preferences live in
 pub fn location() -> PathBuf {
-    if let Some(dir) = std::env::var_os("LINUXMUSIC_CONFIG") {
-        return PathBuf::from(dir).join("preferences.json");
+    if let Some(dir) = env_dir("LINUXMUSIC_CONFIG") {
+        return dir.join("preferences.json");
     }
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(dir) = exe.parent()
-        && dir.join("portable").exists()
-    {
+    if let Some(dir) = portable_dir() {
         return dir.join("preferences.json");
     }
     let base = if cfg!(target_os = "macos") {
@@ -259,6 +288,19 @@ impl Preferences {
         }
         self.tree = self.tree.with_path(path, value)?;
         Ok(())
+    }
+
+    /// The project the last session ended on (`general.reopenLast`): the first recent folder that still exists
+    pub fn last_project(&self) -> Option<PathBuf> {
+        if !self.bool(&["general", "reopenLast"]).unwrap_or(false) {
+            return None;
+        }
+        self.tree
+            .get("recent")?
+            .items()
+            .filter_map(|e| e.get("folder").and_then(Value::as_text))
+            .map(PathBuf::from)
+            .find(|p| p.is_dir())
     }
 
     /// Puts a project first in the recent list (at most 10)

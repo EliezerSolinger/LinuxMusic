@@ -7,6 +7,7 @@ pub mod arrange;
 pub mod browser;
 pub mod clips;
 mod crashnote;
+pub mod crashreport;
 pub mod export;
 mod field_load;
 pub mod folder;

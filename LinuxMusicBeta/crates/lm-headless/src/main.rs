@@ -2,6 +2,10 @@
 //!
 //! ```text
 //! lm-headless render <project folder> <out.wav> [--from SAMPLE] [--to SAMPLE] [--tail SECONDS]
+//! lm-headless render <project folder> <out.(wav|flac|ogg|mp3) | folder with --stems> [--formats wav,flac,ogg,mp3]
+//!     [--depth 16|24|32] [--rate HZ] [--dither] [--normalize peak:DB | lufs:LUFS] [--fade-in S] [--fade-out S]
+//!     [--stems tracks|channels] [--loop] [--repeats N] [--range-ticks FROM:TO [--fast] [--warmup S]]
+//!     [--ogg-quality 0..10] [--mp3-kbps N] [--tail SECONDS]
 //! lm-headless info <project folder>
 //! lm-headless serve [<project folder>] [--device NAME] [--socket PATH] [--tcp ADDR] [--token TOKEN:ROLE]...
 //! lm-headless slice <new project folder> [--device NAME] [--seconds S] [--input N] [--block FRAMES]
@@ -35,7 +39,10 @@ use lm_state::{Value, from_json, to_json};
 
 fn usage() -> ! {
     eprintln!(
-        "usage:\n  lm-headless render <project> <out.wav> [--from S] [--to S] [--tail SECONDS]\n  lm-headless info \
+        "usage:\n  lm-headless render <project> <out.wav> [--from S] [--to S] [--tail SECONDS]\n  lm-headless render <project> \
+         <out.(wav|flac|ogg|mp3) or folder> [--formats wav,flac] [--depth N] [--rate HZ] [--dither] [--normalize \
+         peak:DB|lufs:L] [--fade-in S] [--fade-out S] [--stems tracks|channels] [--loop] [--repeats N] [--range-ticks \
+         A:B [--fast] [--warmup S]]\n  lm-headless info \
          <project>\n  lm-headless serve [<project>] [--device NAME] [--socket PATH] [--tcp ADDR] [--token TOKEN:ROLE]\n  \
          lm-headless slice <new project> [--device NAME] [--seconds S] [--input N] [--block FRAMES]"
     );
@@ -50,7 +57,9 @@ fn positional(args: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < args.len() {
-        if args[i].starts_with("--") {
+        if SWITCHES.contains(&args[i].as_str()) {
+            i += 1;
+        } else if args[i].starts_with("--") {
             i += 2;
         } else {
             out.push(args[i].clone());
@@ -61,6 +70,106 @@ fn positional(args: &[String]) -> Vec<String> {
 }
 
 type Opened = (Value, Arc<lm_plugin::Registry>, Arc<lm_state::SchemaRegistry>);
+
+/// Flags that stand alone (every other flag takes a value)
+const SWITCHES: [&str; 3] = ["--loop", "--dither", "--fast"];
+
+fn switch(args: &[String], name: &str) -> bool {
+    args.iter().any(|a| a == name)
+}
+
+/// The export request the flags ask for (`project.export`'s parameters), or `None` when none of the flags that
+/// only the full export has was given (then `render` is the plain WAV of the whole song or of a sample range)
+fn request_from_args(args: &[String], out: &str) -> Result<Option<Value>> {
+    const EXTRA: [&str; 12] = [
+        "--formats",
+        "--depth",
+        "--rate",
+        "--normalize",
+        "--fade-in",
+        "--fade-out",
+        "--stems",
+        "--repeats",
+        "--range-ticks",
+        "--ogg-quality",
+        "--mp3-kbps",
+        "--warmup",
+    ];
+    if !EXTRA.iter().any(|f| flag(args, f).is_some()) && !SWITCHES.iter().any(|f| switch(args, f)) {
+        // an extension of another format is the full export too
+        let ext = std::path::Path::new(out).extension().and_then(|e| e.to_str()).unwrap_or("wav").to_lowercase();
+        if ext == "wav" {
+            return Ok(None);
+        }
+    }
+    let bad = |name: &'static str| Error::new("headless.number").arg("flag", name);
+    let int = |name: &'static str| flag(args, name).map(|v| v.parse::<i64>().map_err(|_| bad(name))).transpose();
+    let real = |name: &'static str| flag(args, name).map(|v| v.parse::<f64>().map_err(|_| bad(name))).transpose();
+    let real_value = |x: f64| Value::real(x).map_err(|_| Error::new("headless.number"));
+    let stems = flag(args, "--stems");
+    let path = std::path::Path::new(out);
+    let (folder, name, ext) = if stems.is_some() {
+        (path.to_path_buf(), "export".to_owned(), "wav".to_owned())
+    } else {
+        (
+            path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(std::path::Path::new(".")).to_path_buf(),
+            path.file_stem().and_then(|s| s.to_str()).unwrap_or("export").to_owned(),
+            path.extension().and_then(|e| e.to_str()).unwrap_or("wav").to_lowercase(),
+        )
+    };
+    let formats: Vec<Value> =
+        flag(args, "--formats").unwrap_or(ext).split(',').map(|f| Value::text(f.trim())).collect();
+    let mut v = Value::object([
+        ("folder", Value::text(folder.display().to_string())),
+        ("name", Value::text(name)),
+        ("formats", Value::list(formats)),
+        ("dither", Value::bool(switch(args, "--dither"))),
+        ("asLoop", Value::bool(switch(args, "--loop"))),
+    ]);
+    for (key, n) in [
+        ("depth", int("--depth")?),
+        ("rate", int("--rate")?),
+        ("repeats", int("--repeats")?),
+        ("oggQuality", int("--ogg-quality")?),
+        ("mp3Kbps", int("--mp3-kbps")?),
+    ] {
+        if let Some(n) = n {
+            v = v.with(key, Value::int(n));
+        }
+    }
+    for (key, x) in [("fadeIn", real("--fade-in")?), ("fadeOut", real("--fade-out")?), ("tail", real("--tail")?)] {
+        if let Some(x) = x {
+            v = v.with(key, real_value(x)?);
+        }
+    }
+    if let Some(n) = flag(args, "--normalize") {
+        let (kind, target) = n.split_once(':').ok_or_else(|| Error::new("headless.normalize"))?;
+        let target: f64 = target.parse().map_err(|_| Error::new("headless.normalize"))?;
+        v = v.with("normalize", Value::object([("kind", Value::text(kind)), ("target", real_value(target)?)]));
+    }
+    if let Some(by) = stems {
+        if !matches!(by.as_str(), "tracks" | "channels") {
+            return Err(Error::new("headless.stems").arg("by", by.as_str()));
+        }
+        // no `nodes`: every track (or channel) is a stem
+        v = v.with("stems", Value::object([("by", Value::text(by))]));
+    }
+    if let Some(r) = flag(args, "--range-ticks") {
+        let (a, b) = r.split_once(':').ok_or_else(|| Error::new("headless.range"))?;
+        let tick = |t: &str| t.parse::<i64>().map_err(|_| Error::new("headless.range"));
+        let warmup = real("--warmup")?.unwrap_or(10.0);
+        v = v.with(
+            "range",
+            Value::object([
+                ("from", Value::int(tick(a)?)),
+                ("to", Value::int(tick(b)?)),
+                ("fast", Value::bool(switch(args, "--fast"))),
+                ("warmup", real_value(warmup)?),
+            ]),
+        );
+    }
+    Ok(Some(v))
+}
 
 /// The saved project, opened (upgraded, validated) as the session would
 fn open_saved(folder: &ProjectFolder) -> Result<Opened> {
@@ -85,6 +194,7 @@ fn render(args: &[String]) -> Result<()> {
     let (Some(project), Some(out)) = (pos.first(), pos.get(1)) else { usage() };
     let folder = ProjectFolder::new(PathBuf::from(project));
     let (root, plugins, schemas) = open_saved(&folder)?;
+    let request = request_from_args(args, out)?;
     let mut target = ExportTarget::wav(PathBuf::from(out));
     if let Some(t) = number(args, "--tail") {
         target.tail = t?;
@@ -97,7 +207,14 @@ fn render(args: &[String]) -> Result<()> {
     let limits = lm_render::Limits { max_nodes: 4096, max_params: 32768, ..lm_render::Limits::default() };
     let job = ExportJob { root, project: folder.root().to_path_buf(), plugins, schemas, limits };
     let workers = Workers::new("lm-headless", 1, Role::Worker);
-    let mut handle = workers.start(move |cancel, progress| export(job, &target, cancel, progress));
+    let mut handle = match request {
+        // the export screen's own path: stems, formats, loop, normalisation (`project.export`)
+        Some(v) => {
+            let request = lm_session::export::ExportRequest::from_value(&v)?;
+            workers.start(move |cancel, progress| lm_session::export::export_request(job, &request, cancel, progress))
+        }
+        None => workers.start(move |cancel, progress| export(job, &target, cancel, progress)),
+    };
     let mut last = String::new();
     loop {
         if let Some(result) = handle.poll() {
@@ -242,6 +359,7 @@ fn slice(args: &[String]) -> Result<()> {
 }
 
 fn main() {
+    lm_session::crashreport::install(lm_session::prefs::data_dir().join("logs"));
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(command) = args.first() else { usage() };
     let rest = &args[1..];
@@ -272,5 +390,56 @@ fn platform_device(device: String) -> DeviceSetup {
         DeviceSetup::CoreAudio { output: device, input: None }
     } else {
         DeviceSetup::Alsa { device }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_plain_wav_is_the_reference_render() {
+        assert_eq!(request_from_args(&args(&["p", "/o/a.wav", "--tail", "1"]), "/o/a.wav").unwrap(), None);
+    }
+
+    #[test]
+    fn the_flags_make_the_export_request() {
+        let a = args(&[
+            "p",
+            "/o",
+            "--stems",
+            "tracks",
+            "--formats",
+            "wav,flac",
+            "--depth",
+            "24",
+            "--loop",
+            "--normalize",
+            "lufs:-14",
+        ]);
+        let v = request_from_args(&a, "/o").unwrap().unwrap();
+        assert_eq!(v.get("folder").and_then(Value::as_text), Some("/o"));
+        assert_eq!(v.get("formats").map(Value::len), Some(2));
+        assert_eq!(v.get("asLoop").and_then(Value::as_bool), Some(true));
+        assert_eq!(v.get("stems").and_then(|s| s.get("by")).and_then(Value::as_text), Some("tracks"));
+        // the request is one the session reads
+        lm_session::export::ExportRequest::from_value(&v).unwrap();
+        assert_eq!(positional(&a), ["p", "/o"], "switches take no value");
+    }
+
+    #[test]
+    fn a_file_of_another_format_is_the_full_export() {
+        let v = request_from_args(&args(&["p", "/o/a.flac"]), "/o/a.flac").unwrap().unwrap();
+        assert_eq!(v.get("name").and_then(Value::as_text), Some("a"));
+        assert_eq!(v.get("formats").and_then(|l| l.items().next()).and_then(Value::as_text), Some("flac"));
+    }
+
+    #[test]
+    fn a_bad_normalize_is_refused() {
+        assert!(request_from_args(&args(&["p", "o", "--normalize", "loud"]), "o").is_err());
     }
 }

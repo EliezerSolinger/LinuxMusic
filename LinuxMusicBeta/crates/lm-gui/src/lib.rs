@@ -39,6 +39,8 @@ pub struct Options {
     pub title: Option<String>,
     /// Show the recent projects at the start (no project was given)
     pub recents: bool,
+    /// The first run on this machine (no preferences file yet): Settings opens on its own (F-JAN-003)
+    pub first_run: bool,
 }
 
 /// Starts the interface on a port, in a GPUI application, and runs until the user quits
@@ -58,11 +60,14 @@ pub fn run_with(make_port: impl FnOnce() -> Box<dyn CorePort> + 'static, options
         let titlebar =
             options.title.clone().map(|t| gpui::TitlebarOptions { title: Some(t.into()), ..Default::default() });
         let recents = options.recents;
+        let first_run = options.first_run;
         let opened = cx.open_window(
             WindowOptions { window_bounds: Some(WindowBounds::Windowed(bounds)), titlebar, ..Default::default() },
             |window, cx| {
                 let ws = cx.new(|cx| workspace::Workspace::new(port, window, cx));
-                if recents {
+                if first_run {
+                    ws.update(cx, |ws, cx| ws.open(screens::Screen::Settings, None, window, cx));
+                } else if recents {
                     // no project was given: the recent projects, to open one (the Project screen's Open)
                     ws.update(cx, |ws, cx| ws.open(screens::Screen::Project, None, window, cx));
                 }

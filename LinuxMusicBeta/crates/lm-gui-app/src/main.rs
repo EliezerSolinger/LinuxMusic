@@ -70,17 +70,9 @@ fn parse(args: &[String]) -> std::result::Result<Mode, String> {
     }
 }
 
-/// The machine's data folder: where an untitled project lives until it is saved
+/// The machine's data folder: where an untitled project lives until it is saved (`LINUXMUSIC_DATA`, portable mode)
 fn data_dir() -> PathBuf {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    if cfg!(target_os = "macos") {
-        home.join("Library/Application Support/LinuxMusicBeta")
-    } else {
-        std::env::var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home.join(".local/share"))
-            .join("LinuxMusicBeta")
-    }
+    lm_session::prefs::data_dir()
 }
 
 /// The device the preferences name (I-10). The session has backends for ALSA (Linux), CoreAudio (macOS) and the
@@ -112,7 +104,8 @@ fn device(prefs: &lm_session::prefs::Preferences) -> Option<DeviceSetup> {
 /// The local core: a session with the machine's preferences and device, the program's plugins, and the project
 fn local(project: Option<PathBuf>) -> Result<Box<dyn CorePort>> {
     let mut config = SessionConfig::headless(data_dir().join("untitled"))?;
-    let (prefs, error) = lm_session::prefs::Preferences::load(lm_session::prefs::location());
+    let location = lm_session::prefs::location();
+    let (prefs, error) = lm_session::prefs::Preferences::load(location);
     if let Some(e) = error {
         eprintln!("preferences: {e}");
     }
@@ -127,7 +120,8 @@ fn local(project: Option<PathBuf>) -> Result<Box<dyn CorePort>> {
     let mut session = Session::new(config)?;
     if let Some(folder) = project {
         // an operation: the interface shows it past 200 ms, with its stage and Cancel
-        let _ = session.open(folder);
+        // its failure is a notice of the session, shown like any other
+        let _operation = session.open(folder);
     }
     Ok(Box::new(LocalPort::new(session)))
 }
@@ -156,6 +150,7 @@ fn remote(endpoint: String, token: Option<String>) -> Result<Box<dyn CorePort>> 
 }
 
 fn main() {
+    lm_session::crashreport::install(lm_session::prefs::data_dir().join("logs"));
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mode = match parse(&args) {
         Ok(m) => m,
@@ -167,8 +162,27 @@ fn main() {
             std::process::exit(2);
         }
     };
+    // What the machine's preferences ask of a start without a project: the first run (no preferences file yet) makes
+    // the default folders and opens Settings; `general.reopenLast` opens the project the last session ended on
+    let mut project_arg = None;
+    let mut first_run = false;
+    if let Mode::Local { project } = &mode {
+        let location = lm_session::prefs::location();
+        first_run = !location.exists();
+        let (prefs, _) = lm_session::prefs::Preferences::load(location);
+        if first_run && let Err(e) = lm_session::prefs::create_default_folders(&prefs) {
+            eprintln!("LinuxMusicBeta: the default folders: {e}");
+        }
+        if project.is_none() {
+            project_arg = prefs.last_project();
+        }
+    }
+    let mode = match mode {
+        Mode::Local { project: None } if project_arg.is_some() => Mode::Local { project: project_arg },
+        other => other,
+    };
     let recents = matches!(mode, Mode::Local { project: None });
-    let options = lm_gui::Options { title: Some("LinuxMusicBeta".into()), recents };
+    let options = lm_gui::Options { title: Some("LinuxMusicBeta".into()), recents, first_run };
     lm_gui::run_with(
         move || {
             let made = match mode {

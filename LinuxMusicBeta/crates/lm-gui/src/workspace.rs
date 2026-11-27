@@ -63,11 +63,16 @@ pub struct Workspace {
     /// interface document (`docks`)
     pub docks: Docks,
     dock_drag: Option<(DockEdge, f32, f32)>,
+    /// The docks folded away (a double click on the splitter folds and unfolds): bottom, left, right
+    collapsed: [bool; 3],
     /// Tap Tempo's taps and the clock they are counted on
     pub tap: crate::tap::TapTempo,
     pub tap_clock: Instant,
     /// The time signature's editor is open in the transport
     pub sig_editor: bool,
+    /// The tempo typed in place (double click on it), with its subscription; and the tempo's click menu (right click)
+    pub tempo_input: Option<(Entity<gpui_component::input::InputState>, Subscription)>,
+    pub tempo_menu: bool,
     /// The floating notices (F-JAN-013), and the notices already seen (id and how many times it came)
     pub toasts: Vec<Toast>,
     seen_notices: HashMap<u64, u32>,
@@ -76,6 +81,8 @@ pub struct Workspace {
     _activation: gpui::Subscription,
     /// The in-window menu bar's open menu (Linux)
     pub menu_open: Option<usize>,
+    /// The submenu open inside it (the recent projects, the templates)
+    pub menu_sub: Option<crate::menus::Dynamic>,
     /// The time of the last autosave seen (`status.autosave.at`), and until when the Save button shows it (F-JAN-008)
     autosave_seen: String,
     save_flash: Option<Instant>,
@@ -173,6 +180,14 @@ pub enum DockEdge {
 }
 
 impl DockEdge {
+    fn index(self) -> usize {
+        match self {
+            DockEdge::Bottom => 0,
+            DockEdge::Left => 1,
+            DockEdge::Right => 2,
+        }
+    }
+
     fn key(self) -> &'static str {
         match self {
             DockEdge::Bottom => "bottom",
@@ -234,13 +249,17 @@ impl Workspace {
             _pages: pages,
             docks,
             dock_drag: None,
+            collapsed: [false; 3],
             tap: Default::default(),
             tap_clock: Instant::now(),
             sig_editor: false,
+            tempo_input: None,
+            tempo_menu: false,
             toasts: Vec::new(),
             seen_notices: HashMap::new(),
             toast_seq: 0,
             menu_open: None,
+            menu_sub: None,
             autosave_seen: String::new(),
             save_flash: None,
             window_title: String::new(),
@@ -283,6 +302,13 @@ impl Workspace {
     /// Opens a screen, on a node when it edits one (an item for the Piano Roll, a plugin for its window)
     pub fn open(&mut self, s: Screen, target: Option<NodeId>, window: &mut Window, cx: &mut Context<Self>) {
         let place = s.placement();
+        // a screen opening in a folded area unfolds it
+        match place {
+            Placement::Bottom => self.collapsed[DockEdge::Bottom.index()] = false,
+            Placement::Left => self.collapsed[DockEdge::Left.index()] = false,
+            Placement::Right => self.collapsed[DockEdge::Right.index()] = false,
+            _ => {}
+        }
         if let Some(i) = self.open.iter().position(|(o, _)| *o == s) {
             if target.is_none() {
                 return;
@@ -886,7 +912,11 @@ impl Render for Workspace {
                     .on_action(cx.listener(|ws, _: &Rewind, _, cx| ws.run("transport.locate", Value::int(0), cx)))
                     .on_action(cx.listener(|ws, _: &Record, _, cx| transport::record(ws, cx)))
                     .on_action(cx.listener(|ws, _: &ToggleLoop, _, cx| transport::toggle_loop(ws, cx)))
-                    .children(self.docked(Placement::Left).map(|v| div().w(px(self.docks.left)).h_full().child(v)))
+                    .children(
+                        self.docked(Placement::Left)
+                            .filter(|_| !self.is_collapsed(DockEdge::Left))
+                            .map(|v| div().w(px(self.docks.left)).h_full().child(v)),
+                    )
                     .children(self.docked(Placement::Left).map(|_| self.splitter(DockEdge::Left, cx)))
                     .child(
                         div()
@@ -907,11 +937,16 @@ impl Render for Workspace {
                             .children(self.docked(Placement::Bottom).map(|_| self.splitter(DockEdge::Bottom, cx)))
                             .children(
                                 self.docked(Placement::Bottom)
+                                    .filter(|_| !self.is_collapsed(DockEdge::Bottom))
                                     .map(|v| div().h(px(self.docks.bottom)).flex_none().child(v)),
                             ),
                     )
                     .children(self.docked(Placement::Right).map(|_| self.splitter(DockEdge::Right, cx)))
-                    .children(self.docked(Placement::Right).map(|v| div().w(px(self.docks.right)).h_full().child(v))),
+                    .children(
+                        self.docked(Placement::Right)
+                            .filter(|_| !self.is_collapsed(DockEdge::Right))
+                            .map(|v| div().w(px(self.docks.right)).h_full().child(v)),
+                    ),
             )
             .children(self.dock_drag.is_some().then(|| {
                 crate::screens::piano_roll::kit::capture(cx.weak_entity(), Self::splitter_move, Self::splitter_up)
@@ -1128,6 +1163,10 @@ pub fn start(cx: &mut App, preferences: &Value) {
 // --- the docks' splitters ----------------------------------------------------------------------------------------
 
 impl Workspace {
+    fn is_collapsed(&self, edge: DockEdge) -> bool {
+        self.collapsed[edge.index()]
+    }
+
     /// The splitter between a dock and the page: dragging it resizes the dock
     fn splitter(&self, edge: DockEdge, cx: &Context<Self>) -> impl IntoElement {
         let id: &'static str = match edge {
@@ -1147,6 +1186,16 @@ impl Workspace {
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(move |ws, ev: &gpui::MouseDownEvent, _, cx| {
+                    if ev.click_count == 2 {
+                        // fold the area away, or bring it back
+                        ws.collapsed[edge.index()] = !ws.collapsed[edge.index()];
+                        cx.stop_propagation();
+                        cx.notify();
+                        return;
+                    }
+                    if ws.is_collapsed(edge) {
+                        return;
+                    }
                     let at = if vertical { ev.position.x.as_f32() } else { ev.position.y.as_f32() };
                     let size = match edge {
                         DockEdge::Bottom => ws.docks.bottom,
