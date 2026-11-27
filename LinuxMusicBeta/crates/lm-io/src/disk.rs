@@ -242,6 +242,8 @@ struct OpenInput {
     writer: Option<Writer>,
     path: PathBuf,
     record: Option<RecordFile>,
+    /// The first failure writing the record: reported by the next sync or at the close, never lost
+    record_error: Option<Error>,
     /// File frames written (data and gaps)
     written: u64,
     last_sync: u64,
@@ -477,6 +479,7 @@ impl Worker {
                 writer: None,
                 path: path.clone(),
                 record: None,
+                record_error: None,
                 written: 0,
                 last_sync: 0,
                 reserved: 0,
@@ -643,8 +646,13 @@ impl Worker {
             {
                 return Some((StopReason::WriteFailed, e));
             }
-            if let Some(r) = i.record.as_mut() {
-                let _ = r.sync();
+            if let Some(r) = i.record.as_mut()
+                && let Err(e) = r.sync()
+            {
+                return Some((StopReason::WriteFailed, e));
+            }
+            if let Some(e) = i.record_error.take() {
+                return Some((StopReason::WriteFailed, e));
             }
         }
         self.reserve(i, rate).map(|e| (StopReason::DiskFull, e))
@@ -749,8 +757,13 @@ impl Worker {
             }
         }
         append(input, &RecordLine::Stop(stop));
-        if let Some(r) = input.record.as_mut() {
-            let _ = r.sync();
+        if let Some(r) = input.record.as_mut()
+            && let Err(e) = r.sync()
+        {
+            input.record_error.get_or_insert(e);
+        }
+        if close_error.is_none() {
+            close_error = input.record_error.take();
         }
         let index = input.index;
         self.emit(DiskEvent::InputStopped {
@@ -789,8 +802,13 @@ impl Worker {
                 continue;
             }
             append(&mut input, &RecordLine::End { frames });
-            if let Some(r) = input.record.as_mut() {
-                let _ = r.sync();
+            if let Some(r) = input.record.as_mut()
+                && let Err(e) = r.sync()
+            {
+                input.record_error.get_or_insert(e);
+            }
+            if let Some(error) = input.record_error.take() {
+                self.pending.push_back(DiskEvent::Failed { input: Some(input.index), error });
             }
             let record = input.record.as_ref().map(|r| r.path.clone()).unwrap_or_default();
             let clip = |v: u64| v.min(frames);
@@ -823,8 +841,10 @@ impl Worker {
 
 fn append(i: &mut OpenInput, line: &RecordLine) {
     if let Some(r) = i.record.as_mut() {
-        // A record that cannot be appended to is reported at the close (its sync fails too); the audio goes on
-        let _ = r.append(line);
+        // The audio goes on; the failure is kept for the next sync or the close
+        if let Err(e) = r.append(line) {
+            i.record_error.get_or_insert(e);
+        }
     }
 }
 
